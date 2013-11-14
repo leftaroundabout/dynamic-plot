@@ -1,0 +1,38 @@
+Name:                dynamic-plot
+Version:             0.1
+Category:            graphics
+Synopsis:            Interactive diagram windows
+Description:         When plotting functions etc., it is often not known a priori what
+                     range should be displayed, what resolution is needed etc.. The
+                     most efficient way to set these parameters is in an interactive
+                     window.
+License:             GPL-3
+License-file:        COPYING
+Author:              Justus Sagemüller
+Maintainer:          (@) sagemuej $ smail.uni-koeln.de
+Build-Type:          Simple
+Cabal-Version:       >=1.2
+
+Library
+  Build-Depends:     base>=4.5
+                     , transformers
+                     , vector-space>=0.8
+                     , vector
+                     , containers
+                     , random
+                     , MonadRandom
+                     , OpenGL
+                     , GLFW
+  Extensions:        FlexibleInstances
+                     , TypeFamilies
+                     , FlexibleContexts
+                     , GADTs
+                     , RankNTypes
+                     , ConstraintKinds
+                     , PatternGuards
+                     , ScopedTypeVariables
+                     , RecordWildCards
+                     , TupleSections
+  ghc-options:       -O2
+  Exposed-modules:   Graphics.Dynamic.Plot
+  Other-modules:   
