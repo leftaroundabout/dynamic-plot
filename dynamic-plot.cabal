@@ -23,6 +23,7 @@ Library
                      , MonadRandom
                      , OpenGL
                      , GLFW
+                     , graphics-drawingcombinators 
   Extensions:        FlexibleInstances
                      , TypeFamilies
                      , FlexibleContexts
