@@ -80,8 +80,15 @@ plotWindow graphs = do
    
    let grey = Draw.Color 0.5 0.5 0.5 0.5
    let mainLoop = do
-           currentView <- readIORef viewState
-           render . mconcat $ map (Draw.tint grey . ($currentView) . dynamicPlot) graphs
+           currentView@(GraphWindowSpec{..}) <- readIORef viewState
+           let normaliseView = (Draw.scale xUnZ yUnZ <> Draw.translate (-x₀,-y₀) %%)
+                  where xUnZ = 1/w; yUnZ = 1/h
+                        w = (rBound - lBound)/2; h = (tBound - bBound)/2
+                        x₀ = lBound + w; y₀ = bBound + h
+               renderComp (DynamicPlottable{..})
+                  = (if usesNormalisedCanvas then id
+                      else normaliseView ) . Draw.tint grey $ dynamicPlot currentView
+           render . mconcat $ map renderComp graphs
            GLFW.swapBuffers
            GLFW.sleep 0.1
            GLFW.pollEvents
@@ -131,7 +138,7 @@ autoDefaultView graphs = finalise . flip (foldr yRanged) graphs . (, Nothing)
 
 
 render :: Monoid a => Draw.Image a -> IO()
-render = Draw.render . (Draw.scale (realToFrac defResY / realToFrac defResX) 1 %%)
+render = Draw.clearRender
 
 defResX, defResY :: Integral i => i
 defResX = 640
@@ -151,8 +158,8 @@ data KeyAction = MoveLeft
 defaultKeyMap :: GLFW.Key -> Maybe KeyAction
 defaultKeyMap (GLFW.CharKey 'K') = Just MoveUp
 defaultKeyMap (GLFW.CharKey 'J') = Just MoveDown
-defaultKeyMap (GLFW.CharKey 'H') = Just MoveLeft
-defaultKeyMap (GLFW.CharKey 'L') = Just MoveRight
+defaultKeyMap (GLFW.CharKey 'L') = Just MoveLeft
+defaultKeyMap (GLFW.CharKey 'H') = Just MoveRight
 defaultKeyMap (GLFW.CharKey 'B') = Just ZoomIn_x
 defaultKeyMap (GLFW.CharKey 'N') = Just ZoomOut_x
 defaultKeyMap (GLFW.CharKey 'I') = Just ZoomIn_y
