@@ -34,7 +34,7 @@ import System.Exit
 data GraphWindowSpec = GraphWindowSpec {
       lBound, rBound, bBound, tBound :: R
     , xResolution, yResolution :: Int
-  }
+  } deriving (Show)
 
 moveStepRel :: (R, R)  -- ^ Relative translation @(Δx/w, Δy/h)@.
             -> (R, R)  -- ^ Relative zoom.
@@ -89,7 +89,7 @@ plotWindow graphs = do
    
    GLFW.keyCallback $= \key state -> do
            let keyStepSize = 0.1
-           when (state==GLFW.Press) $
+           when (state==GLFW.Press) $ do
               case defaultKeyMap key of
                 Just QuitProgram -> writeIORef done True
                 Just movement    -> modifyIORef viewState $ case movement of
@@ -102,6 +102,8 @@ plotWindow graphs = do
                     ZoomIn_y  -> moveStepRel (0, 0)   (1, 1+keyStepSize)
                     ZoomOut_y -> moveStepRel (0, 0)   (1, 1-keyStepSize)
                 _ -> return ()
+              view <- readIORef viewState
+              putStrLn $ "View: " ++ show view
            
    GLFW.windowCloseCallback $= do
            writeIORef done True
