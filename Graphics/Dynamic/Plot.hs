@@ -172,6 +172,7 @@ fnPlot f = DynamicPlottable{
              , dynamicPlot = plot }
  where yRangef (l, r) = Just . (minimum &&& maximum) $ map f [l, l + (r-l)/8 .. r]
        plot (GraphWindowSpec{..}) = curve
-        where δx = (rBound - lBound) / 12 -- fromIntegral xResolution
-              curve = Draw.bezierCurve 
-                       [ (x, f x) | x<-[lBound, lBound+δx .. rBound] ]
+        where δx = (rBound - lBound) * 2 / fromIntegral xResolution
+              curve = trace [ (x, f x) | x<-[lBound, lBound+δx .. rBound] ]
+              trace (p:q:ps) = Draw.line p q <> trace (q:ps)
+              trace _ = mempty
