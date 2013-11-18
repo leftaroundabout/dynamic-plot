@@ -57,6 +57,7 @@ type Plot = Draw.Image Any
 data DynamicPlottable = DynamicPlottable { 
         relevantRange_x :: Maybe Interval
       , relevantRange_y :: Interval -> Maybe Interval
+      , usesNormalisedCanvas :: Bool
       , isTintableMonochromic :: Bool
       , dynamicPlot :: GraphWindowSpec -> Plot
   }
@@ -77,9 +78,11 @@ plotWindow graphs = do
    viewState <- newIORef $ autoDefaultView graphs
    done      <- newIORef False
    
+   let grey = Draw.Color 0.5 0.5 0.5 0.5
    let mainLoop = do
            currentView <- readIORef viewState
-           render . mconcat $ map (($currentView) . dynamicPlot) graphs
+           render . mconcat $ map (Draw.tint grey . ($currentView) . dynamicPlot) graphs
+           GLFW.swapBuffers
            GLFW.sleep 0.1
            GLFW.pollEvents
            ($mainLoop) . unless =<< readIORef done
@@ -105,11 +108,11 @@ plotWindow graphs = do
            return True
                  
    
-   putStrLn "Enter Main loop..."
+   -- putStrLn "Enter Main loop..."
    
    mainLoop
    
-   putStrLn "Done."
+   -- putStrLn "Done."
    
    GLFW.terminate
    
@@ -128,7 +131,7 @@ autoDefaultView graphs = finalise . flip (foldr yRanged) graphs . (, Nothing)
 
 
 render :: Monoid a => Draw.Image a -> IO()
-render = Draw.clearRender . (Draw.scale (realToFrac defResY / realToFrac defResX) 1 %%)
+render = Draw.render . (Draw.scale (realToFrac defResY / realToFrac defResX) 1 %%)
 
 defResX, defResY :: Integral i => i
 defResX = 640
@@ -164,10 +167,11 @@ fnPlot :: (R -> R) -> DynamicPlottable
 fnPlot f = DynamicPlottable{
                relevantRange_x = Nothing
              , relevantRange_y = yRangef
+             , usesNormalisedCanvas = False
              , isTintableMonochromic = True
              , dynamicPlot = plot }
  where yRangef (l, r) = Just . (minimum &&& maximum) $ map f [l, l + (r-l)/8 .. r]
-       plot (GraphWindowSpec{..}) = Draw.circle
+       plot (GraphWindowSpec{..}) = curve
         where δx = (rBound - lBound) / 12 -- fromIntegral xResolution
               curve = Draw.bezierCurve 
                        [ (x, f x) | x<-[lBound, lBound+δx .. rBound] ]
