@@ -102,8 +102,6 @@ plotWindow graphs = do
                     ZoomIn_y  -> moveStepRel (0, 0)   (1, 1+keyStepSize)
                     ZoomOut_y -> moveStepRel (0, 0)   (1, 1-keyStepSize)
                 _ -> return ()
-              view <- readIORef viewState
-              putStrLn $ "View: " ++ show view
            
    GLFW.windowCloseCallback $= do
            writeIORef done True
@@ -151,14 +149,14 @@ data KeyAction = MoveLeft
                | QuitProgram
 
 defaultKeyMap :: GLFW.Key -> Maybe KeyAction
-defaultKeyMap (GLFW.CharKey 'k') = Just MoveUp
-defaultKeyMap (GLFW.CharKey 'j') = Just MoveDown
-defaultKeyMap (GLFW.CharKey 'h') = Just MoveLeft
-defaultKeyMap (GLFW.CharKey 'l') = Just MoveRight
-defaultKeyMap (GLFW.CharKey 'b') = Just ZoomIn_x
-defaultKeyMap (GLFW.CharKey 'n') = Just ZoomOut_x
-defaultKeyMap (GLFW.CharKey 'i') = Just ZoomIn_y
-defaultKeyMap (GLFW.CharKey 'o') = Just ZoomOut_y
+defaultKeyMap (GLFW.CharKey 'K') = Just MoveUp
+defaultKeyMap (GLFW.CharKey 'J') = Just MoveDown
+defaultKeyMap (GLFW.CharKey 'H') = Just MoveLeft
+defaultKeyMap (GLFW.CharKey 'L') = Just MoveRight
+defaultKeyMap (GLFW.CharKey 'B') = Just ZoomIn_x
+defaultKeyMap (GLFW.CharKey 'N') = Just ZoomOut_x
+defaultKeyMap (GLFW.CharKey 'I') = Just ZoomIn_y
+defaultKeyMap (GLFW.CharKey 'O') = Just ZoomOut_y
 defaultKeyMap (GLFW.SpecialKey GLFW.ESC) = Just QuitProgram
 defaultKeyMap _ = Nothing
 
