@@ -22,7 +22,7 @@ import Data.List (intercalate, isPrefixOf, isInfixOf, find)
 import Data.Maybe
 import Data.Monoid
 import Data.Function (on)
-import qualified Data.Map as Map
+import qualified Data.Map.Lazy as Map
 
 import Data.IORef
 
@@ -79,7 +79,14 @@ plotWindow graphs = do
    
    viewTgt   <- newIORef $ autoDefaultView graphs
    viewState <- newIORef =<< readIORef viewTgt
-   lastFrameTime <- newIORef =<< getCurrentTime
+   
+   t₀ <- getCurrentTime
+   lastFrameTime <- newIORef t₀
+   
+   let minKeyImpact = 0.05
+   
+   keyImpactState <- newIORef $ Map.fromList [ (ka, (t₀, minKeyImpact)) | ka<-[MoveLeft .. ZoomOut_y] ]
+   
    done      <- newIORef False
    
    let grey = Draw.Color 0.5 0.5 0.5 0.5
@@ -109,20 +116,31 @@ plotWindow graphs = do
            GLFW.pollEvents
            ($mainLoop) . unless =<< readIORef done
    
+   let keyImpact key = do
+           t <- getCurrentTime
+           Just (_, impact) <- fmap (Map.lookup key) $ readIORef keyImpactState
+           modifyIORef keyImpactState $ Map.adjust ( \(t₁, p)
+                       -> (t, min 1 $ ( (p - minKeyImpact) * (exp . (*3) . realToFrac $ diffUTCTime t₁ t)
+                                       + minKeyImpact ) * 2 )
+                   ) key
+           return impact
+   
    GLFW.keyCallback $= \key state -> do
            let keyStepSize = 0.1
            when (state==GLFW.Press) $ do
               case defaultKeyMap key of
                 Just QuitProgram -> writeIORef done True
-                Just movement    -> modifyIORef viewTgt $ case movement of
-                    MoveUp    -> moveStepRel (0,  keyStepSize) (1, 1)
-                    MoveDown  -> moveStepRel (0, -keyStepSize) (1, 1)
-                    MoveLeft  -> moveStepRel (-keyStepSize, 0) (1, 1)
-                    MoveRight -> moveStepRel (keyStepSize , 0) (1, 1)
-                    ZoomIn_x  -> moveStepRel (0, 0)   (1+keyStepSize, 1)
-                    ZoomOut_x -> moveStepRel (0, 0)   (1-keyStepSize, 1)
-                    ZoomIn_y  -> moveStepRel (0, 0)   (1, 1+keyStepSize)
-                    ZoomOut_y -> moveStepRel (0, 0)   (1, 1-keyStepSize)
+                Just movement    -> do
+                   impact <- keyImpact movement
+                   modifyIORef viewTgt $ case movement of
+                    MoveUp    -> moveStepRel (0,  impact) (1, 1)
+                    MoveDown  -> moveStepRel (0, -impact) (1, 1)
+                    MoveLeft  -> moveStepRel (-impact, 0) (1, 1)
+                    MoveRight -> moveStepRel (impact , 0) (1, 1)
+                    ZoomIn_x  -> moveStepRel (0, 0)   (1+impact, 1)
+                    ZoomOut_x -> moveStepRel (0, 0)   (1-impact/2, 1)
+                    ZoomIn_y  -> moveStepRel (0, 0)   (1, 1+impact/2)
+                    ZoomOut_y -> moveStepRel (0, 0)   (1, 1-impact/2)
                 _ -> return ()
            
    GLFW.windowCloseCallback $= do
@@ -169,6 +187,7 @@ data KeyAction = MoveLeft
                | ZoomIn_y
                | ZoomOut_y
                | QuitProgram
+   deriving (Eq, Ord, Enum)
 
 defaultKeyMap :: GLFW.Key -> Maybe KeyAction
 defaultKeyMap (GLFW.SpecialKey GLFW.UP   ) = Just MoveUp
