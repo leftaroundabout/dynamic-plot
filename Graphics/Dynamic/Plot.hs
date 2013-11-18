@@ -22,11 +22,13 @@ import Data.List (intercalate, isPrefixOf, isInfixOf, find)
 import Data.Maybe
 import Data.Monoid
 import Data.Function (on)
+import qualified Data.Map as Map
 
 import Data.IORef
 
 import System.IO
 import System.Exit
+import Data.Time
 
 
 
@@ -75,12 +77,25 @@ plotWindow :: [DynamicPlottable] -> IO GraphWindowSpec
 plotWindow graphs = do
    initScreen
    
-   viewState <- newIORef $ autoDefaultView graphs
+   viewTgt   <- newIORef $ autoDefaultView graphs
+   viewState <- newIORef =<< readIORef viewTgt
+   lastFrameTime <- newIORef =<< getCurrentTime
    done      <- newIORef False
    
    let grey = Draw.Color 0.5 0.5 0.5 0.5
    let mainLoop = do
-           currentView@(GraphWindowSpec{..}) <- readIORef viewState
+           t <- getCurrentTime
+           δt <- fmap (diffUTCTime t) $ readIORef lastFrameTime
+           writeIORef lastFrameTime t
+   
+           currentView@(GraphWindowSpec{..}) <- do
+                   vt <- readIORef viewTgt
+                   modifyIORef viewState $ \vo 
+                        -> let a%b = let η = min 1 $ 2 * realToFrac δt in η*a + (1-η)*b
+                           in GraphWindowSpec (lBound vt % lBound vo) (rBound vt % rBound vo)
+                                              (bBound vt % bBound vo) (tBound vt % tBound vo)
+                                              (xResolution vt) (yResolution vt)
+                   readIORef viewState
            let normaliseView = (Draw.scale xUnZ yUnZ <> Draw.translate (-x₀,-y₀) %%)
                   where xUnZ = 1/w; yUnZ = 1/h
                         w = (rBound - lBound)/2; h = (tBound - bBound)/2
@@ -90,7 +105,7 @@ plotWindow graphs = do
                       else normaliseView ) . Draw.tint grey $ dynamicPlot currentView
            render . mconcat $ map renderComp graphs
            GLFW.swapBuffers
-           GLFW.sleep 0.1
+           GLFW.sleep 0.01
            GLFW.pollEvents
            ($mainLoop) . unless =<< readIORef done
    
@@ -99,7 +114,7 @@ plotWindow graphs = do
            when (state==GLFW.Press) $ do
               case defaultKeyMap key of
                 Just QuitProgram -> writeIORef done True
-                Just movement    -> modifyIORef viewState $ case movement of
+                Just movement    -> modifyIORef viewTgt $ case movement of
                     MoveUp    -> moveStepRel (0,  keyStepSize) (1, 1)
                     MoveDown  -> moveStepRel (0, -keyStepSize) (1, 1)
                     MoveLeft  -> moveStepRel (keyStepSize,  0) (1, 1)

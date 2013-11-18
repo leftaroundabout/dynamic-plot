@@ -24,6 +24,7 @@ Library
                      , OpenGL
                      , GLFW
                      , graphics-drawingcombinators 
+                     , time
   Extensions:        FlexibleInstances
                      , TypeFamilies
                      , FlexibleContexts
