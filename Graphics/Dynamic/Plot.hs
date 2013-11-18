@@ -117,8 +117,8 @@ plotWindow graphs = do
                 Just movement    -> modifyIORef viewTgt $ case movement of
                     MoveUp    -> moveStepRel (0,  keyStepSize) (1, 1)
                     MoveDown  -> moveStepRel (0, -keyStepSize) (1, 1)
-                    MoveLeft  -> moveStepRel (keyStepSize,  0) (1, 1)
-                    MoveRight -> moveStepRel (-keyStepSize, 0) (1, 1)
+                    MoveLeft  -> moveStepRel (-keyStepSize, 0) (1, 1)
+                    MoveRight -> moveStepRel (keyStepSize , 0) (1, 1)
                     ZoomIn_x  -> moveStepRel (0, 0)   (1+keyStepSize, 1)
                     ZoomOut_x -> moveStepRel (0, 0)   (1-keyStepSize, 1)
                     ZoomIn_y  -> moveStepRel (0, 0)   (1, 1+keyStepSize)
@@ -171,10 +171,14 @@ data KeyAction = MoveLeft
                | QuitProgram
 
 defaultKeyMap :: GLFW.Key -> Maybe KeyAction
+defaultKeyMap (GLFW.SpecialKey GLFW.UP   ) = Just MoveUp
+defaultKeyMap (GLFW.SpecialKey GLFW.DOWN ) = Just MoveDown
+defaultKeyMap (GLFW.SpecialKey GLFW.LEFT ) = Just MoveLeft
+defaultKeyMap (GLFW.SpecialKey GLFW.RIGHT) = Just MoveRight
 defaultKeyMap (GLFW.CharKey 'K') = Just MoveUp
 defaultKeyMap (GLFW.CharKey 'J') = Just MoveDown
-defaultKeyMap (GLFW.CharKey 'L') = Just MoveLeft
-defaultKeyMap (GLFW.CharKey 'H') = Just MoveRight
+defaultKeyMap (GLFW.CharKey 'H') = Just MoveLeft
+defaultKeyMap (GLFW.CharKey 'L') = Just MoveRight
 defaultKeyMap (GLFW.CharKey 'B') = Just ZoomIn_x
 defaultKeyMap (GLFW.CharKey 'N') = Just ZoomOut_x
 defaultKeyMap (GLFW.CharKey 'I') = Just ZoomIn_y
