@@ -5,7 +5,7 @@
 module Graphics.Dynamic.Plot where
 
 
-import Graphics.DrawingCombinators ((%%))
+import Graphics.DrawingCombinators ((%%), R, R2)
 import qualified Graphics.DrawingCombinators as Draw
 import qualified Graphics.UI.GLFW as GLFW
 import qualified Graphics.Rendering.OpenGL as OpenGL
@@ -32,12 +32,12 @@ import System.Exit
 
 
 data GraphWindowSpec = GraphWindowSpec {
-      lBound, rBound, bBound, tBound :: Double
+      lBound, rBound, bBound, tBound :: R
     , xResolution, yResolution :: Int
   }
 
-moveStepRel :: (Double, Double)  -- ^ Relative translation @(Δx/w, Δy/h)@.
-            -> (Double, Double)  -- ^ Relative zoom.
+moveStepRel :: (R, R)  -- ^ Relative translation @(Δx/w, Δy/h)@.
+            -> (R, R)  -- ^ Relative zoom.
             -> GraphWindowSpec -> GraphWindowSpec
 moveStepRel (δx,δy) (ζx,ζy) (GraphWindowSpec l r b t xRes yRes)
   = GraphWindowSpec l' r' b' t' xRes yRes
@@ -47,7 +47,7 @@ moveStepRel (δx,δy) (ζx,ζy) (GraphWindowSpec l r b t xRes yRes)
        l' = mx' - qx'    ; b' = my' - qy'
        r' = mx' + qx'    ; t' = my' + qy'
 
-type Interval = (Double, Double)
+type Interval = (R, R)
 
 unionClosure :: Interval -> Interval -> Interval
 unionClosure (l₁, u₁) (l₂, u₂) = (min l₁ l₂, max u₁ u₂)
@@ -100,8 +100,18 @@ plotWindow graphs = do
                     ZoomOut_y -> moveStepRel (0, 0)   (1, 1-keyStepSize)
                 _ -> return ()
            
+   GLFW.windowCloseCallback $= do
+           writeIORef done True
+           return True
+                 
+   
+   putStrLn "Enter Main loop..."
    
    mainLoop
+   
+   putStrLn "Done."
+   
+   GLFW.terminate
    
    readIORef viewState
 
@@ -122,7 +132,7 @@ render = Draw.clearRender . (Draw.scale (realToFrac defResY / realToFrac defResX
 
 defResX, defResY :: Integral i => i
 defResX = 640
-defResY = 320
+defResY = 480
 
 
 data KeyAction = MoveLeft
@@ -144,5 +154,20 @@ defaultKeyMap (GLFW.CharKey 'b') = Just ZoomIn_x
 defaultKeyMap (GLFW.CharKey 'n') = Just ZoomOut_x
 defaultKeyMap (GLFW.CharKey 'i') = Just ZoomIn_y
 defaultKeyMap (GLFW.CharKey 'o') = Just ZoomOut_y
+defaultKeyMap (GLFW.SpecialKey GLFW.ESC) = Just QuitProgram
 defaultKeyMap _ = Nothing
 
+
+
+
+fnPlot :: (R -> R) -> DynamicPlottable
+fnPlot f = DynamicPlottable{
+               relevantRange_x = Nothing
+             , relevantRange_y = yRangef
+             , isTintableMonochromic = True
+             , dynamicPlot = plot }
+ where yRangef (l, r) = Just . (minimum &&& maximum) $ map f [l, l + (r-l)/8 .. r]
+       plot (GraphWindowSpec{..}) = Draw.circle
+        where δx = (rBound - lBound) / 12 -- fromIntegral xResolution
+              curve = Draw.bezierCurve 
+                       [ (x, f x) | x<-[lBound, lBound+δx .. rBound] ]
