@@ -114,7 +114,7 @@ plotWindow graphs' = do
                renderComp (DynamicPlottable{..})
                   = (if usesNormalisedCanvas then id
                       else normaliseView ) . 
-                    (if isTintableMonochromic then Draw.tint grey 
+                    (if False && isTintableMonochromic then Draw.tint grey 
                       else id ) $ dynamicPlot currentView
            render . mconcat $ map renderComp graphs
            GLFW.swapBuffers
@@ -219,7 +219,7 @@ fnPlot f = DynamicPlottable{
                relevantRange_x = Nothing
              , relevantRange_y = yRangef
              , usesNormalisedCanvas = False
-             , isTintableMonochromic = False -- True
+             , isTintableMonochromic = True
              , axesNecessity = 1
              , dynamicPlot = plot }
  where yRangef (l, r) = Just . (minimum &&& maximum) $ map f [l, l + (r-l)/8 .. r]
@@ -241,20 +241,22 @@ crtDynamicAxes :: GraphWindowSpec -> DynamicAxes
 crtDynamicAxes (GraphWindowSpec {..}) = DynamicAxes yAxCls xAxCls
  where [yAxCls, xAxCls] = zipWith3 directional 
                         [lBound, bBound] [rBound, tBound] [xResolution, yResolution]
-       directional l u res = [lvl₀] -- takeWhile ((>0.1) . axisStrength) . scanl purgeDups [] $ aCls
+       directional l u res = map lvl lvlSpecs -- takeWhile ((>0.1) . axisStrength) . scanl purgeDups [] $ aCls
         where -- aCls =  
               span = u - l
               upDecaSpan = 10**(ceil $ lg span)
               pixelScale = span / (fromIntegral res * upDecaSpan)
               baseDecaval = upDecaSpan * (flor $ l / upDecaSpan)
-              lvl₀ = AxisClass [Axis v  | i<-[0 .. l₀uDSdiv*2], let v=(baseDecaval + i*l₀aSpc), v<u ] 0.3
-              l₀aSpc = upDecaSpan / l₀uDSdiv
-              l₀uDSdiv = last . takeWhile (\d -> pixelScale * estimAxislabelSize < 1/d )
-                                . join $ iterate (map(*10)) [1, 2, 5]
+              lvl (minSpc, strength) 
+                = AxisClass [Axis v  | i<-[0 .. luDSdiv*2], let v=(baseDecaval + i*laSpc), v<u ] 
+                            strength
+               where laSpc = upDecaSpan / luDSdiv
+                     luDSdiv = last . takeWhile (\d -> pixelScale * minSpc < 1/d )
+                                      . join $ iterate (map(*10)) [1, 2, 5]
               ceil = fromIntegral . ceiling
               flor = fromIntegral . floor
+       lvlSpecs = [ (80, 0.3), (15, 0.1) ]
 
-estimAxislabelSize = 80
 
 
 dynamicAxes :: DynamicPlottable
@@ -270,7 +272,8 @@ dynamicAxes = DynamicPlottable {
                  <> foldMap (renderClass $ \y -> ((lBound, y), ((rBound, y)))) xAxCls
         where (DynamicAxes yAxCls xAxCls) = crtDynamicAxes gwSpec
        renderClass crd (AxisClass axes strength)
-          = foldMap (uncurry Draw.line . crd . axisPosition) axes
+          = Draw.tint (let s = realToFrac strength in Draw.Color s s s 1)
+              $ foldMap (uncurry Draw.line . crd . axisPosition) axes
  
 
 
