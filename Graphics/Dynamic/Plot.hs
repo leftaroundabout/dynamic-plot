@@ -76,7 +76,9 @@ initScreen = do
                 
 
 plotWindow :: [DynamicPlottable] -> IO GraphWindowSpec
-plotWindow graphs = do
+plotWindow graphs' = do
+   let graphs = graphs' <> [dynamicAxes]
+   
    initScreen
    
    viewTgt   <- newIORef $ autoDefaultView graphs
@@ -111,7 +113,9 @@ plotWindow graphs = do
                         x₀ = lBound + w; y₀ = bBound + h
                renderComp (DynamicPlottable{..})
                   = (if usesNormalisedCanvas then id
-                      else normaliseView ) . Draw.tint grey $ dynamicPlot currentView
+                      else normaliseView ) . 
+                    (if isTintableMonochromic then Draw.tint grey 
+                      else id ) $ dynamicPlot currentView
            render . mconcat $ map renderComp graphs
            GLFW.swapBuffers
            GLFW.sleep 0.01
@@ -215,7 +219,7 @@ fnPlot f = DynamicPlottable{
                relevantRange_x = Nothing
              , relevantRange_y = yRangef
              , usesNormalisedCanvas = False
-             , isTintableMonochromic = True
+             , isTintableMonochromic = False -- True
              , axesNecessity = 1
              , dynamicPlot = plot }
  where yRangef (l, r) = Just . (minimum &&& maximum) $ map f [l, l + (r-l)/8 .. r]
@@ -242,12 +246,15 @@ crtDynamicAxes (GraphWindowSpec {..}) = DynamicAxes yAxCls xAxCls
               span = u - l
               upDecaSpan = 10**(ceil $ lg span)
               pixelScale = span / (fromIntegral res * upDecaSpan)
-              baseDecaval = l₀uDSdiv * (ceil $ l * l₀uDSdiv / upDecaSpan)
-              lvl₀ = AxisClass [Axis v  | i<-[0 .. l₀uDSdiv], let v=(baseDecaval + i*l₀aSpc), v<u ] 0.3
+              baseDecaval = upDecaSpan * (flor $ l / upDecaSpan)
+              lvl₀ = AxisClass [Axis v  | i<-[0 .. l₀uDSdiv*2], let v=(baseDecaval + i*l₀aSpc), v<u ] 0.3
               l₀aSpc = upDecaSpan / l₀uDSdiv
               l₀uDSdiv = last . takeWhile (\d -> pixelScale * estimAxislabelSize < 1/d )
                                 . join $ iterate (map(*10)) [1, 2, 5]
               ceil = fromIntegral . ceiling
+              flor = fromIntegral . floor
+
+estimAxislabelSize = 80
 
 
 dynamicAxes :: DynamicPlottable
@@ -265,7 +272,6 @@ dynamicAxes = DynamicPlottable {
        renderClass crd (AxisClass axes strength)
           = foldMap (uncurry Draw.line . crd . axisPosition) axes
  
-estimAxislabelSize = 80
 
 
 lg :: Floating a => a -> a
