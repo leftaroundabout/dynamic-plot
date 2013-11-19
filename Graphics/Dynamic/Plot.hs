@@ -171,13 +171,17 @@ plotWindow graphs' = do
 
 autoDefaultView :: [DynamicPlottable] -> GraphWindowSpec
 autoDefaultView graphs = finalise . flip (foldr yRanged) graphs . (, Nothing) 
-                         . fromMaybe (-1, 1) $ foldr xRanged Nothing graphs
+                         . fromMaybe (-1, 2) $ foldr xRanged Nothing graphs
  where xRanged (DynamicPlottable {..}) Nothing = relevantRange_x
        xRanged (DynamicPlottable {..}) (Just oldrng) = fmap (unionClosure oldrng) relevantRange_x
        yRanged (DynamicPlottable {..}) (xrng, Nothing) = (xrng, relevantRange_y xrng)
        yRanged (DynamicPlottable {..}) (xrng, Just oldrng) = (xrng, fmap (unionClosure oldrng) $ relevantRange_y xrng)
-       finalise ((l,r), Nothing) = GraphWindowSpec l r (-1) 1 defResX defResY
-       finalise ((l,r), Just (b,t)) = GraphWindowSpec l r b t defResX defResY
+       finalise ((l,r), Nothing) = addMargin $ GraphWindowSpec l r (-1) 1 defResX defResY
+       finalise ((l,r), Just (b,t)) = addMargin $ GraphWindowSpec l r b t defResX defResY
+       addMargin (GraphWindowSpec{..}) = GraphWindowSpec l' r' b' t' xResolution yResolution
+        where w = rBound - lBound; h = tBound - bBound
+              l' = lBound - w/5  ; b' = bBound - h/6
+              r' = rBound + w/5  ; t' = tBound + h/6
 
 
 render :: Monoid a => Draw.Image a -> IO()
