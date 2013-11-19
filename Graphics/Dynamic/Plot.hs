@@ -268,13 +268,20 @@ dynamicAxes = DynamicPlottable {
              , axesNecessity = -1
              , dynamicPlot = plot }
  where plot gwSpec@(GraphWindowSpec{..}) 
-                = foldMap (renderClass $ \x -> ((x, bBound), ((x, tBound)))) yAxCls
-                 <> foldMap (renderClass $ \y -> ((lBound, y), ((rBound, y)))) xAxCls
+                =    Draw.line (lBound, 0) (rBound, 0)  `provided`(bBound < 0 && tBound > 0)
+                  <> Draw.line (0, bBound) (0, tBound)  `provided`(lBound < 0 && rBound > 0)
+                  <> foldMap (renderClass $ \x -> ((x, bBound), ((x, tBound)))) yAxCls
+                  <> foldMap (renderClass $ \y -> ((lBound, y), ((rBound, y)))) xAxCls
         where (DynamicAxes yAxCls xAxCls) = crtDynamicAxes gwSpec
        renderClass crd (AxisClass axes strength)
           = Draw.tint (let s = realToFrac strength in Draw.Color s s s 1)
               $ foldMap (uncurry Draw.line . crd . axisPosition) axes
  
+
+infixl 7 `provided`
+provided :: Monoid m => m -> Bool -> m
+provided m True = m
+provided m False = mempty
 
 
 lg :: Floating a => a -> a
