@@ -149,6 +149,9 @@ plotWindow graphs' = do
                     ZoomOut_y -> moveStepRel (0, 0)   (1, 1-impact/2)
                 _ -> return ()
            
+   GLFW.windowSizeCallback $= \(OpenGL.Size xRes yRes) -> do
+           modifyIORef viewTgt $ \view -> view{ xResolution = fromIntegral xRes
+                                              , yResolution = fromIntegral yRes }
    GLFW.windowCloseCallback $= do
            writeIORef done True
            return True
@@ -255,7 +258,7 @@ crtDynamicAxes (GraphWindowSpec {..}) = DynamicAxes yAxCls xAxCls
                                       . join $ iterate (map(*10)) [1, 2, 5]
               ceil = fromIntegral . ceiling
               flor = fromIntegral . floor
-       lvlSpecs = [ (80, 0.3), (15, 0.1) ]
+       lvlSpecs = [ (80, 0.3), (18, 0.1) ]
 
 
 
