@@ -61,6 +61,7 @@ data DynamicPlottable = DynamicPlottable {
       , relevantRange_y :: Interval -> Maybe Interval
       , usesNormalisedCanvas :: Bool
       , isTintableMonochromic :: Bool
+      , axesNecessity :: Double
       , dynamicPlot :: GraphWindowSpec -> Plot
   }
 
@@ -214,6 +215,7 @@ fnPlot f = DynamicPlottable{
              , relevantRange_y = yRangef
              , usesNormalisedCanvas = False
              , isTintableMonochromic = True
+             , axesNecessity = 1
              , dynamicPlot = plot }
  where yRangef (l, r) = Just . (minimum &&& maximum) $ map f [l, l + (r-l)/8 .. r]
        plot (GraphWindowSpec{..}) = curve
@@ -221,3 +223,35 @@ fnPlot f = DynamicPlottable{
               curve = trace [ (x, f x) | x<-[lBound, lBound+δx .. rBound] ]
               trace (p:q:ps) = Draw.line p q <> trace (q:ps)
               trace _ = mempty
+
+
+
+
+data AxesStyle = DynamicAxesStyle
+data DynamicAxes = DynamicAxes { xAxisClasses, yAxisClasses :: [AxisClass] }
+data AxisClass = AxisClass { visibleAxes :: [Axis], axisStrength :: Double }
+data Axis = Axis { position :: R } --, decPrecision :: Int }
+
+crtDynamicAxes :: GraphWindowSpec -> DynamicAxes
+crtDynamicAxes (GraphWindowSpec {..}) = DynamicAxes xAxCls yAxCls
+ where [xAxCls, yAxCls] = zipWith3 directional 
+                        [lBound, bBound] [rBound, tBound] [xResolution, yResolution]
+       directional l u res = [lvl₀] -- takeWhile ((>0.1) . axisStrength) . scanl purgeDups [] $ aCls
+        where -- aCls =  
+              span = u - l
+              upDecaSpan = 10**(ceil $ lg span)
+              pixelScale = span / (fromIntegral res * upDecaSpan)
+              baseDecaval = l₀uDSdiv * (ceil $ l * l₀uDSdiv / upDecaSpan)
+              lvl₀ = AxisClass [Axis v  | i<-[0 .. l₀uDSdiv], let v=(baseDecaval + i*l₀aSpc), v<u ] 0.3
+              l₀aSpc = upDecaSpan / l₀uDSdiv
+              l₀uDSdiv = last . takeWhile (\d -> pixelScale * estimAxislabelSize < 1/d )
+                                . join $ iterate (map(*10)) [1, 2, 5]
+              ceil = fromIntegral . ceiling
+ 
+estimAxislabelSize = 80
+
+
+lg :: Floating a => a -> a
+lg x = log x / log 10
+
+
