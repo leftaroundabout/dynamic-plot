@@ -21,6 +21,7 @@ import Prelude hiding((.), id)
 import Data.List (intercalate, isPrefixOf, isInfixOf, find)
 import Data.Maybe
 import Data.Monoid
+import Data.Foldable (foldMap)
 import Data.Function (on)
 import qualified Data.Map.Lazy as Map
 
@@ -228,13 +229,13 @@ fnPlot f = DynamicPlottable{
 
 
 data AxesStyle = DynamicAxesStyle
-data DynamicAxes = DynamicAxes { xAxisClasses, yAxisClasses :: [AxisClass] }
+data DynamicAxes = DynamicAxes { yAxisClasses, xAxisClasses :: [AxisClass] }
 data AxisClass = AxisClass { visibleAxes :: [Axis], axisStrength :: Double }
-data Axis = Axis { position :: R } --, decPrecision :: Int }
+data Axis = Axis { axisPosition :: R } --, decPrecision :: Int }
 
 crtDynamicAxes :: GraphWindowSpec -> DynamicAxes
-crtDynamicAxes (GraphWindowSpec {..}) = DynamicAxes xAxCls yAxCls
- where [xAxCls, yAxCls] = zipWith3 directional 
+crtDynamicAxes (GraphWindowSpec {..}) = DynamicAxes yAxCls xAxCls
+ where [yAxCls, xAxCls] = zipWith3 directional 
                         [lBound, bBound] [rBound, tBound] [xResolution, yResolution]
        directional l u res = [lvl₀] -- takeWhile ((>0.1) . axisStrength) . scanl purgeDups [] $ aCls
         where -- aCls =  
@@ -247,6 +248,22 @@ crtDynamicAxes (GraphWindowSpec {..}) = DynamicAxes xAxCls yAxCls
               l₀uDSdiv = last . takeWhile (\d -> pixelScale * estimAxislabelSize < 1/d )
                                 . join $ iterate (map(*10)) [1, 2, 5]
               ceil = fromIntegral . ceiling
+
+
+dynamicAxes :: DynamicPlottable
+dynamicAxes = DynamicPlottable { 
+               relevantRange_x = Nothing
+             , relevantRange_y = const Nothing
+             , usesNormalisedCanvas = False
+             , isTintableMonochromic = True
+             , axesNecessity = -1
+             , dynamicPlot = plot }
+ where plot gwSpec@(GraphWindowSpec{..}) 
+                = foldMap (renderClass $ \x -> ((x, bBound), ((x, tBound)))) yAxCls
+                 <> foldMap (renderClass $ \y -> ((lBound, y), ((rBound, y)))) xAxCls
+        where (DynamicAxes yAxCls xAxCls) = crtDynamicAxes gwSpec
+       renderClass crd (AxisClass axes strength)
+          = foldMap (uncurry Draw.line . crd . axisPosition) axes
  
 estimAxislabelSize = 80
 
