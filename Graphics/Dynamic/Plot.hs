@@ -149,7 +149,8 @@ plotWindow graphs' = do
                     ZoomOut_y -> moveStepRel (0, 0)   (1, 1-impact/2)
                 _ -> return ()
            
-   GLFW.windowSizeCallback $= \(OpenGL.Size xRes yRes) -> do
+   GLFW.windowSizeCallback $= \s@(OpenGL.Size xRes yRes) -> do
+           OpenGL.viewport $= (OpenGL.Position 0 0, s)
            modifyIORef viewTgt $ \view -> view{ xResolution = fromIntegral xRes
                                               , yResolution = fromIntegral yRes }
    GLFW.windowCloseCallback $= do
