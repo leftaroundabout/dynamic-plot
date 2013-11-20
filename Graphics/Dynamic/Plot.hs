@@ -44,11 +44,12 @@ moveStepRel :: (R, R)  -- ^ Relative translation @(Δx/w, Δy/h)@.
             -> GraphWindowSpec -> GraphWindowSpec
 moveStepRel (δx,δy) (ζx,ζy) (GraphWindowSpec l r b t xRes yRes)
   = GraphWindowSpec l' r' b' t' xRes yRes
- where qx = (r-l)/2      ; qy = (t-b)/2
-       mx'= l + qx*(1+δx); my'= b + qy*(1+δy) 
-       qx'= qx / ζx      ; qy'= qy / ζy
-       l' = mx' - qx'    ; b' = my' - qy'
-       r' = mx' + qx'    ; t' = my' + qy'
+ where qx = (r-l)/2                  ; qy = (t-b)/2
+       mx'= l + qx*(1+δx)            ; my'= b + qy*(1+δy) 
+       qx'= zoomSafeGuard mx' $ qx/ζx; qy'= zoomSafeGuard my' $ qy/ζy
+       l' = mx' - qx'                ; b' = my' - qy'
+       r' = mx' + qx'                ; t' = my' + qy'
+       zoomSafeGuard m = max (1e-250 + abs m*1e-6) . min 1e+250
 
 type Interval = (R, R)
 
