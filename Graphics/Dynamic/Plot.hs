@@ -73,6 +73,7 @@ initScreen = do
     True <- GLFW.initialize
     True <- GLFW.openWindow (OpenGL.Size defResX defResY) [] GLFW.Window
     GLFW.windowTitle $= "Plot"
+    GLFW.swapInterval $= 1
     return ()
                 
 
@@ -95,19 +96,8 @@ plotWindow graphs' = do
    done      <- newIORef False
    
    let grey = Draw.Color 0.5 0.5 0.5 0.5
-   let mainLoop = do
-           t <- getCurrentTime
-           δt <- fmap (diffUTCTime t) $ readIORef lastFrameTime
-           writeIORef lastFrameTime t
-   
-           currentView@(GraphWindowSpec{..}) <- do
-                   vt <- readIORef viewTgt
-                   modifyIORef viewState $ \vo 
-                        -> let a%b = let η = min 1 $ 2 * realToFrac δt in η*a + (1-η)*b
-                           in GraphWindowSpec (lBound vt % lBound vo) (rBound vt % rBound vo)
-                                              (bBound vt % bBound vo) (tBound vt % tBound vo)
-                                              (xResolution vt) (yResolution vt)
-                   readIORef viewState
+       refreshScreen = do
+           currentView@(GraphWindowSpec{..}) <- readIORef viewState
            let normaliseView = (Draw.scale xUnZ yUnZ <> Draw.translate (-x₀,-y₀) %%)
                   where xUnZ = 1/w; yUnZ = 1/h
                         w = (rBound - lBound)/2; h = (tBound - bBound)/2
@@ -119,6 +109,20 @@ plotWindow graphs' = do
                       else id ) $ dynamicPlot currentView
            render . mconcat $ map renderComp graphs
            GLFW.swapBuffers
+           
+   let mainLoop = do
+           t <- getCurrentTime
+           δt <- fmap (diffUTCTime t) $ readIORef lastFrameTime
+           writeIORef lastFrameTime t
+   
+           do  -- Update / evolve view state
+                   vt <- readIORef viewTgt
+                   modifyIORef viewState $ \vo 
+                        -> let a%b = let η = min 1 $ 2 * realToFrac δt in η*a + (1-η)*b
+                           in GraphWindowSpec (lBound vt % lBound vo) (rBound vt % rBound vo)
+                                              (bBound vt % bBound vo) (tBound vt % tBound vo)
+                                              (xResolution vt) (yResolution vt)
+           refreshScreen
            GLFW.sleep 0.01
            GLFW.pollEvents
            ($mainLoop) . unless =<< readIORef done
@@ -154,6 +158,8 @@ plotWindow graphs' = do
            OpenGL.viewport $= (OpenGL.Position 0 0, s)
            modifyIORef viewTgt $ \view -> view{ xResolution = fromIntegral xRes
                                               , yResolution = fromIntegral yRes }
+           -- refreshScreen
+           
    GLFW.windowCloseCallback $= do
            writeIORef done True
            return True
