@@ -56,7 +56,10 @@ type Interval = (R, R)
 unionClosure :: Interval -> Interval -> Interval
 unionClosure (l₁, u₁) (l₂, u₂) = (min l₁ l₂, max u₁ u₂)
 
-type Plot = Draw.Image Any
+data Plot = Plot {
+       getPlot :: Draw.Image Any
+     , plotAnnotations :: [Annotation]
+  }
 
 data DynamicPlottable = DynamicPlottable { 
         relevantRange_x :: Maybe Interval
@@ -106,7 +109,8 @@ plotWindow graphs' = do
                   = (if usesNormalisedCanvas then id
                       else normaliseView ) . 
                     (if False && isTintableMonochromic then Draw.tint grey 
-                      else id ) $ dynamicPlot currentView
+                      else id ) $ completePlot 
+                 where completePlot = getPlot $ dynamicPlot currentView
            render . mconcat $ map renderComp graphs
            GLFW.swapBuffers
            
@@ -238,7 +242,7 @@ fnPlot f = DynamicPlottable{
              , axesNecessity = 1
              , dynamicPlot = plot }
  where yRangef (l, r) = Just . (minimum &&& maximum) $ map f [l, l + (r-l)/8 .. r]
-       plot (GraphWindowSpec{..}) = curve
+       plot (GraphWindowSpec{..}) = Plot curve []
         where δx = (rBound - lBound) * 2 / fromIntegral xResolution
               curve = trace [ (x, f x) | x<-[lBound, lBound+δx .. rBound] ]
               trace (p:q:ps) = Draw.line p q <> trace (q:ps)
@@ -281,7 +285,7 @@ dynamicAxes = DynamicPlottable {
              , usesNormalisedCanvas = False
              , isTintableMonochromic = True
              , axesNecessity = -1
-             , dynamicPlot = plot }
+             , dynamicPlot = (`Plot` []) . plot }
  where plot gwSpec@(GraphWindowSpec{..}) 
                 =    Draw.line (lBound, 0) (rBound, 0)  `provided`(bBound < 0 && tBound > 0)
                   <> Draw.line (0, bBound) (0, tBound)  `provided`(lBound < 0 && rBound > 0)
