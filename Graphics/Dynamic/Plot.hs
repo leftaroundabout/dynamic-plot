@@ -24,6 +24,7 @@ import Data.Monoid
 import Data.Foldable (foldMap)
 import Data.Function (on)
 import qualified Data.Map.Lazy as Map
+import Data.Char (isDigit)
 
 import Data.IORef
 
@@ -310,7 +311,7 @@ dynamicAxes = DynamicPlottable {
                           let prepAnnotation (Axis{axisPosition=z}) = do
                                                guard(z/=0) 
                                                [Annotation (TextAnnotation txt align) place False]
-                               where txt = PlainText $ show z
+                               where txt = PlainText . fst . prettyFloatShow $ realToFrac z
                                      place = ExactPlace $ dirq z
                                      align = TextAlignment hAlign vAlign
                           prepAnnotation =<< (visibleAxes $ head acl)
@@ -319,6 +320,31 @@ dynamicAxes = DynamicPlottable {
               $ foldMap (uncurry Draw.line . crd . axisPosition) axes
  
 
+prettyFloatShow :: Double -> (String, Bool)
+prettyFloatShow x
+    | (mantissa, 'e':expon) <- break(=='e') s
+    , Just m <-maybeRead $ strRound 5 mantissa, Just (expn::Int)<-maybeRead expon
+    , (mR, True) <- prettyFloatShow m
+                = (mR ++ " * 10^"++show expn, False)
+    | (intgPart, fractPt) <- break(=='.') s
+    , length fractPt > 5
+          = (intgPart ++ strRound 4 fractPt, False)
+    | otherwise = (s, True)
+ where s = remTrailing0 $ show x
+       remTrailing0 = reverse . r0 . reverse
+        where r0 ('0':'.':n) = n
+              r0 n = n
+       strRound n es = maybe safe (reverse . (`bckCarry` reverse safe)) o
+        where (safe, o) = second (find isDigit) $ splitAt n es
+              bckCarry dg ('.':rr) = '.' : bckCarry dg rr
+              bckCarry dg sff
+               | dg<'4' = sff
+              bckCarry _ ('9':rr) = '0' : bckCarry '6' rr
+              bckCarry _ (q:rr) = succ q : rr
+              bckCarry _ [] = error $ "Weird Float Show case for " ++ show x
+
+maybeRead :: Read a => String -> Maybe a
+maybeRead = fmap fst . listToMaybe . reads
 
 data Annotation = Annotation {
          getAnnotation :: AnnotationObj 
