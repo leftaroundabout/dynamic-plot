@@ -18,7 +18,7 @@ import Control.Arrow
 
 import Prelude hiding((.), id)
 
-import Data.List (intercalate, isPrefixOf, isInfixOf, find)
+import Data.List (intercalate, isPrefixOf, isInfixOf, find, zip4)
 import Data.Maybe
 import Data.Monoid
 import Data.Foldable (foldMap)
@@ -303,13 +303,17 @@ dynamicAxes = DynamicPlottable {
                    <> Draw.line (0, bBound) (0, tBound)  `provided`(lBound < 0 && rBound > 0)
                    <> foldMap (renderClass $ \x -> ((x, bBound), ((x, tBound)))) yAxCls
                    <> foldMap (renderClass $ \y -> ((lBound, y), ((rBound, y)))) xAxCls
-              labels = do (dirq, acl) <- zip [\x->(x,0), \y->(0,y)] [yAxCls, xAxCls]
-                          let prepAnnotation (Axis{axisPosition=z}) 
-                                              = Annotation (TextAnnotation txt align) place False
+              labels = do (dirq, hAlign, vAlign, acl) <- zip4 [\x->(x,0), \y->(0,y) ] 
+                                                              [AlignMid , AlignTop  ]
+                                                              [AlignTop , AlignMid  ]
+                                                              [yAxCls   , xAxCls    ]
+                          let prepAnnotation (Axis{axisPosition=z}) = do
+                                               guard(z/=0) 
+                                               [Annotation (TextAnnotation txt align) place False]
                                where txt = PlainText $ show z
                                      place = ExactPlace $ dirq z
-                                     align = TextAlignment AlignMid AlignMid
-                          map prepAnnotation . visibleAxes $ head acl
+                                     align = TextAlignment hAlign vAlign
+                          prepAnnotation =<< (visibleAxes $ head acl)
        renderClass crd (AxisClass axes strength)
           = Draw.tint (let s = realToFrac strength in Draw.Color s s s 1)
               $ foldMap (uncurry Draw.line . crd . axisPosition) axes
