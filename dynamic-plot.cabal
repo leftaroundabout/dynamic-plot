@@ -25,6 +25,7 @@ Library
                      , GLFW
                      , graphics-drawingcombinators 
                      , time
+                     , process
   Extensions:        FlexibleInstances
                      , TypeFamilies
                      , FlexibleContexts

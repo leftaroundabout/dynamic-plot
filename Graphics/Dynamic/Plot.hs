@@ -29,6 +29,7 @@ import Data.IORef
 
 import System.IO
 import System.Exit
+import System.Process
 import Data.Time
 
 
@@ -86,6 +87,8 @@ plotWindow graphs' = do
    
    initScreen
    
+   defaultFont <- loadFont
+   
    viewTgt   <- newIORef $ autoDefaultView graphs
    viewState <- newIORef =<< readIORef viewTgt
    
@@ -103,14 +106,19 @@ plotWindow graphs' = do
            currentView@(GraphWindowSpec{..}) <- readIORef viewState
            let normaliseView = (Draw.scale xUnZ yUnZ <> Draw.translate (-x₀,-y₀) %%)
                   where xUnZ = 1/w; yUnZ = 1/h
-                        w = (rBound - lBound)/2; h = (tBound - bBound)/2
-                        x₀ = lBound + w; y₀ = bBound + h
+               w = (rBound - lBound)/2; h = (tBound - bBound)/2
+               x₀ = lBound + w; y₀ = bBound + h
                renderComp (DynamicPlottable{..})
                   = (if usesNormalisedCanvas then id
                       else normaliseView ) . 
                     (if False && isTintableMonochromic then Draw.tint grey 
                       else id ) $ completePlot 
-                 where completePlot = getPlot $ dynamicPlot currentView
+                 where completePlot = foldMap (prerenderAnnotation antTK) plotAnnotations <> getPlot
+                       (Plot{..}) = dynamicPlot currentView
+                       antTK = DiagramTK $ TextTK defaultFont txtSize 0.2 0.2
+                       txtSize | usesNormalisedCanvas  = fontPts / fromIntegral yResolution
+                               | otherwise             = h * fontPts / fromIntegral yResolution
+                       fontPts = 20
            render . mconcat $ map renderComp graphs
            GLFW.swapBuffers
            
@@ -347,6 +355,26 @@ prerenderAnnotation (DiagramTK{ textTools = TextTK{..} }) (Annotation{..})
                                      ) %% ) ) [0..] lineWidths rnTextLines
               in Draw.translate p <> Draw.scale ζ ζ %% fullText
         
+
+
+loadFont :: IO Draw.Font
+loadFont = do
+   let rdTTFfname = takeWhile(/='"') . tail . dropWhile(/='"')
+   fontsList <- fmap (map rdTTFfname . lines)
+        $ readProcess "bash" ["-c", "fc-list -v :lang=en | grep ttf"] ""
+   let (fontChoice:_) = [ font
+                        | preference <- [ "mplus-2c-medium.ttf"
+                                        , "LiberationSans-Regular.ttf"
+                                        , "FreeSans.ttf"
+                                        , "DejaVuSans.ttf"
+                                        , "DroidSans.ttf" 
+                                        , "elvetica"
+                                        , "rial"
+                                        , "" ]
+                        , font <- fontsList
+                        , preference`isInfixOf`font            ]
+   Draw.openFont fontChoice
+
 
 
 infixl 7 `provided`
