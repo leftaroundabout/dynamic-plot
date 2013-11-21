@@ -293,6 +293,51 @@ dynamicAxes = DynamicPlottable {
               $ foldMap (uncurry Draw.line . crd . axisPosition) axes
  
 
+
+data Annotation = Annotation {
+         getAnnotation :: AnnotationObj 
+       , placement     :: AnnotationPlace
+       , isOptional    :: Bool
+   }
+data AnnotationObj = TextAnnotation TextObj TextAlignment
+data AnnotationPlace = ExactPlace R2
+
+data TextObj = PlainText String
+data TextAlignment = TextAlignment { hAlign, vAlign :: Alignment } -- , blockSpread :: Bool }
+data Alignment = AlignBottom | AlignMid | AlignTop
+
+data DiagramTK = DiagramTK { textTools :: TextTK }
+data TextTK = TextTK { defaultFont :: Draw.Font
+                     , txtSize, padding, extraTopPad :: R }
+
+prerenderAnnotation :: DiagramTK -> Annotation -> Draw.Image Any
+prerenderAnnotation (DiagramTK{ textTools = TextTK{..} }) (Annotation{..})
+       | TextAnnotation (PlainText str) (TextAlignment{..}) <- getAnnotation
+       , ExactPlace p <- placement
+            = let (rnTextLines, lineWidths) 
+                       = unzip . map (Draw.text defaultFont &&& Draw.textWidth defaultFont) 
+                            $ lines str
+                  nLines = length lineWidths
+                  lineHeight = 1 + extraTopPad + 2*padding
+                  ζ = txtSize / lineHeight
+                  width' = maximum $ 0 : lineWidths
+                  width  = width + 2*padding
+                  height = fromIntegral nLines * lineHeight
+                  y₀ = case vAlign of
+                              AlignBottom -> height
+                              AlignMid    -> height/2
+                              AlignTop    -> 0
+                  fullText = mconcat $ zipWith3 ( \n w -> 
+                                 let y = n*lineHeight
+                                 in (Draw.translate (case hAlign of 
+                                      AlignBottom -> (0             , y₀-y)
+                                      AlignMid    -> ((width' - w)/2, y₀-y)
+                                      AlignTop    -> (width' - w    , y₀-y)
+                                     ) %% ) ) [0..] lineWidths rnTextLines
+              in Draw.translate p <> Draw.scale ζ ζ %% fullText
+        
+
+
 infixl 7 `provided`
 provided :: Monoid m => m -> Bool -> m
 provided m True = m
