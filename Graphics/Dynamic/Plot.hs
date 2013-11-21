@@ -121,7 +121,7 @@ plotWindow graphs' = do
                        aspect  | usesNormalisedCanvas  = 1
                                | otherwise             = w * fromIntegral yResolution
                                                          / (h * fromIntegral xResolution)
-                       fontPts = 20
+                       fontPts = 12
            render . mconcat $ map renderComp graphs
            GLFW.swapBuffers
            
@@ -342,20 +342,20 @@ prerenderAnnotation (DiagramTK{ textTools = TextTK{..} }) (Annotation{..})
                   nLines = length lineWidths
                   lineHeight = 1 + extraTopPad + 2*padding
                   ζx = ζy * xAspect
-                  ζy = txtSize / lineHeight
-                  width' = maximum $ 0 : lineWidths
-                  width  = width + 2*padding
+                  ζy = txtSize -- / lineHeight
+                  -- width' = maximum $ 0 : lineWidths
+                  -- width  = width + 2*padding
                   height = fromIntegral nLines * lineHeight
                   y₀ = case vAlign of
-                              AlignBottom -> height
-                              AlignMid    -> height/2
-                              AlignTop    -> 0
+                              AlignBottom -> padding + height - lineHeight
+                              AlignMid    -> height/2 - lineHeight
+                              AlignTop    -> - (lineHeight + padding)
                   fullText = mconcat $ zipWith3 ( \n w -> 
                                  let y = n*lineHeight
                                  in (Draw.translate (case hAlign of 
-                                      AlignBottom -> (0             , y₀-y)
-                                      AlignMid    -> ((width' - w)/2, y₀-y)
-                                      AlignTop    -> (width' - w    , y₀-y)
+                                      AlignBottom -> (padding       , y₀-y)
+                                      AlignMid    -> (- w/2         , y₀-y)
+                                      AlignTop    -> (-(w + padding), y₀-y)
                                      ) %% ) ) [0..] lineWidths rnTextLines
               in Draw.translate p <> Draw.scale ζx ζy %% fullText
         
