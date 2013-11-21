@@ -285,13 +285,20 @@ dynamicAxes = DynamicPlottable {
              , usesNormalisedCanvas = False
              , isTintableMonochromic = True
              , axesNecessity = -1
-             , dynamicPlot = (`Plot` []) . plot }
- where plot gwSpec@(GraphWindowSpec{..}) 
-                =    Draw.line (lBound, 0) (rBound, 0)  `provided`(bBound < 0 && tBound > 0)
-                  <> Draw.line (0, bBound) (0, tBound)  `provided`(lBound < 0 && rBound > 0)
-                  <> foldMap (renderClass $ \x -> ((x, bBound), ((x, tBound)))) yAxCls
-                  <> foldMap (renderClass $ \y -> ((lBound, y), ((rBound, y)))) xAxCls
+             , dynamicPlot = plot }
+ where plot gwSpec@(GraphWindowSpec{..}) = Plot lines labels
         where (DynamicAxes yAxCls xAxCls) = crtDynamicAxes gwSpec
+              lines = Draw.line (lBound, 0) (rBound, 0)  `provided`(bBound < 0 && tBound > 0)
+                   <> Draw.line (0, bBound) (0, tBound)  `provided`(lBound < 0 && rBound > 0)
+                   <> foldMap (renderClass $ \x -> ((x, bBound), ((x, tBound)))) yAxCls
+                   <> foldMap (renderClass $ \y -> ((lBound, y), ((rBound, y)))) xAxCls
+              labels = do (dirq, acl) <- zip [\x->(x,0), \y->(0,y)] [yAxCls, xAxCls]
+                          let prepAnnotation (Axis{axisPosition=z}) 
+                                              = Annotation (TextAnnotation txt align) place False
+                               where txt = PlainText $ show z
+                                     place = ExactPlace $ dirq z
+                                     align = TextAlignment AlignMid AlignMid
+                          map prepAnnotation . visibleAxes $ head acl
        renderClass crd (AxisClass axes strength)
           = Draw.tint (let s = realToFrac strength in Draw.Color s s s 1)
               $ foldMap (uncurry Draw.line . crd . axisPosition) axes
