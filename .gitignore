@@ -9,3 +9,5 @@ cabal-dev
 bin/
 *.kate-swp
 *.fuse_hidden*
+*.#*
+*#*#

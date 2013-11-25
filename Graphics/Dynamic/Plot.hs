@@ -25,6 +25,8 @@ import Data.Foldable (foldMap)
 import Data.Function (on)
 import qualified Data.Map.Lazy as Map
 import Data.Char (isDigit)
+  
+import Text.Printf
 
 import Data.IORef
 
@@ -311,7 +313,7 @@ dynamicAxes = DynamicPlottable {
                           let prepAnnotation (Axis{axisPosition=z}) = do
                                                guard(z/=0) 
                                                [Annotation (TextAnnotation txt align) place False]
-                               where txt = PlainText . fst . prettyFloatShow $ realToFrac z
+                               where txt = PlainText . fst . prettyFloatShow 3 $ realToFrac z
                                      place = ExactPlace $ dirq z
                                      align = TextAlignment hAlign vAlign
                           prepAnnotation =<< (visibleAxes $ head acl)
@@ -320,28 +322,33 @@ dynamicAxes = DynamicPlottable {
               $ foldMap (uncurry Draw.line . crd . axisPosition) axes
  
 
-prettyFloatShow :: Double -> (String, Bool)
-prettyFloatShow x
-    | (mantissa, 'e':expon) <- break(=='e') s
-    , Just m <-maybeRead $ strRound 5 mantissa, Just (expn::Int)<-maybeRead expon
-    , (mR, True) <- prettyFloatShow m
-                = (mR ++ " * 10^"++show expn, False)
-    | (intgPart, fractPt) <- break(=='.') s
-    , length fractPt > 5
-          = (intgPart ++ strRound 4 fractPt, False)
-    | otherwise = (s, True)
- where s = remTrailing0 $ show x
-       remTrailing0 = reverse . r0 . reverse
-        where r0 ('0':'.':n) = n
-              r0 n = n
-       strRound n es = maybe safe (reverse . (`bckCarry` reverse safe)) o
-        where (safe, o) = second (find isDigit) $ splitAt n es
-              bckCarry dg ('.':rr) = '.' : bckCarry dg rr
-              bckCarry dg sff
-               | dg<'4' = sff
-              bckCarry _ ('9':rr) = '0' : bckCarry '6' rr
-              bckCarry _ (q:rr) = succ q : rr
-              bckCarry _ [] = error $ "Weird Float Show case for " ++ show x
+prettyFloatShow :: Int -> Double -> (String, Bool)
+prettyFloatShow _ 0 = ("0", True)
+prettyFloatShow preci x
+    | x < 0, (q, exactn) <- prettyFloatShow preci (-x)
+              = ('-':q, exactn)
+    | x < 10^^(preci+2), Just x_i <- maybeIntCast x  = (show x_i, True)
+    | ((ngExp, x'_i):_) <- catMaybes $ map (\(e, x') -> fmap (e,) $ maybeIntCast x') multiples
+          = (if abs ngExp > 3 
+              then show x'_i ++ " * 10^" ++ show (-ngExp)
+              else printf ("%."++show preci++"f") $ (fromInteger x'_i * 10 ^^ (-ngExp) :: Double)
+            , True )
+    | preci < 1 = (show $ 10 ^ fromIntegral e₀, False)
+    | x < 1000, x > 0.1, m <- 10^^preci, x' <- fromIntegral(round $ x*m) / m
+          = (printf ("%."++show (preci-e₀)++"g") x', False)
+    | (mantissa, _) <- prettyFloatShow (max 1 $ preci-1) $ x / 10^^e₀
+          = (mantissa ++ " * 10 ^ " ++ show e₀, False)
+ where a ≈ b = abs (a - b) < ε
+        where ε = minimum $ map ((* 1e-10) . abs) [a, b]
+       maybeIntCast a | b<-round a, a ≈ fromIntegral b  = Just b
+                      | otherwise                       = Nothing
+       multiples = [ (e, x * 10^^e) | e <- [-e₀ .. preci - e₀] ]
+       e₀ = floor $ log x / log 10
+       rmLead0 ('0':s) = s
+       rmLead0 s = s
+
+
+
 
 maybeRead :: Read a => String -> Maybe a
 maybeRead = fmap fst . listToMaybe . reads
