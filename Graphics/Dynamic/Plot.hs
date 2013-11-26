@@ -282,7 +282,7 @@ crtDynamicAxes (GraphWindowSpec {..}) = DynamicAxes yAxCls xAxCls
               baseDecaval = upDecaSpan * (flor $ l / upDecaSpan)
               lvl (minSpc, strength) 
                 = AxisClass [Axis v  | i<-[0 .. luDSdiv*2], let v=(baseDecaval + i*laSpc), v<u ] 
-                            strength (round $ lg laSpc - 1)
+                            strength (floor $ lg laSpc)
                where laSpc = upDecaSpan / luDSdiv
                      luDSdiv = last . takeWhile (\d -> pixelScale * minSpc < 1/d )
                                       . join $ iterate (map(*10)) [1, 2, 5]
@@ -328,9 +328,12 @@ prettyFloatShow _ 0 = "0"
 prettyFloatShow preci x
     | preci >= 0, preci < 4  = show $ round x
     | preci < 0, preci > -2  = printf "%.1f" x
-    | otherwise   = printf "%.1f*10^%i" 
-                            (x/10^^(preci+1)) 
-                                    (preci+1)
+    | otherwise   = case ceiling (0.01 + lg (abs x/10^^(preci+1))) + preci of
+                        0    -> printf "%.1f" x
+                        expn | expn>preci -> printf ("%."++show(expn-preci)++"f*10^%i")
+                                                      (x/10^^expn)                 expn
+                             | otherwise  -> printf ("%i*10^%i")
+                                                      (round $ x/10^^expn :: Int)  expn
                                       
 
 
