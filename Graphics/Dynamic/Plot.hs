@@ -267,8 +267,8 @@ fnPlot f = DynamicPlottable{
 
 data AxesStyle = DynamicAxesStyle
 data DynamicAxes = DynamicAxes { yAxisClasses, xAxisClasses :: [AxisClass] }
-data AxisClass = AxisClass { visibleAxes :: [Axis], axisStrength :: Double }
-data Axis = Axis { axisPosition :: R } --, decPrecision :: Int }
+data AxisClass = AxisClass { visibleAxes :: [Axis], axisStrength :: Double, decPrecision :: Int }
+data Axis = Axis { axisPosition :: R }
 
 crtDynamicAxes :: GraphWindowSpec -> DynamicAxes
 crtDynamicAxes (GraphWindowSpec {..}) = DynamicAxes yAxCls xAxCls
@@ -282,7 +282,7 @@ crtDynamicAxes (GraphWindowSpec {..}) = DynamicAxes yAxCls xAxCls
               baseDecaval = upDecaSpan * (flor $ l / upDecaSpan)
               lvl (minSpc, strength) 
                 = AxisClass [Axis v  | i<-[0 .. luDSdiv*2], let v=(baseDecaval + i*laSpc), v<u ] 
-                            strength
+                            strength (round $ lg laSpc - 1)
                where laSpc = upDecaSpan / luDSdiv
                      luDSdiv = last . takeWhile (\d -> pixelScale * minSpc < 1/d )
                                       . join $ iterate (map(*10)) [1, 2, 5]
@@ -310,42 +310,28 @@ dynamicAxes = DynamicPlottable {
                                                               [AlignMid , AlignTop  ]
                                                               [AlignTop , AlignMid  ]
                                                               [yAxCls   , xAxCls    ]
-                          let prepAnnotation (Axis{axisPosition=z}) = do
+                          let (AxisClass vaxs _ prc) = head acl
+                              prepAnnotation (Axis{axisPosition=z}) = do
                                                guard(z/=0) 
                                                [Annotation (TextAnnotation txt align) place False]
-                               where txt = PlainText . fst . prettyFloatShow 3 $ realToFrac z
+                               where txt = PlainText . prettyFloatShow prc $ realToFrac z
                                      place = ExactPlace $ dirq z
                                      align = TextAlignment hAlign vAlign
-                          prepAnnotation =<< (visibleAxes $ head acl)
-       renderClass crd (AxisClass axes strength)
+                          prepAnnotation =<< vaxs
+       renderClass crd (AxisClass axes strength _)
           = Draw.tint (let s = realToFrac strength in Draw.Color s s s 1)
               $ foldMap (uncurry Draw.line . crd . axisPosition) axes
  
 
-prettyFloatShow :: Int -> Double -> (String, Bool)
-prettyFloatShow _ 0 = ("0", True)
+prettyFloatShow :: Int -> Double -> String
+prettyFloatShow _ 0 = "0"
 prettyFloatShow preci x
-    | x < 0, (q, exactn) <- prettyFloatShow preci (-x)
-              = ('-':q, exactn)
-    | x < 10^^(preci+2), Just x_i <- maybeIntCast x  = (show x_i, True)
-    | ((ngExp, x'_i):_) <- catMaybes $ map (\(e, x') -> fmap (e,) $ maybeIntCast x') multiples
-          = (if abs ngExp > 3 
-              then show x'_i ++ " * 10^" ++ show (-ngExp)
-              else printf ("%."++show preci++"f") $ (fromInteger x'_i * 10 ^^ (-ngExp) :: Double)
-            , True )
-    | preci < 1 = (show $ 10 ^ fromIntegral e₀, False)
-    | x < 1000, x > 0.1, m <- 10^^preci, x' <- fromIntegral(round $ x*m) / m
-          = (printf ("%."++show (preci-e₀)++"g") x', False)
-    | (mantissa, _) <- prettyFloatShow (max 1 $ preci-1) $ x / 10^^e₀
-          = (mantissa ++ " * 10 ^ " ++ show e₀, False)
- where a ≈ b = abs (a - b) < ε
-        where ε = minimum $ map ((* 1e-10) . abs) [a, b]
-       maybeIntCast a | b<-round a, a ≈ fromIntegral b  = Just b
-                      | otherwise                       = Nothing
-       multiples = [ (e, x * 10^^e) | e <- [-e₀ .. preci - e₀] ]
-       e₀ = floor $ log x / log 10
-       rmLead0 ('0':s) = s
-       rmLead0 s = s
+    | preci >= 0, preci < 4  = show $ round x
+    | preci < 0, preci > -2  = printf "%.1f" x
+    | otherwise   = printf "%.1f*10^%i" 
+                            (x/10^^(preci+1)) 
+                                    (preci+1)
+                                      
 
 
 
