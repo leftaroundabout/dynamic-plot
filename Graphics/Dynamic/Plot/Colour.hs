@@ -20,7 +20,11 @@ data BaseColour = Neutral -- ^ Either black or white, depending on the context.
                 deriving (Eq, Show, Enum)
 
 
-magenta, red, orange, yellow, green, cyan, blue, violet :: Colour
+neutral, contrast, grey
+ , magenta, red, orange, yellow, green, cyan, blue, violet :: Colour
+neutral = BaseColour Neutral
+contrast= Contrast Neutral
+grey    = paler contrast
 magenta = Contrast Green
 red     = BaseColour Red
 orange  = Contrast Blue
@@ -30,6 +34,13 @@ cyan    = Contrast Red
 blue    = BaseColour Blue
 violet  = Contrast Yellow
 
+paler, opposite :: Colour -> Colour
+paler = Paler
+opposite (BaseColour c) = Contrast c
+opposite (Contrast c) = BaseColour c
+opposite (Paler c) = Paler $ opposite c
+opposite (CustomColour (Draw.Color r g b a)) = CustomColour
+    ( Draw.Color (1-r) (1-g) (1-b) a )  -- Note that, unlike on the predefined colours, this flips not just hue but all value.
 
 type ColourScheme = Colour -> Draw.Color
 

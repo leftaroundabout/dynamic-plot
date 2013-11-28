@@ -4,6 +4,7 @@
 
 module Graphics.Dynamic.Plot where
 
+import Graphics.Dynamic.Plot.Colour
 
 import Graphics.DrawingCombinators ((%%), R, R2)
 import qualified Graphics.DrawingCombinators as Draw
@@ -94,6 +95,8 @@ plotWindow graphs' = do
    
    viewTgt   <- newIORef $ autoDefaultView graphs
    viewState <- newIORef =<< readIORef viewTgt
+   
+   colours <- newIORef $ take (length graphs) defaultColourSeq <> [grey]
    
    t₀ <- getCurrentTime
    lastFrameTime <- newIORef t₀
