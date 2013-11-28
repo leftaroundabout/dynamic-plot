@@ -118,7 +118,8 @@ plotWindow graphs' = do
                       else id ) $ completePlot 
                  where completePlot = foldMap (prerenderAnnotation antTK) plotAnnotations <> getPlot
                        (Plot{..}) = dynamicPlot currentView
-                       antTK = DiagramTK $ TextTK defaultFont txtSize aspect 0.2 0.2
+                       antTK = DiagramTK { viewScope = currentView 
+                                         , textTools = TextTK defaultFont txtSize aspect 0.2 0.2 }
                        txtSize | usesNormalisedCanvas  = fontPts / fromIntegral yResolution
                                | otherwise             = h * fontPts / fromIntegral yResolution
                        aspect  | usesNormalisedCanvas  = 1
@@ -354,14 +355,15 @@ data TextObj = PlainText String
 data TextAlignment = TextAlignment { hAlign, vAlign :: Alignment } -- , blockSpread :: Bool }
 data Alignment = AlignBottom | AlignMid | AlignTop
 
-data DiagramTK = DiagramTK { textTools :: TextTK }
+data DiagramTK = DiagramTK { textTools :: TextTK, viewScope :: GraphWindowSpec }
 data TextTK = TextTK { defaultFont :: Draw.Font
                      , txtSize, xAspect, padding, extraTopPad :: R }
 
 prerenderAnnotation :: DiagramTK -> Annotation -> Draw.Image Any
-prerenderAnnotation (DiagramTK{ textTools = TextTK{..} }) (Annotation{..})
+prerenderAnnotation (DiagramTK{ textTools = TextTK{..}, viewScope = GraphWindowSpec{..} }) 
+                    (Annotation{..})
        | TextAnnotation (PlainText str) (TextAlignment{..}) <- getAnnotation
-       , ExactPlace p <- placement
+       , ExactPlace p₀ <- placement
             = let (rnTextLines, lineWidths) 
                        = unzip . map (Draw.text defaultFont &&& Draw.textWidth defaultFont) 
                             $ lines str
@@ -369,8 +371,7 @@ prerenderAnnotation (DiagramTK{ textTools = TextTK{..} }) (Annotation{..})
                   lineHeight = 1 + extraTopPad + 2*padding
                   ζx = ζy * xAspect
                   ζy = txtSize -- / lineHeight
-                  -- width' = maximum $ 0 : lineWidths
-                  -- width  = width + 2*padding
+                  width  = (maximum $ 0 : lineWidths) + 2*padding
                   height = fromIntegral nLines * lineHeight
                   y₀ = case vAlign of
                               AlignBottom -> padding + height - lineHeight
@@ -383,6 +384,18 @@ prerenderAnnotation (DiagramTK{ textTools = TextTK{..} }) (Annotation{..})
                                       AlignMid    -> (- w/2         , y₀-y)
                                       AlignTop    -> (-(w + padding), y₀-y)
                                      ) %% ) ) [0..] lineWidths rnTextLines
+                  p = (px, py)
+                   where px = max l' . min r' $ fst p₀
+                         py = max b' . min t' $ snd p₀
+                         (l', r') = case hAlign of
+                           AlignBottom -> (lBound      , rBound - w  )
+                           AlignMid    -> (lBound + w/2, rBound - w/2)
+                           AlignTop    -> (lBound + w  , rBound      )
+                         (b', t') = case vAlign of
+                           AlignBottom -> (bBound      , tBound - h  )
+                           AlignMid    -> (bBound + h/2, tBound - h/2)
+                           AlignTop    -> (bBound + h  , tBound      )
+                         w = ζx * width; h = ζy * height
               in Draw.translate p <> Draw.scale ζx ζy %% fullText
         
 
