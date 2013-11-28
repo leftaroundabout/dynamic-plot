@@ -275,14 +275,14 @@ crtDynamicAxes :: GraphWindowSpec -> DynamicAxes
 crtDynamicAxes (GraphWindowSpec {..}) = DynamicAxes yAxCls xAxCls
  where [yAxCls, xAxCls] = zipWith3 directional 
                         [lBound, bBound] [rBound, tBound] [xResolution, yResolution]
-       directional l u res = map lvl lvlSpecs -- takeWhile ((>0.1) . axisStrength) . scanl purgeDups [] $ aCls
-        where -- aCls =  
-              span = u - l
+       directional l u res = map lvl lvlSpecs
+        where span = u - l
               upDecaSpan = 10**(ceil $ lg span)
               pixelScale = span / (fromIntegral res * upDecaSpan)
               baseDecaval = upDecaSpan * (flor $ l / upDecaSpan)
               lvl (minSpc, strength) 
-                = AxisClass [Axis v  | i<-[0 .. luDSdiv*2], let v=(baseDecaval + i*laSpc), v<u ] 
+                = AxisClass [ Axis v  | i<-[0 .. luDSdiv*2]
+                                      , let v=(baseDecaval + i*laSpc), v>l, v<u ] 
                             strength (floor $ lg laSpc)
                where laSpc = upDecaSpan / luDSdiv
                      luDSdiv = last . takeWhile (\d -> pixelScale * minSpc < 1/d )
