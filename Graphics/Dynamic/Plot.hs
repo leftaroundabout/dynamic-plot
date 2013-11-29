@@ -87,16 +87,22 @@ initScreen = do
 
 plotWindow :: [DynamicPlottable] -> IO GraphWindowSpec
 plotWindow graphs' = do
-   let graphs = graphs' <> [dynamicAxes]
    
    initScreen
    
    defaultFont <- loadFont
    
-   viewTgt   <- newIORef $ autoDefaultView graphs
+   viewTgt   <- newIORef $ autoDefaultView graphs'
    viewState <- newIORef =<< readIORef viewTgt
    
-   colours <- newIORef $ take (length graphs) defaultColourSeq <> [grey]
+   let assignColours [] _ = []
+       assignColours (g:gs) (c:cs)
+         | isTintableMonochromic g  = let clDPlot (Plot p q) = Plot (Draw.tint c' p) q
+                                          c' = defaultColourScheme c
+                                      in g{ dynamicPlot = clDPlot . dynamicPlot g }
+                                           : assignColours gs cs
+         | otherwise                = g : assignColours gs (c:cs)
+       graphs = assignColours graphs' defaultColourSeq <> [dynamicAxes]
    
    t₀ <- getCurrentTime
    lastFrameTime <- newIORef t₀
@@ -107,8 +113,7 @@ plotWindow graphs' = do
    
    done      <- newIORef False
    
-   let grey = Draw.Color 0.5 0.5 0.5 0.5
-       refreshScreen = do
+   let refreshScreen = do
            currentView@(GraphWindowSpec{..}) <- readIORef viewState
            let normaliseView = (Draw.scale xUnZ yUnZ <> Draw.translate (-x₀,-y₀) %%)
                   where xUnZ = 1/w; yUnZ = 1/h
@@ -116,9 +121,7 @@ plotWindow graphs' = do
                x₀ = lBound + w; y₀ = bBound + h
                renderComp (DynamicPlottable{..})
                   = (if usesNormalisedCanvas then id
-                      else normaliseView ) . 
-                    (if False && isTintableMonochromic then Draw.tint grey 
-                      else id ) $ completePlot 
+                      else normaliseView ) completePlot 
                  where completePlot = foldMap (prerenderAnnotation antTK) plotAnnotations <> getPlot
                        (Plot{..}) = dynamicPlot currentView
                        antTK = DiagramTK { viewScope = currentView 
