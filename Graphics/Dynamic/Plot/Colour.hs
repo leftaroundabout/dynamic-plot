@@ -1,3 +1,12 @@
+-- |
+-- Module      : Graphics.Dynamic.Plot.Colour 
+-- Copyright   : (c) Justus Sagemüller 2013
+-- License     : GPL v3
+-- 
+-- Maintainer  : (@) sagemuej $ smail.uni-koeln.de
+-- Stability   : experimental
+-- Portability : requires GHC>6 extensions
+
 module Graphics.Dynamic.Plot.Colour where
 
 

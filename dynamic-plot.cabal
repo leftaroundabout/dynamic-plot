@@ -38,5 +38,4 @@ Library
                      , TupleSections
   ghc-options:       -O2
   Exposed-modules:   Graphics.Dynamic.Plot
-                     Graphics.Dynamic.Plot.Colour
-  Other-modules:   
+  Other-modules:     Graphics.Dynamic.Plot.Colour

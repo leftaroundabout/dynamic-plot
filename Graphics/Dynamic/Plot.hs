@@ -1,8 +1,18 @@
+-- |
+-- Module      : Graphics.Dynamic.Plot
+-- Copyright   : (c) Justus Sagemüller 2013
+-- License     : GPL v3
+-- 
+-- Maintainer  : (@) sagemuej $ smail.uni-koeln.de
+-- Stability   : experimental
+-- Portability : requires GHC>6 extensions
+
+
 {-# LANGUAGE ScopedTypeVariables     #-}
 {-# LANGUAGE RecordWildCards         #-}
 {-# LANGUAGE TupleSections           #-}
 
-module Graphics.Dynamic.Plot where
+module Graphics.Dynamic.Plot (plotWindow, fnPlot) where
 
 import Graphics.Dynamic.Plot.Colour
 
@@ -25,7 +35,6 @@ import Data.Monoid
 import Data.Foldable (foldMap)
 import Data.Function (on)
 import qualified Data.Map.Lazy as Map
-import Data.Char (isDigit)
   
 import Text.Printf
 
