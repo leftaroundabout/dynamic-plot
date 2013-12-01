@@ -19,7 +19,7 @@ import Control.Arrow
 
 import Prelude hiding((.), id)
 
-import Data.List (intercalate, isPrefixOf, isInfixOf, find, zip4)
+import Data.List (sort, intercalate, isPrefixOf, isInfixOf, find, zip4)
 import Data.Maybe
 import Data.Monoid
 import Data.Foldable (foldMap)
@@ -262,12 +262,16 @@ fnPlot f = DynamicPlottable{
              , isTintableMonochromic = True
              , axesNecessity = 1
              , dynamicPlot = plot }
- where yRangef (l, r) = Just . (minimum &&& maximum) $ map f [l, l + (r-l)/8 .. r]
+ where yRangef (l, r) = Just . ((!10) &&& (!70)) . sort . pruneOutlyers
+                                               $ map f [l, l + (r-l)/80 .. r]
        plot (GraphWindowSpec{..}) = Plot curve []
         where δx = (rBound - lBound) * 2 / fromIntegral xResolution
               curve = trace [ (x, f x) | x<-[lBound, lBound+δx .. rBound] ]
               trace (p:q:ps) = Draw.line p q <> trace (q:ps)
               trace _ = mempty
+       pruneOutlyers = filter (not . isNaN) 
+       l!n | (x:_)<-drop n l  = x
+           | otherwise         = error "Function appears to yield NaN most of the time. Cannot be plotted."
 
 
 
