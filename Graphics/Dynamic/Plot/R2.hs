@@ -12,7 +12,7 @@
 {-# LANGUAGE RecordWildCards         #-}
 {-# LANGUAGE TupleSections           #-}
 
-module Graphics.Dynamic.Plot.R2 (plotWindow, fnPlot) where
+module Graphics.Dynamic.Plot.R2 (plotWindow, fnPlot, Plottable(..)) where
 
 import Graphics.Dynamic.Plot.Colour
 
@@ -44,6 +44,19 @@ import System.IO
 import System.Exit
 import System.Process
 import Data.Time
+
+
+
+
+class Plottable p where
+  plot :: p -> DynamicPlottable
+
+instance (RealFloat r₁, RealFloat r₂) => Plottable (r₁ -> r₂) where
+  plot f = fnPlot $ realToFrac . f . realToFrac
+
+{-# RULES "plot/R->R" plot = fnPlot #-}
+
+
 
 
 
@@ -447,5 +460,8 @@ provided m False = mempty
 
 lg :: Floating a => a -> a
 lg x = log x / log 10
+
+
+
 
 
