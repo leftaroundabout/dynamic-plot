@@ -1,5 +1,5 @@
 -- |
--- Module      : Graphics.Dynamic.Plot
+-- Module      : Graphics.Dynamic.Plot.R2
 -- Copyright   : (c) Justus Sagemüller 2013
 -- License     : GPL v3
 -- 
@@ -12,7 +12,7 @@
 {-# LANGUAGE RecordWildCards         #-}
 {-# LANGUAGE TupleSections           #-}
 
-module Graphics.Dynamic.Plot (plotWindow, fnPlot) where
+module Graphics.Dynamic.Plot.R2 (plotWindow, fnPlot) where
 
 import Graphics.Dynamic.Plot.Colour
 

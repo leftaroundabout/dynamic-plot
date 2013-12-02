@@ -37,5 +37,5 @@ Library
                      , RecordWildCards
                      , TupleSections
   ghc-options:       -O2
-  Exposed-modules:   Graphics.Dynamic.Plot
+  Exposed-modules:   Graphics.Dynamic.Plot.R2
   Other-modules:     Graphics.Dynamic.Plot.Colour
