@@ -8,9 +8,11 @@
 -- Portability : requires GHC>6 extensions
 
 
-{-# LANGUAGE ScopedTypeVariables     #-}
-{-# LANGUAGE RecordWildCards         #-}
-{-# LANGUAGE TupleSections           #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE RecordWildCards           #-}
+{-# LANGUAGE TupleSections             #-}
+{-# LANGUAGE TypeOperators             #-}
 
 module Graphics.Dynamic.Plot.R2 (plotWindow, fnPlot, Plottable(..)) where
 
@@ -35,6 +37,9 @@ import Data.Monoid
 import Data.Foldable (foldMap)
 import Data.Function (on)
 import qualified Data.Map.Lazy as Map
+
+import Data.Manifold ((:-->), (--$))
+import qualified Data.Manifold as Manifd
   
 import Text.Printf
 
@@ -48,6 +53,8 @@ import Data.Time
 
 
 
+
+
 class Plottable p where
   plot :: p -> DynamicPlottable
 
@@ -56,6 +63,8 @@ instance (RealFloat r₁, RealFloat r₂) => Plottable (r₁ -> r₂) where
 
 {-# RULES "plot/R->R" plot = fnPlot #-}
 
+instance Plottable (Double :--> Double) where
+  plot = continFnPlot
 
 
 
@@ -294,6 +303,31 @@ fnPlot f = DynamicPlottable{
        pruneOutlyers = filter (not . isNaN) 
        l!n | (x:_)<-drop n l  = x
            | otherwise         = error "Function appears to yield NaN most of the time. Cannot be plotted."
+
+continFnPlot :: (Double :--> Double) -> DynamicPlottable
+continFnPlot f = DynamicPlottable{
+                       relevantRange_x = Nothing
+                     , relevantRange_y = Just . convR² . yRangef . convR²
+                     , usesNormalisedCanvas = False
+                     , isTintableMonochromic = True
+                     , axesNecessity = 1
+                     , dynamicPlot = plot }
+ where yRangef (l, r) = (minimum &&& maximum) 
+                          . map snd $ Manifd.finiteGraphContinℝtoℝ
+                                       (Manifd.GraphWindowSpec l r fgb fgt 9 9) f
+        where (fgb, fgt) = (minimum &&& maximum) [f --$ l, f --$ r]
+       
+       plot (GraphWindowSpec{..}) = Plot curve []
+        where curve = trace . map convR² $ Manifd.finiteGraphContinℝtoℝ mWindow f
+              mWindow = Manifd.GraphWindowSpec (c lBound) (c rBound) (c bBound) (c tBound) 
+                                               xResolution yResolution
+              trace (p:q:ps) = Draw.line p q <> trace (q:ps)
+              trace _ = mempty
+       
+       convR² = c *** c
+       c = realToFrac
+ 
+ 
 
 
 

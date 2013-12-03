@@ -26,6 +26,7 @@ Library
                      , graphics-drawingcombinators 
                      , time
                      , process
+                     , manifolds
   Extensions:        FlexibleInstances
                      , TypeFamilies
                      , FlexibleContexts
