@@ -462,7 +462,8 @@ prerenderAnnotation (DiagramTK{ textTools = TextTK{..}, viewScope = GraphWindowS
                            AlignMid    -> (bBound + h/2, tBound - h/2)
                            AlignTop    -> (bBound + h  , tBound      )
                          w = ζx * width; h = ζy * height
-              in Draw.translate p <> Draw.scale ζx ζy %% fullText
+              in Draw.translate p <> Draw.scale ζx ζy 
+                     %% Draw.tint (Draw.Color 0.5 0.5 0.5 1) fullText
         
 
 
