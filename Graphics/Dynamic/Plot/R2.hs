@@ -13,6 +13,7 @@
 {-# LANGUAGE RecordWildCards           #-}
 {-# LANGUAGE TupleSections             #-}
 {-# LANGUAGE TypeOperators             #-}
+{-# LANGUAGE LambdaCase                #-}
 
 module Graphics.Dynamic.Plot.R2 (plotWindow, fnPlot, Plottable(..)) where
 
@@ -28,6 +29,8 @@ import Control.Monad
 import Control.Applicative
 import Control.Category
 import Control.Arrow
+  
+import Control.Concurrent.Async
 
 import Prelude hiding((.), id)
 
@@ -106,6 +109,12 @@ data DynamicPlottable = DynamicPlottable {
       , dynamicPlot :: GraphWindowSpec -> Plot
   }
 
+data GraphViewState = GraphViewState {
+        lastStableView :: Maybe (GraphWindowSpec, Plot)
+      , realtimeView, nextTgtView :: Async Plot
+      , graphColor :: Maybe Draw.Color
+   }
+
 
 initScreen :: IO ()
 initScreen = do
@@ -123,17 +132,36 @@ plotWindow graphs' = do
    
    defaultFont <- loadFont
    
-   viewTgt   <- newIORef $ autoDefaultView graphs'
-   viewState <- newIORef =<< readIORef viewTgt
    
-   let assignColours [] _ = []
-       assignColours (g:gs) (c:cs)
-         | isTintableMonochromic g  = let clDPlot (Plot p q) = Plot (Draw.tint c' p) q
-                                          c' = defaultColourScheme c
-                                      in g{ dynamicPlot = clDPlot . dynamicPlot g }
-                                           : assignColours gs cs
-         | otherwise                = g : assignColours gs (c:cs)
-       graphs = assignColours graphs' defaultColourSeq <> [dynamicAxes]
+   ([viewTgt, viewState], graphs) <- do
+           let window₀ = autoDefaultView graphs'
+               assignGrViews (g@DynamicPlottable{..}:gs) (c:cs) axn = do 
+                   v <- async $ return $! dynamicPlot window₀
+                   fmap ((g, GraphViewState { lastStableView = Nothing
+                                            , realtimeView = v, nextTgtView = v 
+                                            , graphColor = cl }
+                        ) : ) $ assignGrViews gs cs' (axn + axesNecessity)
+                where (cl, cs')
+                        | isTintableMonochromic  = (Just $ defaultColourScheme c, cs)
+                        | otherwise              = (Nothing, c:cs)
+               assignGrViews [] _ axesNeed 
+                 | axesNeed > 0  = assignGrViews [dynamicAxes] [grey] (-1)
+                 | otherwise     = return []
+           w <- mapM newIORef $ replicate 2 window₀
+           gs <- newIORef =<< assignGrViews graphs' defaultColourSeq 0
+           return (w,gs)
+   
+   let updateViews :: Bool -> GraphWindowSpec -> IO ()
+       updateViews False newRealView = do
+          vstOld <- readIORef viewState
+          grViewsOld <- readIORef graphs
+          writeIORef graphs <=< forM grViewsOld $ 
+               \(o@DynamicPlottable{..}, gv) -> do
+                  cancel $ realtimeView gv
+                  newRt <- async $ return $! dynamicPlot newRealView
+                  return (o, gv{ realtimeView = newRt })
+          writeIORef viewState newRealView
+       updateViews True newTgtView = return ()
    
    t₀ <- getCurrentTime
    lastFrameTime <- newIORef t₀
@@ -150,11 +178,12 @@ plotWindow graphs' = do
                   where xUnZ = 1/w; yUnZ = 1/h
                w = (rBound - lBound)/2; h = (tBound - bBound)/2
                x₀ = lBound + w; y₀ = bBound + h
-               renderComp (DynamicPlottable{..})
+               renderComp (DynamicPlottable{..}, Nothing, _) = mempty
+               renderComp (DynamicPlottable{..}, Just Plot{..}, transform)
                   = (if usesNormalisedCanvas then id
                       else normaliseView ) completePlot 
-                 where completePlot = foldMap (prerenderAnnotation antTK) plotAnnotations <> getPlot
-                       (Plot{..}) = dynamicPlot currentView
+                 where completePlot = transform $
+                             foldMap (prerenderAnnotation antTK) plotAnnotations <> getPlot
                        antTK = DiagramTK { viewScope = currentView 
                                          , textTools = TextTK defaultFont txtSize aspect 0.2 0.2 }
                        txtSize | usesNormalisedCanvas  = fontPts / fromIntegral yResolution
@@ -163,7 +192,15 @@ plotWindow graphs' = do
                                | otherwise             = w * fromIntegral yResolution
                                                          / (h * fromIntegral xResolution)
                        fontPts = 12
-           render . mconcat $ map renderComp graphs
+           plotObjs <- readIORef graphs >>= mapM (
+               \(o, GraphViewState{..}) -> let f g = (o, g, transform)
+                                               transform | Just c <- graphColor  = Draw.tint c
+                                                         | otherwise             = id
+                                           in poll realtimeView >>= \case
+                                             Just (Right pl) -> return . f $ Just pl
+                                             _ -> poll nextTgtView >> return (f Nothing)
+             )
+           render . mconcat $ map renderComp plotObjs
            GLFW.swapBuffers
            
    let mainLoop = do
@@ -171,15 +208,14 @@ plotWindow graphs' = do
            δt <- fmap (diffUTCTime t) $ readIORef lastFrameTime
            writeIORef lastFrameTime t
    
-           do  -- Update / evolve view state
-                   vt <- readIORef viewTgt
-                   modifyIORef viewState $ \vo 
-                        -> let a%b = let η = min 1 $ 2 * realToFrac δt in η*a + (1-η)*b
-                           in GraphWindowSpec (lBound vt % lBound vo) (rBound vt % rBound vo)
-                                              (bBound vt % bBound vo) (tBound vt % tBound vo)
-                                              (xResolution vt) (yResolution vt)
-           refreshScreen
+           do vt <- readIORef viewTgt
+              vo <- readIORef viewState
+              updateViews False $ let a%b = let η = min 1 $ 2 * realToFrac δt in η*a + (1-η)*b 
+                                  in GraphWindowSpec (lBound vt % lBound vo) (rBound vt % rBound vo)
+                                                     (bBound vt % bBound vo) (tBound vt % tBound vo)
+                                                     (xResolution vt) (yResolution vt)
            GLFW.sleep 0.01
+           refreshScreen
            GLFW.pollEvents
            ($mainLoop) . unless =<< readIORef done
    

@@ -25,6 +25,7 @@ Library
                      , GLFW
                      , graphics-drawingcombinators 
                      , time
+                     , async
                      , process
                      , manifolds
   Extensions:        FlexibleInstances
