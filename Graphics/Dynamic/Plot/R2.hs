@@ -163,13 +163,13 @@ plotWindow graphs' = do
                   poll (realtimeView gv) >>= \case
                     Just(Right vw) -> return (o
                       , gv{ realtimeView = newRt, lastStableView = Just (vstOld, vw) })
-                    Nothing -> do 
+                    _ -> do 
                        cancel $ realtimeView gv
                        poll (nextTgtView gv) >>= \case
                          Just(Right vw) -> do
                            ttvn <- readIORef viewTgt 
                            return (o, gv{ realtimeView = newRt, lastStableView = Just (ttvn, vw) })
-                         Nothing -> return (o, gv{ realtimeView = newRt })
+                         _ -> return (o, gv{ realtimeView = newRt })
           writeIORef viewState newRealView
        updateTgtView updTgtView = do
           newTgtView <- updTgtView <$> readIORef viewTgt
