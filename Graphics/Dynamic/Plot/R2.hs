@@ -178,12 +178,13 @@ plotWindow graphs' = do
                   where xUnZ = 1/w; yUnZ = 1/h
                w = (rBound - lBound)/2; h = (tBound - bBound)/2
                x₀ = lBound + w; y₀ = bBound + h
-               renderComp (DynamicPlottable{..}, Nothing, _) = mempty
-               renderComp (DynamicPlottable{..}, Just Plot{..}, transform)
-                  = (if usesNormalisedCanvas then id
-                      else normaliseView ) completePlot 
-                 where completePlot = transform $
-                             foldMap (prerenderAnnotation antTK) plotAnnotations <> getPlot
+               renderComp (DynamicPlottable{..}, GraphViewState{..}) = do
+                   plt <- poll realtimeView >>= \case
+                                  Just (Right pl) -> return $ Just pl
+                                  _ -> poll nextTgtView >> return Nothing
+                   return $ case plt of
+                    Nothing -> mempty
+                    Just(Plot{..}) -> let 
                        antTK = DiagramTK { viewScope = currentView 
                                          , textTools = TextTK defaultFont txtSize aspect 0.2 0.2 }
                        txtSize | usesNormalisedCanvas  = fontPts / fromIntegral yResolution
@@ -192,15 +193,16 @@ plotWindow graphs' = do
                                | otherwise             = w * fromIntegral yResolution
                                                          / (h * fromIntegral xResolution)
                        fontPts = 12
-           plotObjs <- readIORef graphs >>= mapM (
-               \(o, GraphViewState{..}) -> let f g = (o, g, transform)
-                                               transform | Just c <- graphColor  = Draw.tint c
-                                                         | otherwise             = id
-                                           in poll realtimeView >>= \case
-                                             Just (Right pl) -> return . f $ Just pl
-                                             _ -> poll nextTgtView >> return (f Nothing)
-             )
-           render . mconcat $ map renderComp plotObjs
+                       transform = nmScale . clr
+                         where clr | Just c <- graphColor  = Draw.tint c
+                                   | otherwise             = id
+                               nmScale | usesNormalisedCanvas  = id
+                                       | otherwise             = normaliseView
+                     in transform $ foldMap (prerenderAnnotation antTK) plotAnnotations <> getPlot
+
+           gvStates <- readIORef graphs
+           waitAny $ map (realtimeView . snd) gvStates
+           render . mconcat . reverse =<< mapM renderComp (reverse gvStates)
            GLFW.swapBuffers
            
    let mainLoop = do
