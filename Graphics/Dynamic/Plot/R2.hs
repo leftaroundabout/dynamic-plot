@@ -103,7 +103,7 @@ data Plot = Plot {
 data DynamicPlottable = DynamicPlottable { 
         relevantRange_x :: Maybe Interval
       , relevantRange_y :: Interval -> Maybe Interval
-      , usesNormalisedCanvas :: Bool
+      -- , usesNormalisedCanvas :: Bool
       , isTintableMonochromic :: Bool
       , axesNecessity :: Double
       , dynamicPlot :: GraphWindowSpec -> Plot
@@ -157,9 +157,13 @@ plotWindow graphs' = do
           grViewsOld <- readIORef graphs
           writeIORef graphs <=< forM grViewsOld $ 
                \(o@DynamicPlottable{..}, gv) -> do
-                  cancel $ realtimeView gv
                   newRt <- async $ return $! dynamicPlot newRealView
-                  return (o, gv{ realtimeView = newRt })
+                  poll (realtimeView gv) >>= \case
+                    Just(Right vw) -> return (o
+                      , gv{ realtimeView = newRt, lastStableView = Just (vstOld, vw) })
+                    Nothing -> do 
+                       cancel $ realtimeView gv
+                       return (o, gv{ realtimeView = newRt })
           writeIORef viewState newRealView
        updateViews True newTgtView = return ()
    
@@ -181,22 +185,24 @@ plotWindow graphs' = do
                renderComp (DynamicPlottable{..}, GraphViewState{..}) = do
                    plt <- poll realtimeView >>= \case
                                   Just (Right pl) -> return $ Just pl
-                                  _ -> poll nextTgtView >> return Nothing
+                                  _ -> case lastStableView of
+                                   Just (_, vw) -> return $ Just vw
+                                   _ -> poll nextTgtView >> return Nothing
                    return $ case plt of
                     Nothing -> mempty
-                    Just(Plot{..}) -> let 
+                    Just Plot{..} -> let 
                        antTK = DiagramTK { viewScope = currentView 
                                          , textTools = TextTK defaultFont txtSize aspect 0.2 0.2 }
-                       txtSize | usesNormalisedCanvas  = fontPts / fromIntegral yResolution
+                       txtSize -- | usesNormalisedCanvas  = fontPts / fromIntegral yResolution
                                | otherwise             = h * fontPts / fromIntegral yResolution
-                       aspect  | usesNormalisedCanvas  = 1
+                       aspect  -- | usesNormalisedCanvas  = 1
                                | otherwise             = w * fromIntegral yResolution
                                                          / (h * fromIntegral xResolution)
                        fontPts = 12
                        transform = nmScale . clr
                          where clr | Just c <- graphColor  = Draw.tint c
                                    | otherwise             = id
-                               nmScale | usesNormalisedCanvas  = id
+                               nmScale -- | usesNormalisedCanvas  = id
                                        | otherwise             = normaliseView
                      in transform $ foldMap (prerenderAnnotation antTK) plotAnnotations <> getPlot
 
@@ -327,7 +333,7 @@ fnPlot :: (R -> R) -> DynamicPlottable
 fnPlot f = DynamicPlottable{
                relevantRange_x = Nothing
              , relevantRange_y = yRangef
-             , usesNormalisedCanvas = False
+             -- , usesNormalisedCanvas = False
              , isTintableMonochromic = True
              , axesNecessity = 1
              , dynamicPlot = plot }
@@ -346,7 +352,7 @@ continFnPlot :: (Double :--> Double) -> DynamicPlottable
 continFnPlot f = DynamicPlottable{
                        relevantRange_x = Nothing
                      , relevantRange_y = Just . convR² . yRangef . convR²
-                     , usesNormalisedCanvas = False
+                     -- , usesNormalisedCanvas = False
                      , isTintableMonochromic = True
                      , axesNecessity = 1
                      , dynamicPlot = plot }
@@ -401,7 +407,7 @@ dynamicAxes :: DynamicPlottable
 dynamicAxes = DynamicPlottable { 
                relevantRange_x = Nothing
              , relevantRange_y = const Nothing
-             , usesNormalisedCanvas = False
+             -- , usesNormalisedCanvas = False
              , isTintableMonochromic = True
              , axesNecessity = -1
              , dynamicPlot = plot }
