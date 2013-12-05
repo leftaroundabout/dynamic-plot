@@ -26,6 +26,7 @@ Library
                      , graphics-drawingcombinators 
                      , time
                      , async
+                     , deepseq
                      , process
                      , manifolds
   Extensions:        FlexibleInstances

@@ -31,10 +31,11 @@ import Control.Category
 import Control.Arrow
   
 import Control.Concurrent.Async
+import Control.DeepSeq
 
 import Prelude hiding((.), id)
 
-import Data.List (sort, intercalate, isPrefixOf, isInfixOf, find, zip4)
+import Data.List (foldl', sort, intercalate, isPrefixOf, isInfixOf, find, zip4)
 import Data.Maybe
 import Data.Monoid
 import Data.Foldable (foldMap)
@@ -326,7 +327,7 @@ defaultKeyMap (GLFW.CharKey 'O') = Just ZoomOut_y
 defaultKeyMap (GLFW.SpecialKey GLFW.ESC) = Just QuitProgram
 defaultKeyMap _ = Nothing
 
-                  
+instance NFData Draw.R
 
 
 fnPlot :: (R -> R) -> DynamicPlottable
@@ -339,9 +340,9 @@ fnPlot f = DynamicPlottable{
              , dynamicPlot = plot }
  where yRangef (l, r) = Just . ((!10) &&& (!70)) . sort . pruneOutlyers
                                                $ map f [l, l + (r-l)/80 .. r]
-       plot (GraphWindowSpec{..}) = Plot curve []
+       plot (GraphWindowSpec{..}) = curve `deepseq` Plot (trace curve) []
         where δx = (rBound - lBound) * 2 / fromIntegral xResolution
-              curve = trace [ (x, f x) | x<-[lBound, lBound+δx .. rBound] ]
+              curve = [ (x, f x) | x<-[lBound, lBound+δx .. rBound] ]
               trace (p:q:ps) = Draw.line p q <> trace (q:ps)
               trace _ = mempty
        pruneOutlyers = filter (not . isNaN) 
