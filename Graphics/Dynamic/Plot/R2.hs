@@ -152,9 +152,10 @@ plotWindow graphs' = do
            gs <- newIORef =<< assignGrViews graphs' defaultColourSeq 0
            return (w,gs)
    
-   let updateViews :: Bool -> GraphWindowSpec -> IO ()
-       updateViews False newRealView = do
+   let updateRTView, updateTgtView :: (GraphWindowSpec -> GraphWindowSpec) -> IO ()
+       updateRTView updRealView = do
           vstOld <- readIORef viewState
+          let newRealView = updRealView vstOld
           grViewsOld <- readIORef graphs
           writeIORef graphs <=< forM grViewsOld $ 
                \(o@DynamicPlottable{..}, gv) -> do
@@ -164,9 +165,21 @@ plotWindow graphs' = do
                       , gv{ realtimeView = newRt, lastStableView = Just (vstOld, vw) })
                     Nothing -> do 
                        cancel $ realtimeView gv
-                       return (o, gv{ realtimeView = newRt })
+                       poll (nextTgtView gv) >>= \case
+                         Just(Right vw) -> do
+                           ttvn <- readIORef viewTgt 
+                           return (o, gv{ realtimeView = newRt, lastStableView = Just (ttvn, vw) })
+                         Nothing -> return (o, gv{ realtimeView = newRt })
           writeIORef viewState newRealView
-       updateViews True newTgtView = return ()
+       updateTgtView updTgtView = do
+          newTgtView <- updTgtView <$> readIORef viewTgt
+          grViewsOld <- readIORef graphs
+          writeIORef graphs <=< forM grViewsOld $ 
+               \(o@DynamicPlottable{..}, gv) -> do
+                  newTt <- async $ return $! dynamicPlot newTgtView
+                  cancel $ nextTgtView gv
+                  return (o, gv{ nextTgtView = newTt })
+          writeIORef viewTgt newTgtView
    
    t₀ <- getCurrentTime
    lastFrameTime <- newIORef t₀
@@ -218,11 +231,11 @@ plotWindow graphs' = do
            writeIORef lastFrameTime t
    
            do vt <- readIORef viewTgt
-              vo <- readIORef viewState
-              updateViews False $ let a%b = let η = min 1 $ 2 * realToFrac δt in η*a + (1-η)*b 
-                                  in GraphWindowSpec (lBound vt % lBound vo) (rBound vt % rBound vo)
-                                                     (bBound vt % bBound vo) (tBound vt % tBound vo)
-                                                     (xResolution vt) (yResolution vt)
+              updateRTView $ \vo -> 
+                   let a%b = let η = min 1 $ 2 * realToFrac δt in η*a + (1-η)*b 
+                   in GraphWindowSpec (lBound vt % lBound vo) (rBound vt % rBound vo)
+                                      (bBound vt % bBound vo) (tBound vt % tBound vo)
+                                      (xResolution vt) (yResolution vt)
            GLFW.sleep 0.01
            refreshScreen
            GLFW.pollEvents
@@ -244,7 +257,7 @@ plotWindow graphs' = do
                 Just QuitProgram -> writeIORef done True
                 Just movement    -> do
                    impact <- keyImpact movement
-                   modifyIORef viewTgt $ case movement of
+                   updateTgtView $ case movement of
                     MoveUp    -> moveStepRel (0,  impact) (1, 1)
                     MoveDown  -> moveStepRel (0, -impact) (1, 1)
                     MoveLeft  -> moveStepRel (-impact, 0) (1, 1)
