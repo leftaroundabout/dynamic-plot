@@ -15,7 +15,7 @@
 {-# LANGUAGE TypeOperators             #-}
 {-# LANGUAGE LambdaCase                #-}
 
-module Graphics.Dynamic.Plot.R2 (plotWindow, fnPlot, Plottable(..)) where
+module Graphics.Dynamic.Plot.R2 (plotWindow, fnPlot, continFnPlot, Plottable(..)) where
 
 import Graphics.Dynamic.Plot.Colour
 
@@ -375,8 +375,8 @@ continFnPlot f = DynamicPlottable{
                                        (Manifd.GraphWindowSpec l r fgb fgt 9 9) f
         where (fgb, fgt) = (minimum &&& maximum) [f --$ l, f --$ r]
        
-       plot (GraphWindowSpec{..}) = Plot curve []
-        where curve = trace . map convR² $ Manifd.finiteGraphContinℝtoℝ mWindow f
+       plot (GraphWindowSpec{..}) = curve `deepseq` Plot (trace curve) []
+        where curve = map convR² $ Manifd.finiteGraphContinℝtoℝ mWindow f
               mWindow = Manifd.GraphWindowSpec (c lBound) (c rBound) (c bBound) (c tBound) 
                                                xResolution yResolution
               trace (p:q:ps) = Draw.line p q <> trace (q:ps)
