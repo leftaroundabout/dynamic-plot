@@ -15,7 +15,17 @@
 {-# LANGUAGE TypeOperators             #-}
 {-# LANGUAGE LambdaCase                #-}
 
-module Graphics.Dynamic.Plot.R2 (plotWindow, fnPlot, continFnPlot, Plottable(..)) where
+module Graphics.Dynamic.Plot.R2 (
+        -- * Interactive display
+          plotWindow
+        -- * Plottable objects
+        -- ** Class  
+        , Plottable(..)
+        -- ** Simple function plots 
+        , fnPlot, continFnPlot
+        -- ** View selection
+        , xInterval, yInterval
+        ) where
 
 import Graphics.Dynamic.Plot.Colour
 
@@ -37,7 +47,7 @@ import Prelude hiding((.), id)
 
 import Data.List (foldl', sort, intercalate, isPrefixOf, isInfixOf, find, zip4)
 import Data.Maybe
-import Data.Monoid
+import Data.Semigroup
 import Data.Foldable (foldMap)
 import Data.Function (on)
 import qualified Data.Map.Lazy as Map
@@ -91,10 +101,13 @@ moveStepRel (δx,δy) (ζx,ζy) (GraphWindowSpec l r b t xRes yRes)
        r' = mx' + qx'                ; t' = my' + qy'
        zoomSafeGuard m = max (1e-250 + abs m*1e-6) . min 1e+250
 
-type Interval = (R, R)
 
-unionClosure :: Interval -> Interval -> Interval
-unionClosure (l₁, u₁) (l₂, u₂) = (min l₁ l₂, max u₁ u₂)
+
+data Interval = Interval !R !R
+instance Semigroup Interval where  -- WRT closed hull of the union.
+  Interval l₁ u₁ <> Interval l₂ u₂ = Interval (min l₁ l₂) (max u₁ u₂)
+onInterval :: ((R,R) -> (R,R)) -> Interval -> Interval 
+onInterval f (Interval l r) = uncurry Interval $ f (l, r)
 
 data Plot = Plot {
        getPlot :: Draw.Image Any
@@ -102,8 +115,7 @@ data Plot = Plot {
   }
 
 data DynamicPlottable = DynamicPlottable { 
-        relevantRange_x :: Maybe Interval
-      , relevantRange_y :: Interval -> Maybe Interval
+        relevantRange_x, relevantRange_y :: Option Interval -> Option Interval
       -- , usesNormalisedCanvas :: Bool
       , isTintableMonochromic :: Bool
       , axesNecessity :: Double
@@ -291,18 +303,14 @@ plotWindow graphs' = do
 
 
 autoDefaultView :: [DynamicPlottable] -> GraphWindowSpec
-autoDefaultView graphs = finalise . flip (foldr yRanged) graphs . (, Nothing) 
-                         . fromMaybe (-1, 2) $ foldr xRanged Nothing graphs
- where xRanged (DynamicPlottable {..}) Nothing = relevantRange_x
-       xRanged (DynamicPlottable {..}) (Just oldrng) = fmap (unionClosure oldrng) relevantRange_x
-       yRanged (DynamicPlottable {..}) (xrng, Nothing) = (xrng, relevantRange_y xrng)
-       yRanged (DynamicPlottable {..}) (xrng, Just oldrng) = (xrng, fmap (unionClosure oldrng) $ relevantRange_y xrng)
-       finalise ((l,r), Nothing) = addMargin $ GraphWindowSpec l r (-1) 1 defResX defResY
-       finalise ((l,r), Just (b,t)) = addMargin $ GraphWindowSpec l r b t defResX defResY
-       addMargin (GraphWindowSpec{..}) = GraphWindowSpec l' r' b' t' xResolution yResolution
-        where w = rBound - lBound; h = tBound - bBound
-              l' = lBound - w/5  ; b' = bBound - h/6
-              r' = rBound + w/5  ; t' = tBound + h/6
+autoDefaultView graphs = GraphWindowSpec l r b t defResX defResY
+  where (dptRange_x, dptRange_y) = foldMap (relevantRange_x &&& relevantRange_y) graphs
+        ((l,r), (b,t)) = ( finalise . dptRange_x $ dptRange_y mempty
+                         , finalise . dptRange_y $ dptRange_x mempty )
+        finalise = addMargin . option (Interval (-1) 1) id
+        addMargin (Interval a b) = (a - q, b + q)
+            where q = (b - a) / 6
+  
 
 
 render :: Monoid a => Draw.Image a -> IO()
@@ -345,13 +353,13 @@ instance NFData Draw.R
 
 fnPlot :: (R -> R) -> DynamicPlottable
 fnPlot f = DynamicPlottable{
-               relevantRange_x = Nothing
+               relevantRange_x = const mempty
              , relevantRange_y = yRangef
              -- , usesNormalisedCanvas = False
              , isTintableMonochromic = True
              , axesNecessity = 1
              , dynamicPlot = plot }
- where yRangef (l, r) = Just . ((!10) &&& (!70)) . sort . pruneOutlyers
+ where yRangef = fmap . onInterval $ \(l, r) -> ((!10) &&& (!70)) . sort . pruneOutlyers
                                                $ map f [l, l + (r-l)/80 .. r]
        plot (GraphWindowSpec{..}) = curve `deepseq` Plot (trace curve) []
         where δx = (rBound - lBound) * 2 / fromIntegral xResolution
@@ -364,8 +372,8 @@ fnPlot f = DynamicPlottable{
 
 continFnPlot :: (Double :--> Double) -> DynamicPlottable
 continFnPlot f = DynamicPlottable{
-                       relevantRange_x = Nothing
-                     , relevantRange_y = Just . convR² . yRangef . convR²
+                       relevantRange_x = const mempty
+                     , relevantRange_y = fmap . onInterval $ convR² . yRangef . convR²
                      -- , usesNormalisedCanvas = False
                      , isTintableMonochromic = True
                      , axesNecessity = 1
@@ -419,8 +427,8 @@ crtDynamicAxes (GraphWindowSpec {..}) = DynamicAxes yAxCls xAxCls
 
 dynamicAxes :: DynamicPlottable
 dynamicAxes = DynamicPlottable { 
-               relevantRange_x = Nothing
-             , relevantRange_y = const Nothing
+               relevantRange_x = const mempty
+             , relevantRange_y = const mempty   
              -- , usesNormalisedCanvas = False
              , isTintableMonochromic = True
              , axesNecessity = -1
@@ -446,6 +454,31 @@ dynamicAxes = DynamicPlottable {
        renderClass crd (AxisClass axes strength _)
           = Draw.tint (let s = realToFrac strength in Draw.Color s s s 1)
               $ foldMap (uncurry Draw.line . crd . axisPosition) axes
+
+
+
+-- | When you \"plot\" 'xInterval' / 'yInterval', it is ensured that the (initial) view encompasses 
+-- (at least) the specified range.
+-- Note there is nothing special about these \"flag\" objects: /any/ 'Plottable' can request a 
+-- certain view, e.g. for a discrete point cloud it's obvious and a function defines at least
+-- a @y@-range for a given @x@-range. Only use explicit range when necessary.
+xInterval, yInterval :: (R, R) -> DynamicPlottable
+xInterval (l,r) = DynamicPlottable { 
+               relevantRange_x = const . return $ Interval l r
+             , relevantRange_y = const mempty
+             -- , usesNormalisedCanvas = False
+             , isTintableMonochromic = False
+             , axesNecessity = 0
+             , dynamicPlot = plot }
+ where plot _ = Plot mempty mempty
+yInterval (b,t) = DynamicPlottable { 
+               relevantRange_x = const mempty
+             , relevantRange_y = const . return $ Interval b t
+             -- , usesNormalisedCanvas = False
+             , isTintableMonochromic = False
+             , axesNecessity = 0
+             , dynamicPlot = plot }
+ where plot _ = Plot mempty mempty
  
 
 prettyFloatShow :: Int -> Double -> String
@@ -555,6 +588,10 @@ lg :: Floating a => a -> a
 lg x = log x / log 10
 
 
+instance (Monoid v) => Semigroup (Draw.Image v) where
+  (<>) = mappend
+instance Semigroup (Draw.Affine) where
+  (<>) = mappend
 
 
 

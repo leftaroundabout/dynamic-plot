@@ -19,6 +19,7 @@ Library
                      , vector-space>=0.8
                      , vector
                      , containers
+                     , semigroups
                      , random
                      , MonadRandom
                      , OpenGL
