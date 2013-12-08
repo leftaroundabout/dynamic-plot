@@ -13,6 +13,7 @@
 {-# LANGUAGE RecordWildCards           #-}
 {-# LANGUAGE TupleSections             #-}
 {-# LANGUAGE TypeOperators             #-}
+{-# LANGUAGE FlexibleInstances         #-}
 {-# LANGUAGE LambdaCase                #-}
 
 module Graphics.Dynamic.Plot.R2 (
@@ -374,7 +375,7 @@ fnPlot f = DynamicPlottable{
 continFnPlot :: (Double :--> Double) -> DynamicPlottable
 continFnPlot f = DynamicPlottable{
                        relevantRange_x = const mempty
-                     , relevantRange_y = fmap . onInterval $ convR² . yRangef . convR²
+                     , relevantRange_y = const mempty -- fmap . onInterval $ convR² . yRangef . convR²
                      -- , usesNormalisedCanvas = False
                      , isTintableMonochromic = True
                      , axesNecessity = 1
@@ -385,7 +386,8 @@ continFnPlot f = DynamicPlottable{
         where (fgb, fgt) = (minimum &&& maximum) [f --$ l, f --$ r]
        
        plot (GraphWindowSpec{..}) = curve `deepseq` Plot (trace curve) []
-        where curve = map convR² $ Manifd.finiteGraphContinℝtoℝ mWindow f
+        where curve :: [(R, R)]
+              curve = map convR² $ Manifd.finiteGraphContinℝtoℝ mWindow f
               mWindow = Manifd.GraphWindowSpec (c lBound) (c rBound) (c bBound) (c tBound) 
                                                xResolution yResolution
               trace (p:q:ps) = Draw.line p q <> trace (q:ps)
