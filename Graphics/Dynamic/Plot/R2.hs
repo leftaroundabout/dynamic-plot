@@ -305,10 +305,10 @@ plotWindow graphs' = do
 
 autoDefaultView :: [DynamicPlottable] -> GraphWindowSpec
 autoDefaultView graphs = GraphWindowSpec l r b t defResX defResY
-  where (dptRange_x, dptRange_y) = foldMap (relevantRange_x &&& relevantRange_y) graphs
-        ((l,r), (b,t)) = ( finalising dptRange_x $ dptRange_y mempty
-                         , finalising dptRange_y $ dptRange_x mempty )
-        finalising f = addMargin . defRng . f . return . defRng
+  where (xRange, yRange) = foldMap (relevantRange_x &&& relevantRange_y) graphs
+        ((l,r), (b,t)) = ( xRange `dependentOn` yRange
+                         , yRange `dependentOn` xRange )
+        ξ`dependentOn`υ = addMargin . defRng . ξ . return . defRng $ υ mempty
         defRng = Interval (-1) 1 `option` id
         addMargin (Interval a b) = (a - q, b + q)
             where q = (b - a) / 6
