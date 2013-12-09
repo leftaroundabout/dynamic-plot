@@ -296,6 +296,9 @@ plotWindow graphs' = do
    
    mainLoop
    
+   (readIORef graphs >>=) . mapM_  -- cancel remaining threads
+        $ \(_, GraphViewState{..}) -> cancel realtimeView >> cancel nextTgtView
+   
    -- putStrLn "Done."
    
    GLFW.terminate
