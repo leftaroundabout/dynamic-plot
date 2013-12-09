@@ -54,7 +54,7 @@ import Data.Function (on)
 import qualified Data.Map.Lazy as Map
 
 import Data.Manifold ((:-->), (--$))
-import qualified Data.Manifold as Manifd
+import qualified Data.Manifold as 𝓒⁰
   
 import Text.Printf
 
@@ -375,25 +375,26 @@ fnPlot f = DynamicPlottable{
 continFnPlot :: (Double :--> Double) -> DynamicPlottable
 continFnPlot f = DynamicPlottable{
                        relevantRange_x = const mempty
-                     , relevantRange_y = const mempty -- fmap . onInterval $ convR² . yRangef . convR²
+                     , relevantRange_y = fmap . onInterval $ convℝ² . yRangef . convℝ²
                      -- , usesNormalisedCanvas = False
                      , isTintableMonochromic = True
                      , axesNecessity = 1
                      , dynamicPlot = plot }
  where yRangef (l, r) = (minimum &&& maximum) 
-                          . map snd $ Manifd.finiteGraphContinℝtoℝ
-                                       (Manifd.GraphWindowSpec l r fgb fgt 9 9) f
-        where (fgb, fgt) = (minimum &&& maximum) [f --$ l, f --$ r]
+                          . map snd $ 𝓒⁰.finiteGraphContinℝtoℝ
+                                       (𝓒⁰.GraphWindowSpec l r fgb fgt 9 9) f
+        where (fgb, fgt) = (minimum &&& maximum) [f --$ l, f --$ m, f --$ r]
+              m = l + (r-l) * 0.352479608143
        
        plot (GraphWindowSpec{..}) = curve `deepseq` Plot (trace curve) []
         where curve :: [(R, R)]
-              curve = map convR² $ Manifd.finiteGraphContinℝtoℝ mWindow f
-              mWindow = Manifd.GraphWindowSpec (c lBound) (c rBound) (c bBound) (c tBound) 
+              curve = map convℝ² $ 𝓒⁰.finiteGraphContinℝtoℝ mWindow f
+              mWindow = 𝓒⁰.GraphWindowSpec (c lBound) (c rBound) (c bBound) (c tBound) 
                                                xResolution yResolution
               trace (p:q:ps) = Draw.line p q <> trace (q:ps)
               trace _ = mempty
        
-       convR² = c *** c
+       convℝ² = c *** c
        c = realToFrac
  
  
