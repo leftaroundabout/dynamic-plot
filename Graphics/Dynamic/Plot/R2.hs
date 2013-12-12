@@ -400,6 +400,25 @@ continFnPlot f = DynamicPlottable{
        convℝ² = c *** c
        c = realToFrac
  
+       
+continParamPlot :: (Double :--> (Double, Double)) -> DynamicPlottable
+continParamPlot f = DynamicPlottable{
+                       relevantRange_x = const mempty
+                     , relevantRange_y = const mempty
+                     -- , usesNormalisedCanvas = False
+                     , isTintableMonochromic = True
+                     , axesNecessity = 1
+                     , dynamicPlot = plot }
+ where plot (GraphWindowSpec{..}) = curve `deepseq` Plot (trace curve) []
+        where curve :: [(R, R)]
+              curve = map convℝ² $ 𝓒⁰.finiteGraphContinℝtoℝ² mWindow f
+              mWindow = 𝓒⁰.GraphWindowSpec (c lBound) (c rBound) (c bBound) (c tBound) 
+                                               xResolution yResolution
+              trace (p:q:ps) = Draw.line p q <> trace (q:ps)
+              trace _ = mempty
+       
+       convℝ² = c *** c
+       c = realToFrac
  
 
 
