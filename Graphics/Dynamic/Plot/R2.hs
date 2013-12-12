@@ -23,7 +23,7 @@ module Graphics.Dynamic.Plot.R2 (
         -- ** Class  
         , Plottable(..)
         -- ** Simple function plots 
-        , fnPlot, continFnPlot
+        , fnPlot, continFnPlot, continParamPlot
         -- ** View selection
         , xInterval, yInterval
         ) where
@@ -80,6 +80,9 @@ instance (RealFloat r₁, RealFloat r₂) => Plottable (r₁ -> r₂) where
 
 instance Plottable (Double :--> Double) where
   plot = continFnPlot
+
+instance Plottable (Double :--> (Double, Double)) where
+  plot = continParamPlot
 
 
 
@@ -409,9 +412,9 @@ continParamPlot f = DynamicPlottable{
                      , isTintableMonochromic = True
                      , axesNecessity = 1
                      , dynamicPlot = plot }
- where plot (GraphWindowSpec{..}) = curve `deepseq` Plot (trace curve) []
-        where curve :: [(R, R)]
-              curve = map convℝ² $ 𝓒⁰.finiteGraphContinℝtoℝ² mWindow f
+ where plot (GraphWindowSpec{..}) = curves `deepseq` Plot (foldMap trace curves) []
+        where curves :: [[(R, R)]]
+              curves = map (map convℝ²) $ 𝓒⁰.finiteGraphContinℝtoℝ² mWindow f
               mWindow = 𝓒⁰.GraphWindowSpec (c lBound) (c rBound) (c bBound) (c tBound) 
                                                xResolution yResolution
               trace (p:q:ps) = Draw.line p q <> trace (q:ps)
