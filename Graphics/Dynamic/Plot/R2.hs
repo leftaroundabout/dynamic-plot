@@ -516,7 +516,7 @@ prettyFloatShow preci x
     | preci >= 0, preci < 4  = show $ round x
     | preci < 0, preci > -2  = printf "%.1f" x
     | otherwise   = case ceiling (0.01 + lg (abs x/10^^(preci+1))) + preci of
-                        0    -> printf "%.1f" x
+                        0    | preci < 0  -> printf ("%."++show(-preci)++"f") x
                         expn | expn>preci -> printf ("%."++show(expn-preci)++"f*10^%i")
                                                       (x/10^^expn)                 expn
                              | otherwise  -> printf ("%i*10^%i")
