@@ -15,6 +15,7 @@
 {-# LANGUAGE TypeOperators             #-}
 {-# LANGUAGE FlexibleInstances         #-}
 {-# LANGUAGE LambdaCase                #-}
+{-# LANGUAGE NoImplicitPrelude         #-}
 
 module Graphics.Dynamic.Plot.R2 (
         -- * Interactive display
@@ -36,15 +37,14 @@ import qualified Graphics.UI.GLFW as GLFW
 import qualified Graphics.Rendering.OpenGL as OpenGL
 import Graphics.Rendering.OpenGL (($=))
 
-import Control.Monad
-import Control.Applicative
-import Control.Category
-import Control.Arrow
+import Control.Category.Constrained.Prelude
+import Control.Arrow.Constrained
+import Control.Monad.Constrained
+
   
 import Control.Concurrent.Async
 import Control.DeepSeq
 
-import Prelude hiding((.), id)
 
 import Data.List (foldl', sort, intercalate, isPrefixOf, isInfixOf, find, zip4)
 import Data.Maybe
@@ -53,7 +53,7 @@ import Data.Foldable (foldMap)
 import Data.Function (on)
 import qualified Data.Map.Lazy as Map
 
-import Data.Manifold ((:-->), (--$))
+import Data.Manifold ((:-->))
 import qualified Data.Manifold as 𝓒⁰
   
 import Text.Printf
@@ -79,7 +79,29 @@ instance (RealFloat r₁, RealFloat r₂) => Plottable (r₁ -> r₂) where
 {-# RULES "plot/R->R" plot = fnPlot #-}
 
 instance Plottable (Double :--> Double) where
-  plot = continFnPlot
+  plot f = DynamicPlottable{
+                       relevantRange_x = const mempty
+                     , relevantRange_y = fmap . onInterval $ convℝ² . yRangef . convℝ²
+                     -- , usesNormalisedCanvas = False
+                     , isTintableMonochromic = True
+                     , axesNecessity = 1
+                     , dynamicPlot = plot }
+   where yRangef (l, r) = (minimum &&& maximum) 
+                            . map snd $ 𝓒⁰.finiteGraphContinℝtoℝ
+                                         (𝓒⁰.GraphWindowSpec l r fgb fgt 9 9) f
+          where (fgb, fgt) = (minimum &&& maximum) [f $ l, f $ m, f $ r]
+                m = l + (r-l) * 0.352479608143
+         
+         plot (GraphWindowSpec{..}) = curve `deepseq` Plot (trace curve) []
+          where curve :: [(R, R)]
+                curve = map convℝ² $ 𝓒⁰.finiteGraphContinℝtoℝ mWindow f
+                mWindow = 𝓒⁰.GraphWindowSpec (c lBound) (c rBound) (c bBound) (c tBound) 
+                                                 xResolution yResolution
+                trace (p:q:ps) = Draw.line p q <> trace (q:ps)
+                trace _ = mempty
+         
+         convℝ² = c *** c
+         c = realToFrac
 
 instance Plottable (Double :--> (Double, Double)) where
   plot = continParamPlot
@@ -255,7 +277,7 @@ plotWindow graphs' = do
            GLFW.sleep 0.01
            refreshScreen
            GLFW.pollEvents
-           ($mainLoop) . unless =<< readIORef done
+           readIORef done >>= \fine -> unless fine mainLoop
    
    let keyImpact key = do
            t <- getCurrentTime
@@ -268,7 +290,7 @@ plotWindow graphs' = do
    
    GLFW.keyCallback $= \key state -> do
            let keyStepSize = 0.1
-           when (state==GLFW.Press) $ do
+           (state==GLFW.Press) `when` do
               case defaultKeyMap key of
                 Just QuitProgram -> writeIORef done True
                 Just movement    -> do
@@ -378,31 +400,12 @@ fnPlot f = DynamicPlottable{
        l!n | (x:_)<-drop n l  = x
            | otherwise         = error "Function appears to yield NaN most of the time. Cannot be plotted."
 
-continFnPlot :: (Double :--> Double) -> DynamicPlottable
-continFnPlot f = DynamicPlottable{
-                       relevantRange_x = const mempty
-                     , relevantRange_y = fmap . onInterval $ convℝ² . yRangef . convℝ²
-                     -- , usesNormalisedCanvas = False
-                     , isTintableMonochromic = True
-                     , axesNecessity = 1
-                     , dynamicPlot = plot }
- where yRangef (l, r) = (minimum &&& maximum) 
-                          . map snd $ 𝓒⁰.finiteGraphContinℝtoℝ
-                                       (𝓒⁰.GraphWindowSpec l r fgb fgt 9 9) f
-        where (fgb, fgt) = (minimum &&& maximum) [f --$ l, f --$ m, f --$ r]
-              m = l + (r-l) * 0.352479608143
-       
-       plot (GraphWindowSpec{..}) = curve `deepseq` Plot (trace curve) []
-        where curve :: [(R, R)]
-              curve = map convℝ² $ 𝓒⁰.finiteGraphContinℝtoℝ mWindow f
-              mWindow = 𝓒⁰.GraphWindowSpec (c lBound) (c rBound) (c bBound) (c tBound) 
-                                               xResolution yResolution
-              trace (p:q:ps) = Draw.line p q <> trace (q:ps)
-              trace _ = mempty
-       
-       convℝ² = c *** c
-       c = realToFrac
- 
+continFnPlot :: (forall m . 𝓒⁰.Manifold m 
+                   => ProxyVal (:-->) m Double -> ProxyVal (:-->) m Double) 
+                      -> DynamicPlottable
+continFnPlot f = plot fc
+ where fc :: Double :--> Double
+       fc = alg f
        
 continParamPlot :: (Double :--> (Double, Double)) -> DynamicPlottable
 continParamPlot f = DynamicPlottable{
