@@ -104,7 +104,24 @@ instance Plottable (Double :--> Double) where
          c = realToFrac
 
 instance Plottable (Double :--> (Double, Double)) where
-  plot = continParamPlot
+  plot f = DynamicPlottable{
+                       relevantRange_x = const mempty
+                     , relevantRange_y = const mempty
+                     -- , usesNormalisedCanvas = False
+                     , isTintableMonochromic = True
+                     , axesNecessity = 1
+                     , dynamicPlot = plot }
+   where plot (GraphWindowSpec{..}) = curves `deepseq` Plot (foldMap trace curves) []
+          where curves :: [[(R, R)]]
+                curves = map (map convℝ²) $ 𝓒⁰.finiteGraphContinℝtoℝ² mWindow f
+                mWindow = 𝓒⁰.GraphWindowSpec (c lBound) (c rBound) (c bBound) (c tBound) 
+                                                 xResolution yResolution
+                trace (p:q:ps) = Draw.line p q <> trace (q:ps)
+                trace _ = mempty
+         
+         convℝ² = c *** c
+         c = realToFrac
+ 
 
 
 
@@ -407,25 +424,13 @@ continFnPlot f = plot fc
  where fc :: Double :--> Double
        fc = alg f
        
-continParamPlot :: (Double :--> (Double, Double)) -> DynamicPlottable
-continParamPlot f = DynamicPlottable{
-                       relevantRange_x = const mempty
-                     , relevantRange_y = const mempty
-                     -- , usesNormalisedCanvas = False
-                     , isTintableMonochromic = True
-                     , axesNecessity = 1
-                     , dynamicPlot = plot }
- where plot (GraphWindowSpec{..}) = curves `deepseq` Plot (foldMap trace curves) []
-        where curves :: [[(R, R)]]
-              curves = map (map convℝ²) $ 𝓒⁰.finiteGraphContinℝtoℝ² mWindow f
-              mWindow = 𝓒⁰.GraphWindowSpec (c lBound) (c rBound) (c bBound) (c tBound) 
-                                               xResolution yResolution
-              trace (p:q:ps) = Draw.line p q <> trace (q:ps)
-              trace _ = mempty
-       
-       convℝ² = c *** c
-       c = realToFrac
- 
+continParamPlot :: (forall m . 𝓒⁰.Manifold m 
+                    => ProxyVal (:-->) m Double 
+                        -> (ProxyVal (:-->) m Double, ProxyVal (:-->) m Double)) 
+                     -> DynamicPlottable
+continParamPlot f = plot fc
+ where fc :: Double :--> (Double, Double)
+       fc = alg1to2 f
 
 
 
@@ -447,10 +452,15 @@ crtDynamicAxes (GraphWindowSpec {..}) = DynamicAxes yAxCls xAxCls
               lvl (minSpc, strength) 
                 = AxisClass [ Axis v  | i<-[0 .. luDSdiv*2]
                                       , let v=(baseDecaval + i*laSpc), v>l, v<u ] 
-                            strength (floor $ lg laSpc)
+                            strength
+                            (floor $ lg laSpc)
                where laSpc = upDecaSpan / luDSdiv
-                     luDSdiv = last . takeWhile (\d -> pixelScale * minSpc < 1/d )
+                     luDSdiv = ll -- maybe 1 id . listToMaybe 
+                                . takeWhile (\d -> pixelScale * minSpc < 1/d )
                                       . join $ iterate (map(*10)) [1, 2, 5]
+                     ll [] = error $ "pixelScale = "++show pixelScale
+                                   ++"; minSpc = "++show minSpc
+                     ll l = last l
               ceil = fromIntegral . ceiling
               flor = fromIntegral . floor
        lvlSpecs = [ (80, 0.3), (18, 0.1) ]

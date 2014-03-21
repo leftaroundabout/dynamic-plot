@@ -29,6 +29,7 @@ Library
                      , async
                      , deepseq
                      , process
+                     , constrained-categories
                      , manifolds
   Extensions:        FlexibleInstances
                      , TypeFamilies
