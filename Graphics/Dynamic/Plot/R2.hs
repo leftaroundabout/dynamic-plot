@@ -31,11 +31,11 @@ module Graphics.Dynamic.Plot.R2 (
 
 import Graphics.Dynamic.Plot.Colour
 
-import Graphics.DrawingCombinators ((%%), R, R2)
-import qualified Graphics.DrawingCombinators as Draw
-import qualified Graphics.UI.GLFW as GLFW
-import qualified Graphics.Rendering.OpenGL as OpenGL
-import Graphics.Rendering.OpenGL (($=))
+-- import Graphics.DrawingCombinators ((%%), R, R2)
+-- import qualified Graphics.DrawingCombinators as Draw
+-- import qualified Graphics.UI.GLFW as GLFW
+-- import qualified Graphics.Rendering.OpenGL as OpenGL
+-- import Graphics.Rendering.OpenGL (($=))
 
 import Control.Category.Constrained.Prelude
 import Control.Arrow.Constrained

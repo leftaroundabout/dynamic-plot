@@ -10,16 +10,22 @@
 module Graphics.Dynamic.Plot.Colour where
 
 
-import qualified Graphics.DrawingCombinators as Draw
+import qualified Data.Colour as DCol
+import Data.Colour (opaque)
+import qualified Data.Colour.Names as N
+import Data.Colour.CIE hiding (Colour)
+import qualified Data.Colour.CIE.Illuminant as Illum
 
 
+type FColour = DCol.Colour Double
+type AColour = DCol.AlphaColour Double
 
 -- | Unlike the typical types such as 'Draw.Color', this one has /semantic/ 
 --   more than physical meaning.
 data Colour = BaseColour BaseColour
             | Contrast BaseColour
             | Paler Colour
-            | CustomColour Draw.Color
+            | CustomColour FColour
             deriving (Eq)
 data BaseColour = Neutral -- ^ Either black or white, depending on the context.
                 | Red     -- ^ Contrast cyan.
@@ -48,25 +54,31 @@ paler = Paler
 opposite (BaseColour c) = Contrast c
 opposite (Contrast c) = BaseColour c
 opposite (Paler c) = Paler $ opposite c
-opposite (CustomColour (Draw.Color r g b a)) = CustomColour
-    ( Draw.Color (1-r) (1-g) (1-b) a )  -- Note that, unlike on the predefined colours, this flips not just hue but all value.
+opposite (CustomColour c) = CustomColour $ hueInvert c
 
-type ColourScheme = Colour -> Draw.Color
+type ColourScheme = Colour -> AColour
 
 defaultColourScheme :: ColourScheme
-defaultColourScheme (BaseColour Neutral) = Draw.Color 0   0   0   1
-defaultColourScheme (BaseColour Red    ) = Draw.Color 0.9 0   0   1
-defaultColourScheme (BaseColour Yellow ) = Draw.Color 0.7 0.6 0   1
-defaultColourScheme (BaseColour Green  ) = Draw.Color 0   0.7 0   1
-defaultColourScheme (BaseColour Blue   ) = Draw.Color 0.1 0.3 1   1
-defaultColourScheme (Contrast   Neutral) = Draw.Color 1   1   1   1
-defaultColourScheme (Contrast   Red    ) = Draw.Color 0   0.6 0.8 1
-defaultColourScheme (Contrast   Yellow ) = Draw.Color 0.5 0   1   1
-defaultColourScheme (Contrast   Green  ) = Draw.Color 0.9 0   0.7 1
-defaultColourScheme (Contrast   Blue   ) = Draw.Color 0.9 0.3 0   1
-defaultColourScheme (Paler c) = Draw.modulate (Draw.Color 1 1 1 0.5) $ defaultColourScheme c
-defaultColourScheme (CustomColour c) = c
+defaultColourScheme (BaseColour Neutral) = opaque N.black
+defaultColourScheme (BaseColour Red    ) = opaque N.red
+defaultColourScheme (BaseColour Yellow ) = opaque N.yellow
+defaultColourScheme (BaseColour Green  ) = opaque N.green
+defaultColourScheme (BaseColour Blue   ) = opaque N.blue
+defaultColourScheme (Contrast   Neutral) = opaque N.white
+defaultColourScheme (Contrast   Red    ) = opaque N.cyan
+defaultColourScheme (Contrast   Yellow ) = opaque N.violet
+defaultColourScheme (Contrast   Green  ) = opaque N.magenta
+defaultColourScheme (Contrast   Blue   ) = opaque N.orange
+defaultColourScheme (Paler c) = DCol.dissolve 0.5 $ defaultColourScheme c
+defaultColourScheme (CustomColour c) = opaque c
 
 
 defaultColourSeq :: [Colour] 
 defaultColourSeq = cycle [blue, red, green, orange, cyan, magenta, yellow, violet]
+
+
+
+hueInvert :: FColour -> FColour
+hueInvert c = let (l,a,b) = cieLABView i c
+              in cieLAB i l (1-a) (1-b)
+ where i = Illum.a

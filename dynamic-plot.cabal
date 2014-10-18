@@ -22,14 +22,14 @@ Library
                      , semigroups
                      , random
                      , MonadRandom
-                     , OpenGL
-                     , GLFW
-                     , graphics-drawingcombinators 
                      , time
                      , async
                      , deepseq
                      , process
                      , constrained-categories
+                     , diagrams-lib >= 1 && < 1.4
+                     , diagrams-gtk
+                     , colour >= 2 && < 3
                      , manifolds
   Extensions:        FlexibleInstances
                      , TypeFamilies
