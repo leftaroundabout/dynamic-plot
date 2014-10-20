@@ -96,7 +96,7 @@ class Plottable p where
 instance (RealFloat r₁, RealFloat r₂) => Plottable (r₁ -> r₂) where
   plot f = fnPlot $ realToFrac . f . realToFrac
 
-{-# RULES "plot/R->R" plot = fnPlot #-}
+-- {-# RULES "plot/R->R" plot = fnPlot #-}
 
 instance Plottable (Double :--> Double) where
   plot f = DynamicPlottable{
@@ -202,15 +202,16 @@ initScreen dgStore = do
     GTK.onExpose drawA $ \_ -> do
              (canvasX,canvasY) <- GTK.widgetGetSize drawA
              dia <- readIORef dgStore
+             let oldSize = Dia.size2D dia
+                 scaledDia = BGTK.toGtkCoords
+                           $ Dia.bg Dia.black
+                             . Dia.scaleX (fromInt canvasX) . Dia.scaleY (fromInt canvasY)
+                               $ dia
+                 fI = fromIntegral
+                 spec = Dia.mkSizeSpec (Just $ fI canvasX - 8) (Just $ fI canvasY - 8)
              drawWindow <- GTK.widgetGetDrawWindow drawA
-             BGTK.renderToGtk drawWindow $ BGTK.toGtkCoords dia
+             BGTK.renderToGtk drawWindow $ scaledDia
              return True
---              let oldSize = let (w,h) = Dia.size2D dia
---                            in (max 100 w, max 60 h)
---                  scaledDia = BGTK.toGtkCoords
---                            $ Dia.transform (Dia.requiredScaleT spec oldSize) dia
---                  fI = fromIntegral
---                  spec = Dia.mkSizeSpec (Just $ fI canvasX - 8) (Just $ fI canvasY - 8)
  
     
     GTK.set window [ GTK.windowTitle := "Plot"
@@ -230,7 +231,7 @@ initScreen dgStore = do
 plotWindow :: [DynamicPlottable] -> IO GraphWindowSpec
 plotWindow graphs' = do
    
-   dgStore <- newIORef mempty
+   dgStore <- newIORef $ mempty & Dia.bg Dia.black
    
    window <- initScreen dgStore
    
@@ -294,7 +295,6 @@ plotWindow graphs' = do
    
    keyImpactState <- newIORef $ Map.fromList [ (ka, (t₀, minKeyImpact)) | ka<-[MoveLeft .. ZoomOut_y] ]
    
-   done      <- newIORef False
    
    let refreshScreen = do
            currentView@(GraphWindowSpec{..}) <- readIORef viewState
@@ -331,7 +331,11 @@ plotWindow graphs' = do
 
            gvStates <- readIORef graphs
            waitAny $ map (realtimeView . snd) gvStates
-           writeIORef dgStore . mconcat . reverse =<< mapM renderComp (reverse gvStates)
+                   
+           writeIORef dgStore . (Dia.bg Dia.black)
+                . mconcat . reverse =<< mapM renderComp (reverse gvStates)
+                                                    
+           GTK.widgetShowAll window
            -- reShow
            
    let mainLoop = do
@@ -349,7 +353,7 @@ plotWindow graphs' = do
            -- GTK.sleep 0.01
            refreshScreen
            -- GTK.pollEvents
-           readIORef done >>= \fine -> unless fine mainLoop
+           return True
    
    let keyImpact key = do
            t <- getCurrentTime
@@ -384,16 +388,17 @@ plotWindow graphs' = do
 --                                               , yResolution = fromIntegral yRes }
 --            -- refreshScreen
 --            
-   GTK.onDestroy window $ writeIORef done True >> GTK.mainQuit
+   GTK.onDestroy window $ do
+        (readIORef graphs >>=) . mapM_  -- cancel remaining threads
+           $ \(_, GraphViewState{..}) -> cancel realtimeView >> cancel nextTgtView
+        GTK.mainQuit
                  
    
    -- putStrLn "Enter Main loop..."
    
 --    mainLoop
+   GTK.timeoutAdd mainLoop 10
    GTK.mainGUI
-   
-   (readIORef graphs >>=) . mapM_  -- cancel remaining threads
-        $ \(_, GraphViewState{..}) -> cancel realtimeView >> cancel nextTgtView
    
    -- putStrLn "Done."
    
