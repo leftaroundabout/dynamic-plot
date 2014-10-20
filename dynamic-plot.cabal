@@ -27,10 +27,15 @@ Library
                      , deepseq
                      , process
                      , constrained-categories
+                     , diagrams-core == 1.2.0.2
                      , diagrams-lib >= 1 && < 1.4
+                     , diagrams-cairo == 1.2.0.2
                      , diagrams-gtk
+                     , gtk > 0.10 && < 0.15
+                     , glib
                      , colour >= 2 && < 3
                      , manifolds
+                     , lens
   Extensions:        FlexibleInstances
                      , TypeFamilies
                      , FlexibleContexts

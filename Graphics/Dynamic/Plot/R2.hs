@@ -1,6 +1,6 @@
 -- |
 -- Module      : Graphics.Dynamic.Plot.R2
--- Copyright   : (c) Justus Sagemüller 2013
+-- Copyright   : (c) Justus Sagemüller 2013-2014
 -- License     : GPL v3
 -- 
 -- Maintainer  : (@) sagemuej $ smail.uni-koeln.de
@@ -36,10 +36,24 @@ import Graphics.Dynamic.Plot.Colour
 -- import qualified Graphics.UI.GLFW as GLFW
 -- import qualified Graphics.Rendering.OpenGL as OpenGL
 -- import Graphics.Rendering.OpenGL (($=))
+import Diagrams.Prelude (R2, (^&), (&), _x, _y)
+import qualified Diagrams.Prelude as Dia
+import qualified Diagrams.TwoD.Size as Dia
+import qualified Diagrams.Backend.Cairo as Cairo
+    
+import qualified Data.Colour as DCol
+
+import qualified Diagrams.Backend.Gtk as BGTK
+import qualified Graphics.UI.Gtk as GTK
+import Graphics.UI.Gtk ( AttrOp((:=)) )
+import qualified System.Glib.Signals (on)
+
 
 import Control.Category.Constrained.Prelude
 import Control.Arrow.Constrained
 import Control.Monad.Constrained
+
+import Control.Lens ((^.))
 
   
 import Control.Concurrent.Async
@@ -67,6 +81,12 @@ import Data.Time
 
 
 
+type R = Double
+
+type Diagram = Dia.Diagram Cairo.B Dia.R2
+
+bla :: Dia.V Diagram
+bla = Dia.r2(1,0)
 
 
 
@@ -81,26 +101,26 @@ instance (RealFloat r₁, RealFloat r₂) => Plottable (r₁ -> r₂) where
 instance Plottable (Double :--> Double) where
   plot f = DynamicPlottable{
                        relevantRange_x = const mempty
-                     , relevantRange_y = fmap . onInterval $ convℝ² . yRangef . convℝ²
+                     , relevantRange_y = fmap yRangef
                      -- , usesNormalisedCanvas = False
                      , isTintableMonochromic = True
                      , axesNecessity = 1
                      , dynamicPlot = plot }
-   where yRangef (l, r) = (minimum &&& maximum) 
+   where yRangef (Interval l r) = uncurry Interval . (minimum &&& maximum) 
                             . map snd $ 𝓒⁰.finiteGraphContinℝtoℝ
                                          (𝓒⁰.GraphWindowSpec l r fgb fgt 9 9) f
           where (fgb, fgt) = (minimum &&& maximum) [f $ l, f $ m, f $ r]
                 m = l + (r-l) * 0.352479608143
          
          plot (GraphWindowSpec{..}) = curve `deepseq` Plot (trace curve) []
-          where curve :: [(R, R)]
+          where curve :: [Dia.P2]
                 curve = map convℝ² $ 𝓒⁰.finiteGraphContinℝtoℝ mWindow f
                 mWindow = 𝓒⁰.GraphWindowSpec (c lBound) (c rBound) (c bBound) (c tBound) 
                                                  xResolution yResolution
-                trace (p:q:ps) = Draw.line p q <> trace (q:ps)
+                trace (p:q:ps) = simpleLine p q <> trace (q:ps)
                 trace _ = mempty
          
-         convℝ² = c *** c
+         convℝ² = Dia.p2
          c = realToFrac
 
 instance Plottable (Double :--> (Double, Double)) where
@@ -112,14 +132,14 @@ instance Plottable (Double :--> (Double, Double)) where
                      , axesNecessity = 1
                      , dynamicPlot = plot }
    where plot (GraphWindowSpec{..}) = curves `deepseq` Plot (foldMap trace curves) []
-          where curves :: [[(R, R)]]
+          where curves :: [[Dia.P2]]
                 curves = map (map convℝ²) $ 𝓒⁰.finiteGraphContinℝtoℝ² mWindow f
                 mWindow = 𝓒⁰.GraphWindowSpec (c lBound) (c rBound) (c bBound) (c tBound) 
                                                  xResolution yResolution
-                trace (p:q:ps) = Draw.line p q <> trace (q:ps)
+                trace (p:q:ps) = simpleLine p q <> trace (q:ps)
                 trace _ = mempty
          
-         convℝ² = c *** c
+         convℝ² = Dia.p2
          c = realToFrac
  
 
@@ -130,13 +150,14 @@ instance Plottable (Double :--> (Double, Double)) where
 data GraphWindowSpec = GraphWindowSpec {
       lBound, rBound, bBound, tBound :: R
     , xResolution, yResolution :: Int
-  } deriving (Show)
+    , colourScheme :: ColourScheme
+  }
 
 moveStepRel :: (R, R)  -- ^ Relative translation @(Δx/w, Δy/h)@.
             -> (R, R)  -- ^ Relative zoom.
             -> GraphWindowSpec -> GraphWindowSpec
-moveStepRel (δx,δy) (ζx,ζy) (GraphWindowSpec l r b t xRes yRes)
-  = GraphWindowSpec l' r' b' t' xRes yRes
+moveStepRel (δx,δy) (ζx,ζy) (GraphWindowSpec l r b t xRes yRes clSchm)
+  = GraphWindowSpec l' r' b' t' xRes yRes clSchm
  where qx = (r-l)/2                  ; qy = (t-b)/2
        mx'= l + qx*(1+δx)            ; my'= b + qy*(1+δy) 
        qx'= zoomSafeGuard mx' $ qx/ζx; qy'= zoomSafeGuard my' $ qy/ζy
@@ -153,7 +174,7 @@ onInterval :: ((R,R) -> (R,R)) -> Interval -> Interval
 onInterval f (Interval l r) = uncurry Interval $ f (l, r)
 
 data Plot = Plot {
-       getPlot :: Draw.Image Any
+       getPlot :: Diagram
      , plotAnnotations :: [Annotation]
   }
 
@@ -168,29 +189,59 @@ data DynamicPlottable = DynamicPlottable {
 data GraphViewState = GraphViewState {
         lastStableView :: Maybe (GraphWindowSpec, Plot)
       , realtimeView, nextTgtView :: Async Plot
-      , graphColor :: Maybe Draw.Color
+      , graphColor :: Maybe AColour
    }
 
 
-initScreen :: IO ()
-initScreen = do
-    True <- GLFW.initialize
-    True <- GLFW.openWindow (OpenGL.Size defResX defResY) [] GLFW.Window
-    GLFW.windowTitle $= "Plot"
-    GLFW.swapInterval $= 1
-    return ()
+initScreen :: IORef Diagram -> IO GTK.Window
+initScreen dgStore = do
+    GTK.initGUI
+    window <- GTK.windowNew
+              
+    drawA <- GTK.drawingAreaNew
+    GTK.onExpose drawA $ \_ -> do
+             (canvasX,canvasY) <- GTK.widgetGetSize drawA
+             dia <- readIORef dgStore
+             drawWindow <- GTK.widgetGetDrawWindow drawA
+             BGTK.renderToGtk drawWindow $ BGTK.toGtkCoords dia
+             return True
+--              let oldSize = let (w,h) = Dia.size2D dia
+--                            in (max 100 w, max 60 h)
+--                  scaledDia = BGTK.toGtkCoords
+--                            $ Dia.transform (Dia.requiredScaleT spec oldSize) dia
+--                  fI = fromIntegral
+--                  spec = Dia.mkSizeSpec (Just $ fI canvasX - 8) (Just $ fI canvasY - 8)
+ 
+    
+    GTK.set window [ GTK.windowTitle := "Plot"
+                   , GTK.windowDefaultWidth := defResX
+                   , GTK.windowDefaultHeight := defResY
+                   , GTK.containerChild := drawA
+                   ]
+    
+    GTK.widgetShowAll window
+    
+    return window
+    
+
+
                 
 
 plotWindow :: [DynamicPlottable] -> IO GraphWindowSpec
 plotWindow graphs' = do
    
-   initScreen
+   dgStore <- newIORef mempty
    
-   defaultFont <- loadFont
+   window <- initScreen dgStore
+   
+   defFont <- loadFont
+   let defColourScheme = defaultColourScheme
    
    
    ([viewTgt, viewState], graphs) <- do
            let window₀ = autoDefaultView graphs'
+               assignGrViews :: [DynamicPlottable] -> [Colour] -> Double
+                               -> IO [(DynamicPlottable, GraphViewState)]
                assignGrViews (g@DynamicPlottable{..}:gs) (c:cs) axn = do 
                    v <- async $ return $! dynamicPlot window₀
                    fmap ((g, GraphViewState { lastStableView = Nothing
@@ -198,7 +249,7 @@ plotWindow graphs' = do
                                             , graphColor = cl }
                         ) : ) $ assignGrViews gs cs' (axn + axesNecessity)
                 where (cl, cs')
-                        | isTintableMonochromic  = (Just $ defaultColourScheme c, cs)
+                        | isTintableMonochromic  = (Just $ defColourScheme c, cs)
                         | otherwise              = (Nothing, c:cs)
                assignGrViews [] _ axesNeed 
                  | axesNeed > 0  = assignGrViews [dynamicAxes] [grey] (-1)
@@ -247,7 +298,9 @@ plotWindow graphs' = do
    
    let refreshScreen = do
            currentView@(GraphWindowSpec{..}) <- readIORef viewState
-           let normaliseView = (Draw.scale xUnZ yUnZ <> Draw.translate (-x₀,-y₀) %%)
+           let normaliseView :: Diagram -> Diagram
+               normaliseView = (Dia.scaleX xUnZ :: Diagram->Diagram) . Dia.scaleY yUnZ
+                                . Dia.translate (Dia.r2(-x₀,-y₀))
                   where xUnZ = 1/w; yUnZ = 1/h
                w = (rBound - lBound)/2; h = (tBound - bBound)/2
                x₀ = lBound + w; y₀ = bBound + h
@@ -261,15 +314,16 @@ plotWindow graphs' = do
                     Nothing -> mempty
                     Just Plot{..} -> let 
                        antTK = DiagramTK { viewScope = currentView 
-                                         , textTools = TextTK defaultFont txtSize aspect 0.2 0.2 }
+                                         , textTools = TextTK defFont txtSize aspect 0.2 0.2 }
                        txtSize -- | usesNormalisedCanvas  = fontPts / fromIntegral yResolution
                                | otherwise             = h * fontPts / fromIntegral yResolution
                        aspect  -- | usesNormalisedCanvas  = 1
                                | otherwise             = w * fromIntegral yResolution
                                                          / (h * fromIntegral xResolution)
                        fontPts = 12
+                       transform :: Diagram -> Diagram
                        transform = nmScale . clr
-                         where clr | Just c <- graphColor  = Draw.tint c
+                         where clr | Just c <- graphColor  = Dia.lcA c
                                    | otherwise             = id
                                nmScale -- | usesNormalisedCanvas  = id
                                        | otherwise             = normaliseView
@@ -277,8 +331,8 @@ plotWindow graphs' = do
 
            gvStates <- readIORef graphs
            waitAny $ map (realtimeView . snd) gvStates
-           render . mconcat . reverse =<< mapM renderComp (reverse gvStates)
-           GLFW.swapBuffers
+           writeIORef dgStore . mconcat . reverse =<< mapM renderComp (reverse gvStates)
+           -- reShow
            
    let mainLoop = do
            t <- getCurrentTime
@@ -291,9 +345,10 @@ plotWindow graphs' = do
                    in GraphWindowSpec (lBound vt % lBound vo) (rBound vt % rBound vo)
                                       (bBound vt % bBound vo) (tBound vt % tBound vo)
                                       (xResolution vt) (yResolution vt)
-           GLFW.sleep 0.01
+                                      defColourScheme
+           -- GTK.sleep 0.01
            refreshScreen
-           GLFW.pollEvents
+           -- GTK.pollEvents
            readIORef done >>= \fine -> unless fine mainLoop
    
    let keyImpact key = do
@@ -305,51 +360,50 @@ plotWindow graphs' = do
                    ) key
            return impact
    
-   GLFW.keyCallback $= \key state -> do
-           let keyStepSize = 0.1
-           (state==GLFW.Press) `when` do
-              case defaultKeyMap key of
-                Just QuitProgram -> writeIORef done True
-                Just movement    -> do
-                   impact <- keyImpact movement
-                   updateTgtView $ case movement of
-                    MoveUp    -> moveStepRel (0,  impact) (1, 1)
-                    MoveDown  -> moveStepRel (0, -impact) (1, 1)
-                    MoveLeft  -> moveStepRel (-impact, 0) (1, 1)
-                    MoveRight -> moveStepRel (impact , 0) (1, 1)
-                    ZoomIn_x  -> moveStepRel (0, 0)   (1+impact, 1)
-                    ZoomOut_x -> moveStepRel (0, 0)   (1-impact/2, 1)
-                    ZoomIn_y  -> moveStepRel (0, 0)   (1, 1+impact/2)
-                    ZoomOut_y -> moveStepRel (0, 0)   (1, 1-impact/2)
-                _ -> return ()
-           
-   GLFW.windowSizeCallback $= \s@(OpenGL.Size xRes yRes) -> do
-           OpenGL.viewport $= (OpenGL.Position 0 0, s)
-           modifyIORef viewTgt $ \view -> view{ xResolution = fromIntegral xRes
-                                              , yResolution = fromIntegral yRes }
-           -- refreshScreen
-           
-   GLFW.windowCloseCallback $= do
-           writeIORef done True
-           return True
+--    GLFW.keyCallback $= \key state -> do
+--            let keyStepSize = 0.1
+--            (state==GLFW.Press) `when` do
+--               case defaultKeyMap key of
+--                 Just QuitProgram -> writeIORef done True
+--                 Just movement    -> do
+--                    impact <- keyImpact movement
+--                    updateTgtView $ case movement of
+--                     MoveUp    -> moveStepRel (0,  impact) (1, 1)
+--                     MoveDown  -> moveStepRel (0, -impact) (1, 1)
+--                     MoveLeft  -> moveStepRel (-impact, 0) (1, 1)
+--                     MoveRight -> moveStepRel (impact , 0) (1, 1)
+--                     ZoomIn_x  -> moveStepRel (0, 0)   (1+impact, 1)
+--                     ZoomOut_x -> moveStepRel (0, 0)   (1-impact/2, 1)
+--                     ZoomIn_y  -> moveStepRel (0, 0)   (1, 1+impact/2)
+--                     ZoomOut_y -> moveStepRel (0, 0)   (1, 1-impact/2)
+--                 _ -> return ()
+--            
+--    GLFW.windowSizeCallback $= \s@(OpenGL.Size xRes yRes) -> do
+--            OpenGL.viewport $= (OpenGL.Position 0 0, s)
+--            modifyIORef viewTgt $ \view -> view{ xResolution = fromIntegral xRes
+--                                               , yResolution = fromIntegral yRes }
+--            -- refreshScreen
+--            
+   GTK.onDestroy window $ writeIORef done True >> GTK.mainQuit
                  
    
    -- putStrLn "Enter Main loop..."
    
-   mainLoop
+--    mainLoop
+   GTK.mainGUI
    
    (readIORef graphs >>=) . mapM_  -- cancel remaining threads
         $ \(_, GraphViewState{..}) -> cancel realtimeView >> cancel nextTgtView
    
    -- putStrLn "Done."
    
-   GLFW.terminate
+   GTK.mainQuit
    
    readIORef viewState
 
 
 autoDefaultView :: [DynamicPlottable] -> GraphWindowSpec
-autoDefaultView graphs = GraphWindowSpec l r b t defResX defResY
+autoDefaultView graphs = GraphWindowSpec l r b t defResX defResY defaultColourScheme
   where (xRange, yRange) = foldMap (relevantRange_x &&& relevantRange_y) graphs
         ((l,r), (b,t)) = ( xRange `dependentOn` yRange
                          , yRange `dependentOn` xRange )
@@ -360,8 +414,8 @@ autoDefaultView graphs = GraphWindowSpec l r b t defResX defResY
   
 
 
-render :: Monoid a => Draw.Image a -> IO()
-render = Draw.clearRender
+-- render :: Diagram -> IO()
+-- render = Dia.clearRender
 
 defResX, defResY :: Integral i => i
 defResX = 640
@@ -379,23 +433,23 @@ data KeyAction = MoveLeft
                | QuitProgram
    deriving (Eq, Ord, Enum)
 
-defaultKeyMap :: GLFW.Key -> Maybe KeyAction
-defaultKeyMap (GLFW.SpecialKey GLFW.UP   ) = Just MoveUp
-defaultKeyMap (GLFW.SpecialKey GLFW.DOWN ) = Just MoveDown
-defaultKeyMap (GLFW.SpecialKey GLFW.LEFT ) = Just MoveLeft
-defaultKeyMap (GLFW.SpecialKey GLFW.RIGHT) = Just MoveRight
-defaultKeyMap (GLFW.CharKey 'K') = Just MoveUp
-defaultKeyMap (GLFW.CharKey 'J') = Just MoveDown
-defaultKeyMap (GLFW.CharKey 'H') = Just MoveLeft
-defaultKeyMap (GLFW.CharKey 'L') = Just MoveRight
-defaultKeyMap (GLFW.CharKey 'B') = Just ZoomIn_x
-defaultKeyMap (GLFW.CharKey 'N') = Just ZoomOut_x
-defaultKeyMap (GLFW.CharKey 'I') = Just ZoomIn_y
-defaultKeyMap (GLFW.CharKey 'O') = Just ZoomOut_y
-defaultKeyMap (GLFW.SpecialKey GLFW.ESC) = Just QuitProgram
+defaultKeyMap :: GTK.KeyVal -> Maybe KeyAction
+-- defaultKeyMap (GLFW.SpecialKey GLFW.UP   ) = Just MoveUp
+-- defaultKeyMap (GLFW.SpecialKey GLFW.DOWN ) = Just MoveDown
+-- defaultKeyMap (GLFW.SpecialKey GLFW.LEFT ) = Just MoveLeft
+-- defaultKeyMap (GLFW.SpecialKey GLFW.RIGHT) = Just MoveRight
+-- defaultKeyMap (GLFW.CharKey 'K') = Just MoveUp
+-- defaultKeyMap (GLFW.CharKey 'J') = Just MoveDown
+-- defaultKeyMap (GLFW.CharKey 'H') = Just MoveLeft
+-- defaultKeyMap (GLFW.CharKey 'L') = Just MoveRight
+-- defaultKeyMap (GLFW.CharKey 'B') = Just ZoomIn_x
+-- defaultKeyMap (GLFW.CharKey 'N') = Just ZoomOut_x
+-- defaultKeyMap (GLFW.CharKey 'I') = Just ZoomIn_y
+-- defaultKeyMap (GLFW.CharKey 'O') = Just ZoomOut_y
+-- defaultKeyMap (GLFW.SpecialKey GLFW.ESC) = Just QuitProgram
 defaultKeyMap _ = Nothing
 
-instance NFData Draw.R
+-- instance NFData Draw.R
 
 
 fnPlot :: (R -> R) -> DynamicPlottable
@@ -410,8 +464,8 @@ fnPlot f = DynamicPlottable{
                                                $ map f [l, l + (r-l)/80 .. r]
        plot (GraphWindowSpec{..}) = curve `deepseq` Plot (trace curve) []
         where δx = (rBound - lBound) * 2 / fromIntegral xResolution
-              curve = [ (x, f x) | x<-[lBound, lBound+δx .. rBound] ]
-              trace (p:q:ps) = Draw.line p q <> trace (q:ps)
+              curve = [ (x ^& f x) | x<-[lBound, lBound+δx .. rBound] ]
+              trace (p:q:ps) = simpleLine p q <> trace (q:ps)
               trace _ = mempty
        pruneOutlyers = filter (not . isNaN) 
        l!n | (x:_)<-drop n l  = x
@@ -461,8 +515,6 @@ crtDynamicAxes (GraphWindowSpec {..}) = DynamicAxes yAxCls xAxCls
                      ll [] = error $ "pixelScale = "++show pixelScale
                                    ++"; minSpc = "++show minSpc
                      ll l = last l
-              ceil = fromIntegral . ceiling
-              flor = fromIntegral . floor
        lvlSpecs = [ (80, 0.3), (18, 0.1) ]
 
 
@@ -477,14 +529,14 @@ dynamicAxes = DynamicPlottable {
              , dynamicPlot = plot }
  where plot gwSpec@(GraphWindowSpec{..}) = Plot lines labels
         where (DynamicAxes yAxCls xAxCls) = crtDynamicAxes gwSpec
-              lines = Draw.line (lBound, 0) (rBound, 0)  `provided`(bBound < 0 && tBound > 0)
-                   <> Draw.line (0, bBound) (0, tBound)  `provided`(lBound < 0 && rBound > 0)
-                   <> foldMap (renderClass $ \x -> ((x, bBound), ((x, tBound)))) yAxCls
-                   <> foldMap (renderClass $ \y -> ((lBound, y), ((rBound, y)))) xAxCls
-              labels = do (dirq, hAlign, vAlign, acl) <- zip4 [\x->(x,0), \y->(0,y) ] 
-                                                              [AlignMid , AlignTop  ]
-                                                              [AlignTop , AlignMid  ]
-                                                              [yAxCls   , xAxCls    ]
+              lines = simpleLine (lBound^&0) (rBound^&0)  `provided`(bBound<0 && tBound>0)
+                   <> simpleLine (0^&bBound) (0^&tBound)  `provided`(lBound<0 && rBound>0)
+                   <> foldMap (renderClass $ \x -> (x^&bBound, x^&tBound)) yAxCls
+                   <> foldMap (renderClass $ \y -> (lBound^&y, rBound^&y)) xAxCls
+              labels = do (dirq, hAlign, vAlign, acl) <- zip4 [\x -> x^&0, \y -> 0^&y ] 
+                                                              [AlignMid  , AlignTop   ]
+                                                              [AlignTop  , AlignMid   ]
+                                                              [yAxCls    , xAxCls     ]
                           let (AxisClass vaxs _ prc) = head acl
                               prepAnnotation (Axis{axisPosition=z}) = do
                                                guard(z/=0) 
@@ -494,8 +546,14 @@ dynamicAxes = DynamicPlottable {
                                      align = TextAlignment hAlign vAlign
                           prepAnnotation =<< vaxs
        renderClass crd (AxisClass axes strength _)
-          = Draw.tint (let s = realToFrac strength in Draw.Color s s s 1)
-              $ foldMap (uncurry Draw.line . crd . axisPosition) axes
+          = Dia.lcA (Dia.grey `DCol.withOpacity` strength)
+              $ foldMap (uncurry simpleLine . crd . axisPosition) axes
+
+
+
+
+simpleLine :: Dia.P2 -> Dia.P2 -> Diagram
+simpleLine p q = Dia.fromVertices [p,q]
 
 
 
@@ -555,17 +613,18 @@ data TextAlignment = TextAlignment { hAlign, vAlign :: Alignment } -- , blockSpr
 data Alignment = AlignBottom | AlignMid | AlignTop
 
 data DiagramTK = DiagramTK { textTools :: TextTK, viewScope :: GraphWindowSpec }
-data TextTK = TextTK { defaultFont :: Draw.Font
+data TextTK = TextTK { defaultFont :: () -- Draw.Font
                      , txtSize, xAspect, padding, extraTopPad :: R }
 
-prerenderAnnotation :: DiagramTK -> Annotation -> Draw.Image Any
+
+prerenderAnnotation :: DiagramTK -> Annotation -> Diagram
 prerenderAnnotation (DiagramTK{ textTools = TextTK{..}, viewScope = GraphWindowSpec{..} }) 
                     (Annotation{..})
        | TextAnnotation (PlainText str) (TextAlignment{..}) <- getAnnotation
        , ExactPlace p₀ <- placement
-            = let (rnTextLines, lineWidths) 
-                       = unzip . map (Draw.text defaultFont &&& Draw.textWidth defaultFont) 
-                            $ lines str
+            = let (rnTextLines, lineWidths) = ([],[])
+                   --    = unzip . map (Dia.text defaultFont &&& CairoTxt.textWidth defaultFont) 
+                   --         $ lines str
                   nLines = length lineWidths
                   lineHeight = 1 + extraTopPad + 2*padding
                   ζx = ζy * xAspect
@@ -578,14 +637,14 @@ prerenderAnnotation (DiagramTK{ textTools = TextTK{..}, viewScope = GraphWindowS
                               AlignTop    -> - (lineHeight + padding)
                   fullText = mconcat $ zipWith3 ( \n w -> 
                                  let y = n*lineHeight
-                                 in (Draw.translate (case hAlign of 
+                                 in (Dia.translate $ Dia.r2 (case hAlign of 
                                       AlignBottom -> (padding       , y₀-y)
                                       AlignMid    -> (- w/2         , y₀-y)
                                       AlignTop    -> (-(w + padding), y₀-y)
-                                     ) %% ) ) [0..] lineWidths rnTextLines
-                  p = (px, py)
-                   where px = max l' . min r' $ fst p₀
-                         py = max b' . min t' $ snd p₀
+                                     ) ) ) [0..] lineWidths rnTextLines
+                  p = px ^& py
+                   where px = max l' . min r' $ p₀^._x
+                         py = max b' . min t' $ p₀^._y
                          (l', r') = case hAlign of
                            AlignBottom -> (lBound      , rBound - w  )
                            AlignMid    -> (lBound + w/2, rBound - w/2)
@@ -595,28 +654,29 @@ prerenderAnnotation (DiagramTK{ textTools = TextTK{..}, viewScope = GraphWindowS
                            AlignMid    -> (bBound + h/2, tBound - h/2)
                            AlignTop    -> (bBound + h  , tBound      )
                          w = ζx * width; h = ζy * height
-              in Draw.translate p <> Draw.scale ζx ζy 
-                     %% Draw.tint (Draw.Color 0.5 0.5 0.5 1) fullText
+              in Dia.translate p . Dia.scaleX ζx . Dia.scaleY ζy 
+                     $ Dia.lc Dia.grey fullText
         
 
 
-loadFont :: IO Draw.Font
-loadFont = do
-   let rdTTFfname = takeWhile(/='"') . tail . dropWhile(/='"')
-   fontsList <- fmap (map rdTTFfname . lines)
-        $ readProcess "bash" ["-c", "fc-list -v :lang=en | grep ttf"] ""
-   let (fontChoice:_) = [ font
-                        | preference <- [ "mplus-2c-medium.ttf"
-                                        , "LiberationSans-Regular.ttf"
-                                        , "FreeSans.ttf"
-                                        , "DejaVuSans.ttf"
-                                        , "DroidSans.ttf" 
-                                        , "elvetica"
-                                        , "rial"
-                                        , "" ]
-                        , font <- fontsList
-                        , preference`isInfixOf`font            ]
-   Draw.openFont fontChoice
+loadFont :: IO () -- Draw.Font
+loadFont = return ()
+--   do
+--    let rdTTFfname = takeWhile(/='"') . tail . dropWhile(/='"')
+--    fontsList <- fmap (map rdTTFfname . lines)
+--         $ readProcess "bash" ["-c", "fc-list -v :lang=en | grep ttf"] ""
+--    let (fontChoice:_) = [ font
+--                         | preference <- [ "mplus-2c-medium.ttf"
+--                                         , "LiberationSans-Regular.ttf"
+--                                         , "FreeSans.ttf"
+--                                         , "DejaVuSans.ttf"
+--                                         , "DroidSans.ttf" 
+--                                         , "elvetica"
+--                                         , "rial"
+--                                         , "" ]
+--                         , font <- fontsList
+--                         , preference`isInfixOf`font            ]
+--    Draw.openFont fontChoice
 
 
 
@@ -630,10 +690,19 @@ lg :: Floating a => a -> a
 lg x = log x / log 10
 
 
-instance (Monoid v) => Semigroup (Draw.Image v) where
-  (<>) = mappend
-instance Semigroup (Draw.Affine) where
-  (<>) = mappend
+-- instance (Monoid v) => Semigroup (Draw.Image v) where
+--   (<>) = mappend
+-- instance Semigroup (Draw.Affine) where
+--   (<>) = mappend
+-- 
+ceil, flor :: R -> R
+ceil = fromInt . ceiling
+flor = fromInt . floor
+
+fromInt :: Num a => Int -> a
+fromInt = fromIntegral
 
 
+
+instance NFData Dia.P2
 
