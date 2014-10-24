@@ -193,37 +193,6 @@ data GraphViewState = GraphViewState {
    }
 
 
-initScreen :: IORef Diagram -> IO GTK.Window
-initScreen dgStore = do
-    GTK.initGUI
-    window <- GTK.windowNew
-              
-    drawA <- GTK.drawingAreaNew
-    GTK.onExpose drawA $ \_ -> do
-             (canvasX,canvasY) <- GTK.widgetGetSize drawA
-             dia <- readIORef dgStore
-             let oldSize = Dia.size2D dia
-                 scaledDia = BGTK.toGtkCoords
-                           $ Dia.bg Dia.black
-                             . Dia.scaleX (fromInt canvasX) . Dia.scaleY (fromInt canvasY)
-                               $ dia
-                 fI = fromIntegral
-                 spec = Dia.mkSizeSpec (Just $ fI canvasX - 8) (Just $ fI canvasY - 8)
-             drawWindow <- GTK.widgetGetDrawWindow drawA
-             BGTK.renderToGtk drawWindow $ scaledDia
-             return True
- 
-    
-    GTK.set window [ GTK.windowTitle := "Plot"
-                   , GTK.windowDefaultWidth := defResX
-                   , GTK.windowDefaultHeight := defResY
-                   , GTK.containerChild := drawA
-                   ]
-    
-    GTK.widgetShowAll window
-    
-    return window
-    
 
 
                 
@@ -233,7 +202,6 @@ plotWindow graphs' = do
    
    dgStore <- newIORef $ mempty & Dia.bg Dia.black
    
-   window <- initScreen dgStore
    
    defFont <- loadFont
    let defColourScheme = defaultColourScheme
@@ -258,6 +226,36 @@ plotWindow graphs' = do
            w <- mapM newIORef $ replicate 2 window₀
            gs <- newIORef =<< assignGrViews graphs' defaultColourSeq 0
            return (w,gs)
+   
+   
+   window <- GTK.windowNew
+   do  GTK.initGUI
+                 
+       drawA <- GTK.drawingAreaNew
+       GTK.onExpose drawA $ \_ -> do
+                (canvasX,canvasY) <- GTK.widgetGetSize drawA
+                modifyIORef viewTgt $ \view -> view{ xResolution = fromIntegral canvasX
+                                                   , yResolution = fromIntegral canvasY }
+                dia <- readIORef dgStore
+                let oldSize = Dia.size2D dia
+                    scaledDia = Dia.bg Dia.black
+                                . Dia.scaleX (fromInt canvasX / 2)
+                                . Dia.scaleY (fromInt canvasY / 2)
+                                . Dia.translate (1 ^& 1)
+                                  $ dia
+                drawWindow <- GTK.widgetGetDrawWindow drawA
+                BGTK.renderToGtk drawWindow $ scaledDia
+                return True
+    
+       
+       GTK.set window [ GTK.windowTitle := "Plot"
+                      , GTK.windowDefaultWidth := defResX
+                      , GTK.windowDefaultHeight := defResY
+                      , GTK.containerChild := drawA
+                      ]
+       
+       GTK.widgetShowAll window
+       
    
    let updateRTView, updateTgtView :: (GraphWindowSpec -> GraphWindowSpec) -> IO ()
        updateRTView updRealView = do
@@ -381,12 +379,6 @@ plotWindow graphs' = do
 --                     ZoomIn_y  -> moveStepRel (0, 0)   (1, 1+impact/2)
 --                     ZoomOut_y -> moveStepRel (0, 0)   (1, 1-impact/2)
 --                 _ -> return ()
---            
---    GLFW.windowSizeCallback $= \s@(OpenGL.Size xRes yRes) -> do
---            OpenGL.viewport $= (OpenGL.Position 0 0, s)
---            modifyIORef viewTgt $ \view -> view{ xResolution = fromIntegral xRes
---                                               , yResolution = fromIntegral yRes }
---            -- refreshScreen
 --            
    GTK.onDestroy window $ do
         (readIORef graphs >>=) . mapM_  -- cancel remaining threads
