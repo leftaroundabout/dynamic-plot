@@ -152,6 +152,14 @@ data GraphWindowSpec = GraphWindowSpec {
     , xResolution, yResolution :: Int
     , colourScheme :: ColourScheme
   }
+instance Show GraphWindowSpec where
+  show (GraphWindowSpec{..}) = "GraphWindowSpec{\
+                               \lBound="++show lBound++", \
+                               \rBound="++show rBound++", \
+                               \bBound="++show bBound++", \
+                               \tBound="++show tBound++", \
+                               \xResolution="++show xResolution++", \
+                               \yResolution="++show yResolution++"}"
 
 moveStepRel :: (R, R)  -- ^ Relative translation @(Δx/w, Δy/h)@.
             -> (R, R)  -- ^ Relative zoom.
@@ -244,7 +252,10 @@ plotWindow graphs' = do
                                 . Dia.translate (1 ^& 1)
                                   $ dia
                 drawWindow <- GTK.widgetGetDrawWindow drawA
+                -- putStrLn $ "redrawing"++show(canvasX,canvasY)
+                -- putStrLn . ("with state now:\n"++) . show =<< readIORef viewState
                 BGTK.renderToGtk drawWindow $ scaledDia
+                -- putStrLn $ "redrawn."
                 return True
     
        
@@ -333,7 +344,7 @@ plotWindow graphs' = do
            writeIORef dgStore . (Dia.bg Dia.black)
                 . mconcat . reverse =<< mapM renderComp (reverse gvStates)
                                                     
-           GTK.widgetShowAll window
+           -- GTK.widgetShowAll window
            -- reShow
            
    let mainLoop = do
@@ -389,7 +400,7 @@ plotWindow graphs' = do
    -- putStrLn "Enter Main loop..."
    
 --    mainLoop
-   GTK.timeoutAdd mainLoop 10
+   GTK.timeoutAdd mainLoop 100
    GTK.mainGUI
    
    -- putStrLn "Done."
@@ -550,7 +561,7 @@ dynamicAxes = DynamicPlottable {
 
 
 simpleLine :: Dia.P2 -> Dia.P2 -> Diagram
-simpleLine p q = Dia.fromVertices [p,q]
+simpleLine p q = Dia.fromVertices [p,q] & Dia.lwO 2
 
 
 
