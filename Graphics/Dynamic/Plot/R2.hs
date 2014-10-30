@@ -239,7 +239,8 @@ plotWindow graphs' = do
    GTK.initGUI
    window <- GTK.windowNew
                  
-   do  drawA <- GTK.drawingAreaNew
+   refreshDraw <- do
+       drawA <- GTK.drawingAreaNew
        GTK.onExpose drawA $ \_ -> do
                 (canvasX,canvasY) <- GTK.widgetGetSize drawA
                 modifyIORef viewTgt $ \view -> view{ xResolution = fromIntegral canvasX
@@ -258,8 +259,6 @@ plotWindow graphs' = do
                 -- putStrLn $ "redrawn."
                 return True
        
-       -- dirButtons <- forM ">^<" $ do
-
     
        
        GTK.set window [ GTK.windowTitle := "Plot"
@@ -269,6 +268,8 @@ plotWindow graphs' = do
                       ]
        
        GTK.widgetShowAll window
+       
+       return $ GTK.widgetQueueDraw drawA
        
    
    let updateRTView, updateTgtView :: (GraphWindowSpec -> GraphWindowSpec) -> IO ()
@@ -347,8 +348,7 @@ plotWindow graphs' = do
            writeIORef dgStore . (Dia.bg Dia.black)
                 . mconcat . reverse =<< mapM renderComp (reverse gvStates)
                                                     
-           -- GTK.widgetShowAll window
-           -- reShow
+           refreshDraw
            
    let mainLoop = do
            t <- getCurrentTime
@@ -404,6 +404,8 @@ plotWindow graphs' = do
    
 --    mainLoop
    GTK.timeoutAdd mainLoop 100
+   
+
    GTK.mainGUI
    
    -- putStrLn "Done."
