@@ -236,10 +236,10 @@ plotWindow graphs' = do
            return (w,gs)
    
    
+   GTK.initGUI
    window <- GTK.windowNew
-   do  GTK.initGUI
                  
-       drawA <- GTK.drawingAreaNew
+   do  drawA <- GTK.drawingAreaNew
        GTK.onExpose drawA $ \_ -> do
                 (canvasX,canvasY) <- GTK.widgetGetSize drawA
                 modifyIORef viewTgt $ \view -> view{ xResolution = fromIntegral canvasX
@@ -257,6 +257,9 @@ plotWindow graphs' = do
                 BGTK.renderToGtk drawWindow $ scaledDia
                 -- putStrLn $ "redrawn."
                 return True
+       
+       -- dirButtons <- forM ">^<" $ do
+
     
        
        GTK.set window [ GTK.windowTitle := "Plot"
@@ -405,7 +408,7 @@ plotWindow graphs' = do
    
    -- putStrLn "Done."
    
-   GTK.mainQuit
+   -- GTK.mainQuit
    
    readIORef viewState
 
