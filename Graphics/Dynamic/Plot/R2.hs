@@ -46,8 +46,10 @@ import qualified Data.Colour as DCol
 import qualified Diagrams.Backend.Gtk as BGTK
 import qualified Graphics.UI.Gtk as GTK
 import Graphics.UI.Gtk ( AttrOp((:=)) )
+import qualified Graphics.UI.Gtk.Gdk.EventM as Event
 import qualified System.Glib.Signals (on)
 
+import Control.Monad.Trans (liftIO)
 
 import Control.Category.Constrained.Prelude
 import Control.Arrow.Constrained
@@ -259,7 +261,33 @@ plotWindow graphs' = do
                 -- putStrLn $ "redrawn."
                 return True
        
-    
+       GTK.on drawA GTK.scrollEvent . Event.tryEvent $ do
+                (canvasX,canvasY) <- liftIO $ GTK.widgetGetSize drawA
+                (scrollX,scrollY) <- Event.eventCoordinates
+                let (rcX,rcY) = ( scrollX*2 / fromIntegral canvasX - 1
+                                , scrollY*2 / fromIntegral canvasY - 1 )
+                scrollD <- Event.eventScrollDirection
+                case defaultScrollBehaviour scrollD of
+                   ScrollZoomIn  -> liftIO $ do
+                     modifyIORef viewTgt $ \view@GraphWindowSpec{..}
+                         -> let w = rBound - lBound
+                                h = tBound - bBound
+                            in view{ lBound = lBound + w * (rcX + 1)^2 * scrollZoomStrength
+                                   , rBound = rBound - w * (rcX - 1)^2 * scrollZoomStrength
+                                   , tBound = tBound - h * (rcY - 1)^2 * scrollZoomStrength
+                                   , bBound = bBound + h * (rcY + 1)^2 * scrollZoomStrength
+                                   }
+                   ScrollZoomOut -> liftIO $ do
+                     modifyIORef viewTgt $ \view@GraphWindowSpec{..}
+                         -> let w = rBound - lBound
+                                h = tBound - bBound
+                            in view{ lBound = lBound - w * (rcX - 1)^2 * scrollZoomStrength
+                                   , rBound = rBound + w * (rcX + 1)^2 * scrollZoomStrength
+                                   , tBound = tBound + h * (rcY + 1)^2 * scrollZoomStrength
+                                   , bBound = bBound - h * (rcY - 1)^2 * scrollZoomStrength
+                                   }
+                       
+                       
        
        GTK.set window [ GTK.windowTitle := "Plot"
                       , GTK.windowDefaultWidth := defResX
@@ -433,6 +461,16 @@ autoDefaultView graphs = GraphWindowSpec l r b t defResX defResY defaultColourSc
 defResX, defResY :: Integral i => i
 defResX = 640
 defResY = 480
+
+
+data ScrollAction = ScrollZoomIn | ScrollZoomOut
+
+defaultScrollBehaviour :: Event.ScrollDirection -> ScrollAction
+defaultScrollBehaviour Event.ScrollUp = ScrollZoomIn
+defaultScrollBehaviour Event.ScrollDown = ScrollZoomOut
+
+scrollZoomStrength :: Double
+scrollZoomStrength = 1/20
 
 
 data KeyAction = MoveLeft
