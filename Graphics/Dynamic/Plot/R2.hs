@@ -679,8 +679,9 @@ prerenderAnnotation (DiagramTK{ textTools = TextTK{..}, viewScope = GraphWindowS
                     (Annotation{..})
        | TextAnnotation (PlainText str) (TextAlignment{..}) <- getAnnotation
        , ExactPlace p₀ <- placement
-            = let rnTextLines = map (CairoTxt.textLineBounded txtCairoStyle) $ lines str
-                  lineWidths = map Dia.width rnTextLines
+            = let rnTextLines = map (CairoTxt.textVisualBounded txtCairoStyle) $ lines str
+                  lineWidths = map ((/4 {- Magic number ??? -})
+                                . Dia.width) rnTextLines
                   nLines = length lineWidths
                   lineHeight = 1 + extraTopPad + 2*padding
                   ζx = ζy * xAspect
