@@ -251,8 +251,8 @@ plotWindow graphs' = do
                 let oldSize = Dia.size2D dia
                     scaledDia = Dia.bg Dia.black
                                 . Dia.scaleX (fromInt canvasX / 2)
-                                . Dia.scaleY (fromInt canvasY / 2)
-                                . Dia.translate (1 ^& 1)
+                                . Dia.scaleY (-fromInt canvasY / 2)
+                                . Dia.translate (1 ^& (-1))
                                   $ dia
                 drawWindow <- GTK.widgetGetDrawWindow drawA
                 -- putStrLn $ "redrawing"++show(canvasX,canvasY)
@@ -265,7 +265,7 @@ plotWindow graphs' = do
                 (canvasX,canvasY) <- liftIO $ GTK.widgetGetSize drawA
                 (scrollX,scrollY) <- Event.eventCoordinates
                 let (rcX,rcY) = ( scrollX*2 / fromIntegral canvasX - 1
-                                , scrollY*2 / fromIntegral canvasY - 1 )
+                                , 1 - scrollY*2 / fromIntegral canvasY )
                 scrollD <- Event.eventScrollDirection
                 case defaultScrollBehaviour scrollD of
                    ScrollZoomIn  -> liftIO $ do
