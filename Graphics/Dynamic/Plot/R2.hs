@@ -40,6 +40,7 @@ import Diagrams.Prelude (R2, (^&), (&), _x, _y)
 import qualified Diagrams.Prelude as Dia
 import qualified Diagrams.TwoD.Size as Dia
 import qualified Diagrams.Backend.Cairo as Cairo
+import qualified Diagrams.Backend.Cairo.Text as CairoTxt
     
 import qualified Data.Colour as DCol
 
@@ -213,7 +214,6 @@ plotWindow graphs' = do
    dgStore <- newIORef $ mempty & Dia.bg Dia.black
    
    
-   defFont <- loadFont
    let defColourScheme = defaultColourScheme
    
    
@@ -355,7 +355,8 @@ plotWindow graphs' = do
                     Nothing -> mempty
                     Just Plot{..} -> let 
                        antTK = DiagramTK { viewScope = currentView 
-                                         , textTools = TextTK defFont txtSize aspect 0.2 0.2 }
+                                         , textTools = TextTK defaultTxtStyle
+                                                                  txtSize aspect 0.2 0.2 }
                        txtSize -- | usesNormalisedCanvas  = fontPts / fromIntegral yResolution
                                | otherwise             = h * fontPts / fromIntegral yResolution
                        aspect  -- | usesNormalisedCanvas  = 1
@@ -664,8 +665,13 @@ data TextAlignment = TextAlignment { hAlign, vAlign :: Alignment } -- , blockSpr
 data Alignment = AlignBottom | AlignMid | AlignTop
 
 data DiagramTK = DiagramTK { textTools :: TextTK, viewScope :: GraphWindowSpec }
-data TextTK = TextTK { defaultFont :: () -- Draw.Font
+data TextTK = TextTK { txtCairoStyle :: Dia.Style R2 -- Draw.Font
                      , txtSize, xAspect, padding, extraTopPad :: R }
+
+defaultTxtStyle :: Dia.Style R2
+defaultTxtStyle = mempty & Dia.fontSizeO 9
+                         & Dia.fc Dia.grey
+                         & Dia.lc Dia.grey
 
 
 prerenderAnnotation :: DiagramTK -> Annotation -> Diagram
@@ -673,9 +679,8 @@ prerenderAnnotation (DiagramTK{ textTools = TextTK{..}, viewScope = GraphWindowS
                     (Annotation{..})
        | TextAnnotation (PlainText str) (TextAlignment{..}) <- getAnnotation
        , ExactPlace p₀ <- placement
-            = let (rnTextLines, lineWidths) = ([],[])
-                   --    = unzip . map (Dia.text defaultFont &&& CairoTxt.textWidth defaultFont) 
-                   --         $ lines str
+            = let rnTextLines = map (CairoTxt.textLineBounded txtCairoStyle) $ lines str
+                  lineWidths = map Dia.width rnTextLines
                   nLines = length lineWidths
                   lineHeight = 1 + extraTopPad + 2*padding
                   ζx = ζy * xAspect
@@ -710,24 +715,6 @@ prerenderAnnotation (DiagramTK{ textTools = TextTK{..}, viewScope = GraphWindowS
         
 
 
-loadFont :: IO () -- Draw.Font
-loadFont = return ()
---   do
---    let rdTTFfname = takeWhile(/='"') . tail . dropWhile(/='"')
---    fontsList <- fmap (map rdTTFfname . lines)
---         $ readProcess "bash" ["-c", "fc-list -v :lang=en | grep ttf"] ""
---    let (fontChoice:_) = [ font
---                         | preference <- [ "mplus-2c-medium.ttf"
---                                         , "LiberationSans-Regular.ttf"
---                                         , "FreeSans.ttf"
---                                         , "DejaVuSans.ttf"
---                                         , "DroidSans.ttf" 
---                                         , "elvetica"
---                                         , "rial"
---                                         , "" ]
---                         , font <- fontsList
---                         , preference`isInfixOf`font            ]
---    Draw.openFont fontChoice
 
 
 
