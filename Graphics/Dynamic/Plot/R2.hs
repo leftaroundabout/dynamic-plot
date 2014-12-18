@@ -39,6 +39,7 @@ import Graphics.Dynamic.Plot.Colour
 import Diagrams.Prelude (R2, (^&), (&), _x, _y)
 import qualified Diagrams.Prelude as Dia
 import qualified Diagrams.TwoD.Size as Dia
+import qualified Diagrams.BoundingBox as Dia
 import qualified Diagrams.Backend.Cairo as Cairo
 import qualified Diagrams.Backend.Cairo.Text as CairoTxt
     
@@ -144,6 +145,22 @@ instance Plottable (Double :--> (Double, Double)) where
          
          convℝ² = Dia.p2
          c = realToFrac
+
+instance Plottable Diagram where
+  plot d = DynamicPlottable{
+                       relevantRange_x = const $ Option rlx
+                     , relevantRange_y = const $ Option rly
+                     , isTintableMonochromic = False
+                     , axesNecessity = -1
+                     , dynamicPlot = plot
+                     }
+   where bb = Dia.boundingBox d
+         (rlx,rly) = case Dia.getCorners bb of
+                       Just (c1, c2)
+                        -> ( Just $ interval (c1^._x) (c2^._x)
+                           , Just $ interval (c1^._y) (c2^._y) )
+         plot _ = Plot d []
+
  
 
 
@@ -184,6 +201,11 @@ instance Semigroup Interval where  -- WRT closed hull of the union.
 onInterval :: ((R,R) -> (R,R)) -> Interval -> Interval 
 onInterval f (Interval l r) = uncurry Interval $ f (l, r)
 
+interval :: R -> R -> Interval
+interval x1 x2 | x1 < x2    = Interval x1 x2
+               | otherwise  = Interval x2 x1
+
+
 data Plot = Plot {
        getPlot :: Diagram
      , plotAnnotations :: [Annotation]
@@ -193,7 +215,7 @@ data DynamicPlottable = DynamicPlottable {
         relevantRange_x, relevantRange_y :: Option Interval -> Option Interval
       -- , usesNormalisedCanvas :: Bool
       , isTintableMonochromic :: Bool
-      , axesNecessity :: Double
+      , axesNecessity :: Necessity
       , dynamicPlot :: GraphWindowSpec -> Plot
   }
 
@@ -253,6 +275,7 @@ plotWindow graphs' = do
                                 . Dia.scaleX (fromInt canvasX / 2)
                                 . Dia.scaleY (-fromInt canvasY / 2)
                                 . Dia.translate (1 ^& (-1))
+                                . Dia.withEnvelope (Dia.rect 2 2 :: Diagram)
                                   $ dia
                 drawWindow <- GTK.widgetGetDrawWindow drawA
                 -- putStrLn $ "redrawing"++show(canvasX,canvasY)
@@ -577,7 +600,7 @@ dynamicAxes = DynamicPlottable {
              , relevantRange_y = const mempty   
              -- , usesNormalisedCanvas = False
              , isTintableMonochromic = True
-             , axesNecessity = -1
+             , axesNecessity = superfluent
              , dynamicPlot = plot }
  where plot gwSpec@(GraphWindowSpec{..}) = Plot lines labels
         where (DynamicAxes yAxCls xAxCls) = crtDynamicAxes gwSpec
@@ -601,6 +624,10 @@ dynamicAxes = DynamicPlottable {
           = Dia.lcA (Dia.grey `DCol.withOpacity` strength)
               $ foldMap (uncurry simpleLine . crd . axisPosition) axes
 
+
+
+type Necessity = Double
+superfluent = -1e+32 :: Necessity
 
 
 
