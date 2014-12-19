@@ -104,12 +104,12 @@ instance (RealFloat r₁, RealFloat r₂) => Plottable (r₁ -> r₂) where
 
 instance Plottable (Double :--> Double) where
   plot f = DynamicPlottable{
-                       relevantRange_x = const mempty
-                     , relevantRange_y = fmap yRangef
-                     -- , usesNormalisedCanvas = False
-                     , isTintableMonochromic = True
-                     , axesNecessity = 1
-                     , dynamicPlot = plot }
+             relevantRange_x = const mempty
+           , relevantRange_y = fmap yRangef
+           -- , usesNormalisedCanvas = False
+           , isTintableMonochromic = True
+           , axesNecessity = 1
+           , dynamicPlot = plot }
    where yRangef (Interval l r) = uncurry Interval . (minimum &&& maximum) 
                             . map snd $ 𝓒⁰.finiteGraphContinℝtoℝ
                                          (𝓒⁰.GraphWindowSpec l r fgb fgt 9 9) f
@@ -129,12 +129,12 @@ instance Plottable (Double :--> Double) where
 
 instance Plottable (Double :--> (Double, Double)) where
   plot f = DynamicPlottable{
-                       relevantRange_x = const mempty
-                     , relevantRange_y = const mempty
-                     -- , usesNormalisedCanvas = False
-                     , isTintableMonochromic = True
-                     , axesNecessity = 1
-                     , dynamicPlot = plot }
+             relevantRange_x = const mempty
+           , relevantRange_y = const mempty
+           -- , usesNormalisedCanvas = False
+           , isTintableMonochromic = True
+           , axesNecessity = 1
+           , dynamicPlot = plot }
    where plot (GraphWindowSpec{..}) = curves `deepseq` Plot (foldMap trace curves) []
           where curves :: [[Dia.P2]]
                 curves = map (map convℝ²) $ 𝓒⁰.finiteGraphContinℝtoℝ² mWindow f
@@ -146,20 +146,33 @@ instance Plottable (Double :--> (Double, Double)) where
          convℝ² = Dia.p2
          c = realToFrac
 
+
+instance (Plottable p) => Plottable [p] where
+  plot l0 = DynamicPlottable{
+              relevantRange_x = \ry -> foldMap (($ry) . relevantRange_x) l
+            , relevantRange_y = \rx -> foldMap (($rx) . relevantRange_y) l
+            , isTintableMonochromic = or $ isTintableMonochromic <$> l
+            , axesNecessity = sum $ axesNecessity <$> l
+            , dynamicPlot = foldMap dynamicPlot l
+            }
+   where l = map plot l0
+
 instance Plottable Diagram where
   plot d = DynamicPlottable{
-                       relevantRange_x = const $ Option rlx
-                     , relevantRange_y = const $ Option rly
-                     , isTintableMonochromic = False
-                     , axesNecessity = -1
-                     , dynamicPlot = plot
-                     }
+             relevantRange_x = const $ Option rlx
+           , relevantRange_y = const $ Option rly
+           , isTintableMonochromic = False
+           , axesNecessity = -1
+           , dynamicPlot = plot
+           }
    where bb = Dia.boundingBox d
          (rlx,rly) = case Dia.getCorners bb of
                        Just (c1, c2)
                         -> ( Just $ interval (c1^._x) (c2^._x)
                            , Just $ interval (c1^._y) (c2^._y) )
          plot _ = Plot d []
+
+
 
  
 
@@ -210,6 +223,11 @@ data Plot = Plot {
        getPlot :: Diagram
      , plotAnnotations :: [Annotation]
   }
+instance Semigroup Plot where
+  Plot d1 a1 <> Plot d2 a2 = Plot (d1<>d2) (a1<>a2)
+instance Monoid Plot where
+  mempty = Plot mempty mempty
+  mappend = (<>)
 
 data DynamicPlottable = DynamicPlottable { 
         relevantRange_x, relevantRange_y :: Option Interval -> Option Interval
