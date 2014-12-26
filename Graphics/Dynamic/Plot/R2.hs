@@ -16,6 +16,7 @@
 {-# LANGUAGE FlexibleInstances         #-}
 {-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE NoImplicitPrelude         #-}
+{-# LANGUAGE DeriveFunctor             #-}
 
 module Graphics.Dynamic.Plot.R2 (
         -- * Interactive display
@@ -53,6 +54,7 @@ import qualified System.Glib.Signals (on)
 
 import Control.Monad.Trans (liftIO)
 
+import qualified Control.Category.Hask as Hask
 import Control.Category.Constrained.Prelude
 import Control.Arrow.Constrained
 import Control.Monad.Constrained
@@ -174,10 +176,111 @@ instance Plottable Diagram where
 
 
 
+-- data SampledPath p = SampledPath [p]
+--                    | DepthLazyPath [(p, SampledPath p)]
+--            deriving (Functor)
+-- 
+-- flattenSplPath :: SampledPath p -> [p]
+-- flattenSplPath (SampledPath pth) = pth
+-- flattenSplPath (DepthLazyPath pth) = foldMap (\(p, pth') -> p : flattenSplPath pth') pth
+-- 
+-- instance Foldable SampledPath where
+--   foldMap f pth = foldMap f $ flattenSplPath pth
+-- 
+-- 
+-- instance Plottable (SampledPath R2) where
+--   plot (SampledPath p) = DynamicPlottable{
+--                            relevantRange_x = const $ foldMap (spInterval . (^._x)) p
+--                          , relevantRange_y = const $ foldMap (spInterval . (^._y)) p
+--                          , isTintableMonochromic = True
+--                          , axesNecessity = 1
+--                          , dynamicPlot = plot
+--                          }
+--    where 
+--          plot (GraphWindowSpec{..}) = Plot (trace curve) []
+--           where curve :: [Dia.P2]
+--                 curve = map convℝ² $ 𝓒⁰.finiteGraphContinℝtoℝ mWindow f
+--                 mWindow = 𝓒⁰.GraphWindowSpec (c lBound) (c rBound) (c bBound) (c tBound) 
+--                                                  xResolution yResolution
+--                 trace (p:q:ps) = simpleLine p q <> trace (q:ps)
+--                 trace _ = mempty
+  
+
+data Triple p = Triple !p !p !p
+       deriving (Hask.Functor)
+
+data SplitList a = SplitList { getSplList :: [a], splListLen :: Int }
+       deriving (Hask.Functor)
+presplitList :: [a] -> SplitList a
+presplitList l = SplitList l (length l)
+
+splitEvenly :: Int -> SplitList a -> Either [a] [SplitList a]
+splitEvenly k _ | k < 1  = error "Can't split a list to less than one part."
+splitEvenly k (SplitList l n)
+  | k >= n     = Left l
+  | otherwise  = Right $ splits l splitIs 0
+ where splitIs = take k . map round . tail
+                    $ iterate (+ (fromIntegral n/fromIntegral k :: Double)) 0
+       splits r [_] _ = [SplitList r (length r)]
+       splits r (i:is) i₀ = let sl = i-i₀
+                                (r₀,r') = splitAt sl r
+                            in SplitList r₀ sl : splits r' is i
+
+data ParableParams = ParableParams { constCoeff, linCoeff, quadrCoeff :: R }
+
+parableMeanInCtrdUnitIntv :: ParableParams -> R
+parableMeanInCtrdUnitIntv (ParableParams{..}) = constCoeff + quadrCoeff / 24
+     -- @∫ x² dx = x²/3@, thus @₀∫¹'² x² dx = 1/(2³ · 3) = 1/24@.
+
+data DevBoxes = DevBoxes { stdDeviation :: R
+                         , upperLim, lowerLim :: R }
  
+data RecursivePCM
+   = PlainSamples [R]
+   | RecursivePCM { parableFit :: ParableParams
+                  , details :: Triple RecursivePCM
+                  , pFitDeviations :: DevBoxes
+                  , splId₀, splIdLen :: Int
+                  }
 
+recursivePCM :: [R] -> RecursivePCM
+recursivePCM = calcDeviations . go 0 . presplitList
+    where go i₀ l@(SplitList _ n) = case splitEvenly 3 l of
+                   Right sps
+                    | [(p1,sp1), (p2,sp2), (p3,sp3)]
+                                    <- map (preParb &&& id) $ lIndThru i₀ sps
+                           -> let pFit = solveToParabola
+                                          $ parableMeanInCtrdUnitIntv <$> [p1,p2,p3]
+                              in RecursivePCM pFit
+                                              (Triple sp1 sp2 sp3)
+                                              (DevBoxes 0 0 0)
+                                              i₀ n
+                   Right _ -> evenSplitErr
+                   Left pSpls -> PlainSamples pSpls
+          preParb (PlainSamples pSpls) = solveToParabola pSpls
+          preParb (RecursivePCM pp' _ _ _ _) = pp'
+          evenSplitErr = error "'splitEvenly' returned wrong number of slices."
+          lIndThru _ [] = []
+          lIndThru i₀₁ (sp₁@(SplitList _ n₁):sps) = go i₀₁ sp₁ : lIndThru (i₀₁ + n₁) sps
+          calcDeviations = id
+                   
 
-
+solveToParabola :: [R] -> ParableParams
+solveToParabola [] = error "Parabola solve under-specified (need at least one reference point)."
+solveToParabola [y] = ParableParams { constCoeff=y, linCoeff=0, quadrCoeff=0 }
+solveToParabola [y₁,y₂]  -- @[x₁, x₂] ≡ [-½, ½]@, and @f(½) = (y₁+y₂)/2 + ½·(y₂-y₁) = y₂@.
+                      -- (Likewise for @f(-½) = y₁@).
+      = ParableParams { constCoeff = (y₁+y₂)/2
+                      , linCoeff = y₂ - y₁
+                      , quadrCoeff = 0 }
+solveToParabola [y₁,y₂,y₃]
+   -- @[x₁, x₂, x₃] ≡ [-⅔, 0, ⅔]@,
+   -- so @f(⅔) = y₂ + ⅔·(y₃-y₁)·¾ + ⁴/₉ · (y₁ + y₃ - 2y₂) · ⁹/₈ = y₃@
+                      -- (Likewise for @f(-⅔) = y₁@).
+    = ParableParams { constCoeff = y₂
+                    , linCoeff = (y₃ - y₁) * 3/4
+                    , quadrCoeff = (y₁ + y₃ - 2*y₂) * 9/8 }
+solveToParabola _ = error "Parabola solve over-specified (can't solve more than three points)."
 
 
 data GraphWindowSpec = GraphWindowSpec {
@@ -217,6 +320,9 @@ onInterval f (Interval l r) = uncurry Interval $ f (l, r)
 interval :: R -> R -> Interval
 interval x1 x2 | x1 < x2    = Interval x1 x2
                | otherwise  = Interval x2 x1
+
+spInterval :: R -> Interval
+spInterval x = Interval x x
 
 
 data Plot = Plot {
@@ -617,7 +723,7 @@ dynamicAxes = DynamicPlottable {
                relevantRange_x = const mempty
              , relevantRange_y = const mempty   
              -- , usesNormalisedCanvas = False
-             , isTintableMonochromic = True
+             , isTintableMonochromic = False
              , axesNecessity = superfluent
              , dynamicPlot = plot }
  where plot gwSpec@(GraphWindowSpec{..}) = Plot lines labels
