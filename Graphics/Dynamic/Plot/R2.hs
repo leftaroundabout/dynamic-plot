@@ -119,7 +119,7 @@ instance Plottable (Double :--> Double) where
           where (fgb, fgt) = (minimum &&& maximum) [f $ l, f $ m, f $ r]
                 m = l + (r-l) * 0.352479608143
          
-         plot (GraphWindowSpec{..}) = curve `deepseq` Plot (trace curve) []
+         plot (GraphWindowSpec{..}) = curve `deepseq` Plot [] (trace curve)
           where curve :: [Dia.P2]
                 curve = map convℝ² $ 𝓒⁰.finiteGraphContinℝtoℝ mWindow f
                 mWindow = 𝓒⁰.GraphWindowSpec (c lBound) (c rBound) (c bBound) (c tBound) 
@@ -138,7 +138,7 @@ instance Plottable (Double :--> (Double, Double)) where
            , isTintableMonochromic = True
            , axesNecessity = 1
            , dynamicPlot = plot }
-   where plot (GraphWindowSpec{..}) = curves `deepseq` Plot (foldMap trace curves) []
+   where plot (GraphWindowSpec{..}) = curves `deepseq` Plot [] (foldMap trace curves)
           where curves :: [[Dia.P2]]
                 curves = map (map convℝ²) $ 𝓒⁰.finiteGraphContinℝtoℝ² mWindow f
                 mWindow = 𝓒⁰.GraphWindowSpec (c lBound) (c rBound) (c bBound) (c tBound) 
@@ -173,7 +173,7 @@ instance Plottable Diagram where
                        Just (c1, c2)
                         -> ( Just $ interval (c1^._x) (c2^._x)
                            , Just $ interval (c1^._y) (c2^._y) )
-         plot _ = Plot d []
+         plot _ = Plot [] d
 
 
 
@@ -198,7 +198,7 @@ instance Plottable Diagram where
 --                          , dynamicPlot = plot
 --                          }
 --    where 
---          plot (GraphWindowSpec{..}) = Plot (trace curve) []
+--          plot (GraphWindowSpec{..}) = Plot [] (trace curve)
 --           where curve :: [Dia.P2]
 --                 curve = map convℝ² $ 𝓒⁰.finiteGraphContinℝtoℝ mWindow f
 --                 mWindow = 𝓒⁰.GraphWindowSpec (c lBound) (c rBound) (c bBound) (c tBound) 
@@ -227,11 +227,11 @@ splitEvenly k (SplitList l n)
                                 (r₀,r') = splitAt sl r
                             in SplitList r₀ sl : splits r' is i
 
-data ParableParams y = ParableParams { constCoeff, linCoeff, quadrCoeff :: y }
+data ParabolaParams y = ParabolaParams { constCoeff, linCoeff, quadrCoeff :: y }
 
-parableMeanInCtrdUnitIntv :: (VectorSpace y, Fractional (Scalar y))
-                                 => ParableParams y -> y
-parableMeanInCtrdUnitIntv (ParableParams{..}) = constCoeff ^+^ quadrCoeff ^/ 24
+parabolaMeanInCtrdUnitIntv :: (VectorSpace y, Fractional (Scalar y))
+                                 => ParabolaParams y -> y
+parabolaMeanInCtrdUnitIntv (ParabolaParams{..}) = constCoeff ^+^ quadrCoeff ^/ 24
      -- @∫ x² dx = x²/3@, thus @₀∫¹'² x² dx = 1/(2³ · 3) = 1/24@.
 
 data DevBoxes y = DevBoxes { stdDeviation, maxDeviation :: Scalar y }
@@ -239,7 +239,7 @@ data DevBoxes y = DevBoxes { stdDeviation, maxDeviation :: Scalar y }
 data PCMRange x = PCMRange { pcmStart, pcmSampleDuration :: x }
  
 data RecursivePCM x y
-   = RecursivePCM { parableFit :: ParableParams y
+   = RecursivePCM { parabolaFit :: ParabolaParams y
                   , details :: Either (Triple (RecursivePCM x y)) [y]
                   , pFitDeviations :: DevBoxes y
                   , samplingSpec :: PCMRange x
@@ -253,7 +253,7 @@ recursivePCM (xrng_g, ys) = calcDeviations . go xrng_g $ presplitList ys
              Right sps
               | [sp1, sp2, sp3] <- lIndThru xl sps
                      -> let pFit = solveToParabola
-                               $ (parableMeanInCtrdUnitIntv.parableFit) <$> [sp1,sp2,sp3]
+                               $ (parabolaMeanInCtrdUnitIntv.parabolaFit) <$> [sp1,sp2,sp3]
                         in RecursivePCM pFit
                                         (Left $ Triple sp1 sp2 sp3)
                                         (undefined) -- DevBoxes 0 0 0)
@@ -271,23 +271,67 @@ recursivePCM (xrng_g, ys) = calcDeviations . go xrng_g $ presplitList ys
           calcDeviations = id
                    
 
-solveToParabola :: (VectorSpace v, Floating (Scalar v)) => [v] -> ParableParams v
+instance Plottable (RecursivePCM R R) where
+  plot rPCM@(RecursivePCM gPFit gDetails gFitDevs (PCMRange x₀ wsp) gSplN)
+            = DynamicPlottable{
+                relevantRange_x = const . pure $ Interval x₀ xr
+              , relevantRange_y = fmap $ rPCMParabolaRange rPCM
+              , isTintableMonochromic = True
+              , axesNecessity = 1
+              , dynamicPlot = plot
+              }
+   where 
+         xr = wsp * fromIntegral gSplN
+         plot (GraphWindowSpec{..}) = Plot [] . trace . ($[]) $ go rPCM
+          where go rPCM'@(RecursivePCM pFit details fitDevs (PCMRange x₁ wsp') splN)
+                   | x₁ > rBound
+                    || xr'< lBound
+                    || not (intersects (Interval bBound tBound)
+                                       (rPCMParabolaRange rPCM' $ Interval lBound rBound) )
+                         = id
+                   | xr' - x₁ > δx, Left (Triple s1 s2 s3) <- details
+                         = go s1 . go s2 . go s3
+                   | otherwise 
+                         = (xm ^& constCoeff pFit :)
+                 where xr' = wsp' * fromIntegral splN
+                       xm = (x₁ + xr') / 2
+                trace (p:q:ps) = simpleLine p q <> trace (q:ps)
+                trace _ = mempty
+                δx = (rBound - lBound) / fromIntegral xResolution
+  
+
+
+
+
+solveToParabola :: (VectorSpace v, Floating (Scalar v)) => [v] -> ParabolaParams v
 solveToParabola [] = error
         "Parabola solve under-specified (need at least one reference point)."
-solveToParabola [y] = ParableParams { constCoeff=y, linCoeff=zeroV, quadrCoeff=zeroV }
+solveToParabola [y] = ParabolaParams { constCoeff=y, linCoeff=zeroV, quadrCoeff=zeroV }
 solveToParabola [y₁,y₂]  -- @[x₁, x₂] ≡ [-½, ½]@, and @f(½) = (y₁+y₂)/2 + ½·(y₂-y₁) = y₂@.
                          -- (Likewise for @f(-½) = y₁@).
-      = ParableParams { constCoeff = (y₁ ^+^ y₂) ^/ 2
-                      , linCoeff = y₂ ^-^ y₁
-                      , quadrCoeff = zeroV }
+      = ParabolaParams { constCoeff = (y₁ ^+^ y₂) ^/ 2
+                       , linCoeff = y₂ ^-^ y₁
+                       , quadrCoeff = zeroV }
 solveToParabola [y₁,y₂,y₃]
    -- @[x₁, x₂, x₃] ≡ [-⅔, 0, ⅔]@,
    -- so @f(⅔) = y₂ + ⅔·(y₃-y₁)·¾ + ⁴/₉ · (y₁ + y₃ - 2y₂) · ⁹/₈ = y₃@
                       -- (Likewise for @f(-⅔) = y₁@).
-    = ParableParams { constCoeff = y₂
+    = ParabolaParams { constCoeff = y₂
                     , linCoeff = (y₃ ^-^ y₁) ^* (3/4)
                     , quadrCoeff = (y₁ ^+^ y₃ ^-^ 2*^y₂) ^* (9/8) }
 solveToParabola _ = error "Parabola solve over-specified (can't solve more than three points)."
+
+
+
+rPCMParabolaRange :: RecursivePCM R R -> Interval -> Interval
+rPCMParabolaRange rPCM@(RecursivePCM (ParabolaParams c b a) _ _ _ _) (Interval l r)
+   | r < (-1)   = spInterval $ c - b + a
+   | l > 1      = spInterval $ c + b + a
+   | l < (-1)   = rPCMParabolaRange rPCM $ Interval (-1) r
+   | r > 1      = rPCMParabolaRange rPCM $ Interval l 1
+   | otherwise  = Interval (c + l*(b + l*a)) (c + r*(b + r*a))
+
+
 
 
 data GraphWindowSpec = GraphWindowSpec {
@@ -331,13 +375,16 @@ interval x1 x2 | x1 < x2    = Interval x1 x2
 spInterval :: R -> Interval
 spInterval x = Interval x x
 
+intersects :: Interval -> Interval -> Bool
+intersects (Interval a b) (Interval c d) = a<=d && b>=c
+
 
 data Plot = Plot {
-       getPlot :: Diagram
-     , plotAnnotations :: [Annotation]
+       plotAnnotations :: [Annotation]
+     , getPlot :: Diagram
   }
 instance Semigroup Plot where
-  Plot d1 a1 <> Plot d2 a2 = Plot (d1<>d2) (a1<>a2)
+  Plot a1 d1 <> Plot a2 d2 = Plot (a1<>a2) (d1<>d2)
 instance Monoid Plot where
   mempty = Plot mempty mempty
   mappend = (<>)
@@ -668,7 +715,7 @@ fnPlot f = DynamicPlottable{
              , dynamicPlot = plot }
  where yRangef = fmap . onInterval $ \(l, r) -> ((!10) &&& (!70)) . sort . pruneOutlyers
                                                $ map f [l, l + (r-l)/80 .. r]
-       plot (GraphWindowSpec{..}) = curve `deepseq` Plot (trace curve) []
+       plot (GraphWindowSpec{..}) = curve `deepseq` Plot [] (trace curve)
         where δx = (rBound - lBound) * 2 / fromIntegral xResolution
               curve = [ (x ^& f x) | x<-[lBound, lBound+δx .. rBound] ]
               trace (p:q:ps) = simpleLine p q <> trace (q:ps)
@@ -733,7 +780,7 @@ dynamicAxes = DynamicPlottable {
              , isTintableMonochromic = False
              , axesNecessity = superfluent
              , dynamicPlot = plot }
- where plot gwSpec@(GraphWindowSpec{..}) = Plot lines labels
+ where plot gwSpec@(GraphWindowSpec{..}) = Plot labels lines
         where (DynamicAxes yAxCls xAxCls) = crtDynamicAxes gwSpec
               lines = simpleLine (lBound^&0) (rBound^&0)  `provided`(bBound<0 && tBound>0)
                    <> simpleLine (0^&bBound) (0^&tBound)  `provided`(lBound<0 && rBound>0)
