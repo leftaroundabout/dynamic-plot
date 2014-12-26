@@ -71,6 +71,7 @@ import Data.Maybe
 import Data.Semigroup
 import Data.Foldable (foldMap)
 import Data.Function (on)
+import Data.VectorSpace
 import qualified Data.Map.Lazy as Map
 
 import Data.Manifold ((:-->))
@@ -226,60 +227,66 @@ splitEvenly k (SplitList l n)
                                 (r₀,r') = splitAt sl r
                             in SplitList r₀ sl : splits r' is i
 
-data ParableParams = ParableParams { constCoeff, linCoeff, quadrCoeff :: R }
+data ParableParams y = ParableParams { constCoeff, linCoeff, quadrCoeff :: y }
 
-parableMeanInCtrdUnitIntv :: ParableParams -> R
-parableMeanInCtrdUnitIntv (ParableParams{..}) = constCoeff + quadrCoeff / 24
+parableMeanInCtrdUnitIntv :: (VectorSpace y, Fractional (Scalar y))
+                                 => ParableParams y -> y
+parableMeanInCtrdUnitIntv (ParableParams{..}) = constCoeff ^+^ quadrCoeff ^/ 24
      -- @∫ x² dx = x²/3@, thus @₀∫¹'² x² dx = 1/(2³ · 3) = 1/24@.
 
-data DevBoxes = DevBoxes { stdDeviation :: R
-                         , upperLim, lowerLim :: R }
+data DevBoxes y = DevBoxes { stdDeviation, maxDeviation :: Scalar y }
+
+data PCMRange x = PCMRange { pcmStart, pcmSampleDuration :: x }
  
-data RecursivePCM
-   = PlainSamples [R]
-   | RecursivePCM { parableFit :: ParableParams
-                  , details :: Triple RecursivePCM
-                  , pFitDeviations :: DevBoxes
-                  , splId₀, splIdLen :: Int
+data RecursivePCM x y
+   = RecursivePCM { parableFit :: ParableParams y
+                  , details :: Either (Triple (RecursivePCM x y)) [y]
+                  , pFitDeviations :: DevBoxes y
+                  , samplingSpec :: PCMRange x
+                  , splIdLen :: Int
                   }
 
-recursivePCM :: [R] -> RecursivePCM
-recursivePCM = calcDeviations . go 0 . presplitList
-    where go i₀ l@(SplitList _ n) = case splitEvenly 3 l of
-                   Right sps
-                    | [(p1,sp1), (p2,sp2), (p3,sp3)]
-                                    <- map (preParb &&& id) $ lIndThru i₀ sps
-                           -> let pFit = solveToParabola
-                                          $ parableMeanInCtrdUnitIntv <$> [p1,p2,p3]
-                              in RecursivePCM pFit
-                                              (Triple sp1 sp2 sp3)
-                                              (DevBoxes 0 0 0)
-                                              i₀ n
-                   Right _ -> evenSplitErr
-                   Left pSpls -> PlainSamples pSpls
-          preParb (PlainSamples pSpls) = solveToParabola pSpls
-          preParb (RecursivePCM pp' _ _ _ _) = pp'
+recursivePCM :: (VectorSpace x, VectorSpace y, Num (Scalar x), Floating (Scalar y))
+                     => (PCMRange x, [y]) -> RecursivePCM x y
+recursivePCM (xrng_g, ys) = calcDeviations . go xrng_g $ presplitList ys
+    where go xrng@(PCMRange xl wsp) l@(SplitList _ n) = case splitEvenly 3 l of
+             Right sps
+              | [sp1, sp2, sp3] <- lIndThru xl sps
+                     -> let pFit = solveToParabola
+                               $ (parableMeanInCtrdUnitIntv.parableFit) <$> [sp1,sp2,sp3]
+                        in RecursivePCM pFit
+                                        (Left $ Triple sp1 sp2 sp3)
+                                        (undefined) -- DevBoxes 0 0 0)
+                                        xrng n
+             Right _ -> evenSplitErr
+             Left pSpls -> RecursivePCM (solveToParabola pSpls)
+                                        (Right pSpls)
+                                        (undefined)
+                                        xrng n
+           where lIndThru _ [] = []
+                 lIndThru x₀₁ (sp₁@(SplitList _ n₁):sps)
+                        = let x₀₂ = x₀₁ ^+^ fromIntegral n₁ *^ wsp
+                          in go (PCMRange x₀₂ wsp) sp₁ : lIndThru x₀₂ sps          
           evenSplitErr = error "'splitEvenly' returned wrong number of slices."
-          lIndThru _ [] = []
-          lIndThru i₀₁ (sp₁@(SplitList _ n₁):sps) = go i₀₁ sp₁ : lIndThru (i₀₁ + n₁) sps
           calcDeviations = id
                    
 
-solveToParabola :: [R] -> ParableParams
-solveToParabola [] = error "Parabola solve under-specified (need at least one reference point)."
-solveToParabola [y] = ParableParams { constCoeff=y, linCoeff=0, quadrCoeff=0 }
+solveToParabola :: (VectorSpace v, Floating (Scalar v)) => [v] -> ParableParams v
+solveToParabola [] = error
+        "Parabola solve under-specified (need at least one reference point)."
+solveToParabola [y] = ParableParams { constCoeff=y, linCoeff=zeroV, quadrCoeff=zeroV }
 solveToParabola [y₁,y₂]  -- @[x₁, x₂] ≡ [-½, ½]@, and @f(½) = (y₁+y₂)/2 + ½·(y₂-y₁) = y₂@.
-                      -- (Likewise for @f(-½) = y₁@).
-      = ParableParams { constCoeff = (y₁+y₂)/2
-                      , linCoeff = y₂ - y₁
-                      , quadrCoeff = 0 }
+                         -- (Likewise for @f(-½) = y₁@).
+      = ParableParams { constCoeff = (y₁ ^+^ y₂) ^/ 2
+                      , linCoeff = y₂ ^-^ y₁
+                      , quadrCoeff = zeroV }
 solveToParabola [y₁,y₂,y₃]
    -- @[x₁, x₂, x₃] ≡ [-⅔, 0, ⅔]@,
    -- so @f(⅔) = y₂ + ⅔·(y₃-y₁)·¾ + ⁴/₉ · (y₁ + y₃ - 2y₂) · ⁹/₈ = y₃@
                       -- (Likewise for @f(-⅔) = y₁@).
     = ParableParams { constCoeff = y₂
-                    , linCoeff = (y₃ - y₁) * 3/4
-                    , quadrCoeff = (y₁ + y₃ - 2*y₂) * 9/8 }
+                    , linCoeff = (y₃ ^-^ y₁) ^* (3/4)
+                    , quadrCoeff = (y₁ ^+^ y₃ ^-^ 2*^y₂) ^* (9/8) }
 solveToParabola _ = error "Parabola solve over-specified (can't solve more than three points)."
 
 
