@@ -14,9 +14,11 @@
 {-# LANGUAGE TupleSections             #-}
 {-# LANGUAGE TypeOperators             #-}
 {-# LANGUAGE FlexibleInstances         #-}
+{-# LANGUAGE UndecidableInstances      #-}
 {-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE NoImplicitPrelude         #-}
 {-# LANGUAGE DeriveFunctor             #-}
+{-# LANGUAGE StandaloneDeriving        #-}
 
 module Graphics.Dynamic.Plot.R2 (
         -- * Interactive display
@@ -40,7 +42,7 @@ import Graphics.Dynamic.Plot.Colour
 import Diagrams.Prelude (R2, (^&), (&), _x, _y)
 import qualified Diagrams.Prelude as Dia
 import qualified Diagrams.TwoD.Size as Dia
-import qualified Diagrams.BoundingBox as Dia
+import qualified Diagrams.BoundingBox as DiaBB
 import qualified Diagrams.Backend.Cairo as Cairo
 import qualified Diagrams.Backend.Cairo.Text as CairoTxt
     
@@ -168,8 +170,8 @@ instance Plottable Diagram where
            , axesNecessity = -1
            , dynamicPlot = plot
            }
-   where bb = Dia.boundingBox d
-         (rlx,rly) = case Dia.getCorners bb of
+   where bb = DiaBB.boundingBox d
+         (rlx,rly) = case DiaBB.getCorners bb of
                        Just (c1, c2)
                         -> ( Just $ interval (c1^._x) (c2^._x)
                            , Just $ interval (c1^._y) (c2^._y) )
@@ -208,7 +210,7 @@ instance Plottable Diagram where
   
 
 data Triple p = Triple !p !p !p
-       deriving (Hask.Functor)
+       deriving (Hask.Functor, Show, Eq, Ord)
 
 data SplitList a = SplitList { getSplList :: [a], splListLen :: Int }
        deriving (Hask.Functor)
@@ -228,6 +230,7 @@ splitEvenly k (SplitList l n)
                             in SplitList r₀ sl : splits r' is i
 
 data ParabolaParams y = ParabolaParams { constCoeff, linCoeff, quadrCoeff :: y }
+      deriving (Show)
 
 parabolaMeanInCtrdUnitIntv :: (VectorSpace y, Fractional (Scalar y))
                                  => ParabolaParams y -> y
@@ -235,8 +238,11 @@ parabolaMeanInCtrdUnitIntv (ParabolaParams{..}) = constCoeff ^+^ quadrCoeff ^/ 2
      -- @∫ x² dx = x²/3@, thus @₀∫¹'² x² dx = 1/(2³ · 3) = 1/24@.
 
 data DevBoxes y = DevBoxes { stdDeviation, maxDeviation :: Scalar y }
+                
+instance (Show (Scalar y), VectorSpace y) => Show (DevBoxes y) where
+  show _ = "SomeDeviations"
 
-data PCMRange x = PCMRange { pcmStart, pcmSampleDuration :: x }
+data PCMRange x = PCMRange { pcmStart, pcmSampleDuration :: x } deriving (Show)
  
 data RecursivePCM x y
    = RecursivePCM { parabolaFit :: ParabolaParams y
@@ -245,10 +251,12 @@ data RecursivePCM x y
                   , samplingSpec :: PCMRange x
                   , splIdLen :: Int
                   }
+deriving instance (Show x, Show y, Show (Scalar y), VectorSpace y)
+            => Show (RecursivePCM x y)
 
 recursivePCM :: (VectorSpace x, VectorSpace y, Num (Scalar x), Floating (Scalar y))
-                     => (PCMRange x, [y]) -> RecursivePCM x y
-recursivePCM (xrng_g, ys) = calcDeviations . go xrng_g $ presplitList ys
+                     => PCMRange x -> [y] -> RecursivePCM x y
+recursivePCM xrng_g ys = calcDeviations . go xrng_g $ presplitList ys
     where go xrng@(PCMRange xl wsp) l@(SplitList _ n) = case splitEvenly 3 l of
              Right sps
               | [sp1, sp2, sp3] <- lIndThru xl sps
@@ -282,24 +290,29 @@ instance Plottable (RecursivePCM R R) where
               }
    where 
          xr = wsp * fromIntegral gSplN
-         plot (GraphWindowSpec{..}) = Plot [] . trace . ($[]) $ go rPCM
-          where go rPCM'@(RecursivePCM pFit details fitDevs (PCMRange x₁ wsp') splN)
-                   | x₁ > rBound
-                    || xr'< lBound
-                    || not (intersects (Interval bBound tBound)
-                                       (rPCMParabolaRange rPCM' $ Interval lBound rBound) )
-                         = id
-                   | xr' - x₁ > δx, Left (Triple s1 s2 s3) <- details
-                         = go s1 . go s2 . go s3
-                   | otherwise 
-                         = (xm ^& constCoeff pFit :)
-                 where xr' = wsp' * fromIntegral splN
-                       xm = (x₁ + xr') / 2
+         plot (GraphWindowSpec{..}) = Plot [] . trace $ flattenPCM_resoCut bb δx rPCM
+          where 
                 trace (p:q:ps) = simpleLine p q <> trace (q:ps)
                 trace _ = mempty
                 δx = (rBound - lBound) / fromIntegral xResolution
+                bb = Interval lBound rBound `intervalProduct` Interval bBound tBound
   
 
+flattenPCM_resoCut :: DiaBB.BoundingBox R2 -> R -> RecursivePCM R R -> [Dia.P2]
+flattenPCM_resoCut bb δx = case DiaBB.getCorners bb of
+                             Nothing -> const []
+                             Just cs -> ($[]) . go cs
+ where go cs@(lCorn,rCorn) rPCM@(RecursivePCM pFit details fitDevs (PCMRange x₁ wsp) splN)
+          | DiaBB.isEmptyBox $ DiaBB.intersection bb sqRange
+                = id
+          | xr - x₁ > δx, Left (Triple s1 s2 s3) <- details
+                = go cs s1 . go cs s2 . go cs s3
+          | otherwise 
+                = (xm ^& constCoeff pFit :)
+        where xr = wsp * fromIntegral splN
+              xm = (x₁ + xr) / 2
+              sqRange = intervalProduct xRange $ rPCMParabolaRange rPCM xRange
+              xRange = interval (lCorn^._x) (rCorn^._x)
 
 
 
@@ -317,8 +330,8 @@ solveToParabola [y₁,y₂,y₃]
    -- so @f(⅔) = y₂ + ⅔·(y₃-y₁)·¾ + ⁴/₉ · (y₁ + y₃ - 2y₂) · ⁹/₈ = y₃@
                       -- (Likewise for @f(-⅔) = y₁@).
     = ParabolaParams { constCoeff = y₂
-                    , linCoeff = (y₃ ^-^ y₁) ^* (3/4)
-                    , quadrCoeff = (y₁ ^+^ y₃ ^-^ 2*^y₂) ^* (9/8) }
+                     , linCoeff = (y₃ ^-^ y₁) ^* (3/4)
+                     , quadrCoeff = (y₁ ^+^ y₃ ^-^ 2*^y₂) ^* (9/8) }
 solveToParabola _ = error "Parabola solve over-specified (can't solve more than three points)."
 
 
@@ -330,6 +343,12 @@ rPCMParabolaRange rPCM@(RecursivePCM (ParabolaParams c b a) _ _ _ _) (Interval l
    | l < (-1)   = rPCMParabolaRange rPCM $ Interval (-1) r
    | r > 1      = rPCMParabolaRange rPCM $ Interval l 1
    | otherwise  = Interval (c + l*(b + l*a)) (c + r*(b + r*a))
+
+
+
+plotPCM :: [R] -> DynamicPlottable
+plotPCM = plot . recursivePCM (PCMRange (0 :: Double) 1)
+
 
 
 
@@ -362,7 +381,7 @@ moveStepRel (δx,δy) (ζx,ζy) (GraphWindowSpec l r b t xRes yRes clSchm)
 
 
 
-data Interval = Interval !R !R
+data Interval = Interval !R !R deriving (Show)
 instance Semigroup Interval where  -- WRT closed hull of the union.
   Interval l₁ u₁ <> Interval l₂ u₂ = Interval (min l₁ l₂) (max u₁ u₂)
 onInterval :: ((R,R) -> (R,R)) -> Interval -> Interval 
@@ -377,6 +396,9 @@ spInterval x = Interval x x
 
 intersects :: Interval -> Interval -> Bool
 intersects (Interval a b) (Interval c d) = a<=d && b>=c
+
+intervalProduct :: Interval -> Interval -> DiaBB.BoundingBox R2
+intervalProduct (Interval l r) (Interval b t) = DiaBB.fromCorners (l^&b) (r^&t)
 
 
 data Plot = Plot {
