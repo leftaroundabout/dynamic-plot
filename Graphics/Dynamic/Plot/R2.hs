@@ -452,9 +452,10 @@ data GraphViewState = GraphViewState {
                 
 
 plotWindow :: [DynamicPlottable] -> IO GraphWindowSpec
+plotWindow [] = plotWindow [dynamicAxes]
 plotWindow graphs' = do
    
-   dgStore <- newIORef $ mempty & Dia.bg Dia.black
+   dgStore <- newIORef $ mempty
    
    
    let defColourScheme = defaultColourScheme
@@ -613,12 +614,13 @@ plotWindow graphs' = do
                                    | otherwise             = id
                                nmScale -- | usesNormalisedCanvas  = id
                                        | otherwise             = normaliseView
-                     in transform $ foldMap (prerenderAnnotation antTK) plotAnnotations <> getPlot
+                     in transform $ foldMap (prerenderAnnotation antTK) plotAnnotations
+                                 <> getPlot
 
            gvStates <- readIORef graphs
            waitAny $ map (realtimeView . snd) gvStates
                    
-           writeIORef dgStore . (Dia.bg Dia.black)
+           writeIORef dgStore
                 . mconcat . reverse =<< mapM renderComp (reverse gvStates)
                                                     
            refreshDraw
@@ -825,8 +827,8 @@ dynamicAxes = DynamicPlottable {
              , dynamicPlot = plot }
  where plot gwSpec@(GraphWindowSpec{..}) = Plot labels lines
         where (DynamicAxes yAxCls xAxCls) = crtDynamicAxes gwSpec
-              lines = simpleLine (lBound^&0) (rBound^&0)  `provided`(bBound<0 && tBound>0)
-                   <> simpleLine (0^&bBound) (0^&tBound)  `provided`(lBound<0 && rBound>0)
+              lines = zeroLine (lBound^&0) (rBound^&0)  `provided`(bBound<0 && tBound>0)
+                   <> zeroLine (0^&bBound) (0^&tBound)  `provided`(lBound<0 && rBound>0)
                    <> foldMap (renderClass $ \x -> (x^&bBound, x^&tBound)) yAxCls
                    <> foldMap (renderClass $ \y -> (lBound^&y, rBound^&y)) xAxCls
               labels = do (dirq, hAlign, vAlign, acl) <- zip4 [\x -> x^&0, \y -> 0^&y ] 
@@ -841,9 +843,10 @@ dynamicAxes = DynamicPlottable {
                                      place = ExactPlace $ dirq z
                                      align = TextAlignment hAlign vAlign
                           prepAnnotation =<< vaxs
+       zeroLine p1 p2 = simpleLine p1 p2 & Dia.lc Dia.grey
        renderClass crd (AxisClass axes strength _)
-          = Dia.lcA (Dia.grey `DCol.withOpacity` strength)
-              $ foldMap (uncurry simpleLine . crd . axisPosition) axes
+          = foldMap (uncurry simpleLine . crd . axisPosition) axes
+             & Dia.lcA (Dia.grey `DCol.withOpacity` strength)
 
 
 
