@@ -297,28 +297,33 @@ instance Plottable (R-.^>R) where
           where 
                 trace (p:q:ps) = simpleLine p q <> trace (q:ps)
                 trace _ = mempty
-                δx = (rBound - lBound) / fromIntegral xResolution
-                bb = Interval lBound rBound -*| Interval bBound tBound
+                w = rBound - lBound; h = tBound - bBound
+                δx = w * 3/fromIntegral xResolution
+                bb = Interval lBound rBound
+                 -*| Interval (bBound - h*10) (tBound + h*10) -- Heuristic \"buffering\",
+                      -- to account for the missing ability of 'flattenPCM_resoCut' to
+                      -- take deviations from quadratic-fit into account.
   
 
 flattenPCM_resoCut :: DiaBB.BoundingBox R2 -> R -> (R-.^>R) -> [Dia.P2]
 flattenPCM_resoCut bb δx = case DiaBB.getCorners bb of
                              Nothing -> const []
-                             Just cs -> ($[]) . go cs
- where go cs@(lCorn,rCorn) rPCM@(RecursivePCM pFit details fitDevs (PCMRange x₁ wsp) splN)
+                             Just cs -> ($[]) . go' cs
+ where go' cs@(lCorn,rCorn) = go where
+        go rPCM@(RecursivePCM pFit details fitDevs (PCMRange x₁ wsp) splN)
           | DiaBB.isEmptyBox $ DiaBB.intersection bb sqRange
                 = id
           | w > δx, Left (Triple s1 s2 s3) <- details
-                = go cs s1 . go cs s2 . go cs s3
+                = go s1 . go s2 . go s3
           | otherwise 
                 = (xm ^& constCoeff pFit :)
-        where xr = wsp * fromIntegral splN
-              xm = (x₁ + xr) / 2
-              w = xr - x₁
-              sqRange = xRange -*| rPCMParabolaRange rPCM xRange_norm'd
-              xRange = x₁ ... xr
-              xRange_norm'd = max (-1) ((lCorn^._x - xm)/w)
-                          ... min   1  ((rCorn^._x - xm)/w)
+         where xr = x₁ + w
+               xm = x₁ + w / 2
+               w = wsp * fromIntegral splN
+               sqRange = xRange -*| rPCMParabolaRange rPCM xRange_norm'd
+               xRange = x₁ ... xr
+               xRange_norm'd = max (-1) ((lCorn^._x - xm)/w)
+                           ... min   1  ((rCorn^._x - xm)/w)
 
 
 
