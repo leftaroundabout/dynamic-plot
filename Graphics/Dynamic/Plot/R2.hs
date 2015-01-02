@@ -3,7 +3,7 @@
 -- Copyright   : (c) Justus Sagemüller 2013-2014
 -- License     : GPL v3
 -- 
--- Maintainer  : (@) sagemuej $ smail.uni-koeln.de
+-- Maintainer  : (@) sagemueller $ geo.uni-koeln.de
 -- Stability   : experimental
 -- Portability : requires GHC>6 extensions
 
@@ -173,8 +173,8 @@ instance Plottable Diagram where
    where bb = DiaBB.boundingBox d
          (rlx,rly) = case DiaBB.getCorners bb of
                        Just (c1, c2)
-                        -> ( Just $ interval (c1^._x) (c2^._x)
-                           , Just $ interval (c1^._y) (c2^._y) )
+                        -> ( Just $ c1^._x ... c2^._x
+                           , Just $ c1^._y ... c2^._y )
          plot _ = Plot [] d
 
 
@@ -244,18 +244,18 @@ instance (Show (Scalar y), VectorSpace y) => Show (DevBoxes y) where
 
 data PCMRange x = PCMRange { pcmStart, pcmSampleDuration :: x } deriving (Show)
  
-data RecursivePCM x y
+data x -.^> y
    = RecursivePCM { parabolaFit :: ParabolaParams y
-                  , details :: Either (Triple (RecursivePCM x y)) [y]
+                  , details :: Either (Triple (x-.^>y)) [y]
                   , pFitDeviations :: DevBoxes y
                   , samplingSpec :: PCMRange x
                   , splIdLen :: Int
                   }
 deriving instance (Show x, Show y, Show (Scalar y), VectorSpace y)
-            => Show (RecursivePCM x y)
+            => Show (x -.^> y)
 
 recursivePCM :: (VectorSpace x, VectorSpace y, Num (Scalar x), Floating (Scalar y))
-                     => PCMRange x -> [y] -> RecursivePCM x y
+                     => PCMRange x -> [y] -> x-.^>y
 recursivePCM xrng_g ys = calcDeviations . go xrng_g $ presplitList ys
     where go xrng@(PCMRange xl wsp) l@(SplitList _ n) = case splitEvenly 3 l of
              Right sps
@@ -274,12 +274,15 @@ recursivePCM xrng_g ys = calcDeviations . go xrng_g $ presplitList ys
            where lIndThru _ [] = []
                  lIndThru x₀₁ (sp₁@(SplitList _ n₁):sps)
                         = let x₀₂ = x₀₁ ^+^ fromIntegral n₁ *^ wsp
-                          in go (PCMRange x₀₂ wsp) sp₁ : lIndThru x₀₂ sps          
+                          in go (PCMRange x₀₁ wsp) sp₁ : lIndThru x₀₂ sps          
           evenSplitErr = error "'splitEvenly' returned wrong number of slices."
           calcDeviations = id
+
+rPCMSample :: Interval -> R -> (R->R) -> R-.^>R
+rPCMSample (Interval l r) δx f = recursivePCM (PCMRange l δx) [f x | x<-[l, l+δx .. r]] 
                    
 
-instance Plottable (RecursivePCM R R) where
+instance Plottable (R-.^>R) where
   plot rPCM@(RecursivePCM gPFit gDetails gFitDevs (PCMRange x₀ wsp) gSplN)
             = DynamicPlottable{
                 relevantRange_x = const . pure $ Interval x₀ xr
@@ -295,24 +298,27 @@ instance Plottable (RecursivePCM R R) where
                 trace (p:q:ps) = simpleLine p q <> trace (q:ps)
                 trace _ = mempty
                 δx = (rBound - lBound) / fromIntegral xResolution
-                bb = Interval lBound rBound `intervalProduct` Interval bBound tBound
+                bb = Interval lBound rBound -*| Interval bBound tBound
   
 
-flattenPCM_resoCut :: DiaBB.BoundingBox R2 -> R -> RecursivePCM R R -> [Dia.P2]
+flattenPCM_resoCut :: DiaBB.BoundingBox R2 -> R -> (R-.^>R) -> [Dia.P2]
 flattenPCM_resoCut bb δx = case DiaBB.getCorners bb of
                              Nothing -> const []
                              Just cs -> ($[]) . go cs
  where go cs@(lCorn,rCorn) rPCM@(RecursivePCM pFit details fitDevs (PCMRange x₁ wsp) splN)
           | DiaBB.isEmptyBox $ DiaBB.intersection bb sqRange
                 = id
-          | xr - x₁ > δx, Left (Triple s1 s2 s3) <- details
+          | w > δx, Left (Triple s1 s2 s3) <- details
                 = go cs s1 . go cs s2 . go cs s3
           | otherwise 
                 = (xm ^& constCoeff pFit :)
         where xr = wsp * fromIntegral splN
               xm = (x₁ + xr) / 2
-              sqRange = intervalProduct xRange $ rPCMParabolaRange rPCM xRange
-              xRange = interval (lCorn^._x) (rCorn^._x)
+              w = xr - x₁
+              sqRange = xRange -*| rPCMParabolaRange rPCM xRange_norm'd
+              xRange = x₁ ... xr
+              xRange_norm'd = max (-1) ((lCorn^._x - xm)/w)
+                          ... min   1  ((rCorn^._x - xm)/w)
 
 
 
@@ -336,13 +342,13 @@ solveToParabola _ = error "Parabola solve over-specified (can't solve more than 
 
 
 
-rPCMParabolaRange :: RecursivePCM R R -> Interval -> Interval
+rPCMParabolaRange :: (R-.^>R) -> Interval -> Interval
 rPCMParabolaRange rPCM@(RecursivePCM (ParabolaParams c b a) _ _ _ _) (Interval l r)
    | r < (-1)   = spInterval $ c - b + a
    | l > 1      = spInterval $ c + b + a
    | l < (-1)   = rPCMParabolaRange rPCM $ Interval (-1) r
    | r > 1      = rPCMParabolaRange rPCM $ Interval l 1
-   | otherwise  = Interval (c + l*(b + l*a)) (c + r*(b + r*a))
+   | otherwise  = (c + l*(b + l*a)) ... (c + r*(b + r*a))
 
 
 
@@ -387,9 +393,16 @@ instance Semigroup Interval where  -- WRT closed hull of the union.
 onInterval :: ((R,R) -> (R,R)) -> Interval -> Interval 
 onInterval f (Interval l r) = uncurry Interval $ f (l, r)
 
-interval :: R -> R -> Interval
-interval x1 x2 | x1 < x2    = Interval x1 x2
-               | otherwise  = Interval x2 x1
+infixl 6 ...
+-- | Build an interval from specified boundary points. No matter which of these
+--   points is higher, the result will always be the interval in between (i.e.,
+--   @3 '...' 1@ will yield the interval [1,3], not an empty set or some \"oriented
+--   interval\" [3,1]).
+--   The fixity @infixl 6@ was chosen so you can write 2D bounding-boxes as e.g.
+--   @-1...4 -*| -1...1@.
+(...) :: R -> R -> Interval
+x1...x2 | x1 < x2    = Interval x1 x2
+        | otherwise  = Interval x2 x1
 
 spInterval :: R -> Interval
 spInterval x = Interval x x
@@ -397,8 +410,11 @@ spInterval x = Interval x x
 intersects :: Interval -> Interval -> Bool
 intersects (Interval a b) (Interval c d) = a<=d && b>=c
 
-intervalProduct :: Interval -> Interval -> DiaBB.BoundingBox R2
-intervalProduct (Interval l r) (Interval b t) = DiaBB.fromCorners (l^&b) (r^&t)
+infix 5 -*|
+
+-- | Cartesian product of intervals.
+(-*|) :: Interval -> Interval -> DiaBB.BoundingBox R2
+Interval l r -*| Interval b t = DiaBB.fromCorners (l^&b) (r^&t)
 
 
 data Plot = Plot {
