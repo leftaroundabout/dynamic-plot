@@ -74,6 +74,7 @@ import Data.Semigroup
 import Data.Foldable (foldMap)
 import Data.Function (on)
 import Data.VectorSpace
+import Data.AffineSpace
 import qualified Data.Map.Lazy as Map
 
 import Data.Manifold ((:-->))
@@ -229,18 +230,24 @@ splitEvenly k (SplitList l n)
                                 (r₀,r') = splitAt sl r
                             in SplitList r₀ sl : splits r' is i
 
-data ParabolaParams y = ParabolaParams { constCoeff, linCoeff, quadrCoeff :: y }
-      deriving (Show)
+instance Semigroup (SplitList a) where
+  SplitList l n <> SplitList l' n' = SplitList (l<>l') (n+n')
 
-parabolaMeanInCtrdUnitIntv :: (VectorSpace y, Fractional (Scalar y))
+
+data ParabolaParams y = ParabolaParams { constCoeff :: y
+                                       , linCoeff, quadrCoeff :: Diff y }
+deriving instance (AffineSpace y, Show y, Show (Diff y)) => Show (ParabolaParams y)
+
+parabolaMeanInCtrdUnitIntv ::
+     (AffineSpace y, v~Diff y, VectorSpace v, Fractional (Scalar v))
                                  => ParabolaParams y -> y
-parabolaMeanInCtrdUnitIntv (ParabolaParams{..}) = constCoeff ^+^ quadrCoeff ^/ 24
+parabolaMeanInCtrdUnitIntv (ParabolaParams{..}) = constCoeff .+^ quadrCoeff ^/ 24
      -- @∫ x² dx = x²/3@, thus @₀∫¹'² x² dx = 1/(2³ · 3) = 1/24@.
 
-data DevBoxes y = DevBoxes { stdDeviation, maxDeviation :: Scalar y }
+data DevBoxes y = DevBoxes { stdDeviation, maxDeviation :: Scalar (Diff y) }
                 
-instance (Show (Scalar y), VectorSpace y) => Show (DevBoxes y) where
-  show _ = "SomeDeviations"
+deriving instance (AffineSpace y, v~Diff y, Show (Scalar v), VectorSpace v)
+               => Show (DevBoxes y)
 
 data PCMRange x = PCMRange { pcmStart, pcmSampleDuration :: x } deriving (Show)
  
@@ -251,13 +258,17 @@ data x -.^> y
                   , samplingSpec :: PCMRange x
                   , splIdLen :: Int
                   }
-deriving instance (Show x, Show y, Show (Scalar y), VectorSpace y)
+deriving instance ( Show x, Show y
+                  , AffineSpace y, v~Diff y, Show v, VectorSpace v, Show (Scalar v))
             => Show (x -.^> y)
 
-recursivePCM :: (VectorSpace x, VectorSpace y, Num (Scalar x), Floating (Scalar y))
+recursivePCM :: forall x y v .
+          ( VectorSpace x, Num (Scalar x)
+          , AffineSpace y, v~Diff y, InnerSpace v, Floating (Scalar v), Ord (Scalar v) )
                      => PCMRange x -> [y] -> x-.^>y
 recursivePCM xrng_g ys = calcDeviations . go xrng_g $ presplitList ys
-    where go xrng@(PCMRange xl wsp) l@(SplitList _ n) = case splitEvenly 3 l of
+    where go :: PCMRange x -> SplitList y -> x-.^>y
+          go xrng@(PCMRange xl wsp) l@(SplitList _ n) = case splitEvenly 3 l of
              Right sps
               | [sp1, sp2, sp3] <- lIndThru xl sps
                      -> let pFit = solveToParabola
@@ -276,7 +287,23 @@ recursivePCM xrng_g ys = calcDeviations . go xrng_g $ presplitList ys
                         = let x₀₂ = x₀₁ ^+^ fromIntegral n₁ *^ wsp
                           in go (PCMRange x₀₁ wsp) sp₁ : lIndThru x₀₂ sps          
           evenSplitErr = error "'splitEvenly' returned wrong number of slices."
-          calcDeviations = id
+          
+          calcDeviations :: (x-.^>y) -> x-.^>y
+          calcDeviations = fst . cdvs
+           where cdvs ( RecursivePCM pFit dtls _ sSpc@(PCMRange xl wsp) slLn )
+                    = ( RecursivePCM pFit dtls' (DevBoxes stdDev maxDev) sSpc slLn
+                      , pSpls' )
+                   where stdDev = sqrt $ sum msqs
+                         maxDev = maximum $ sqrt <$> msqs
+                         msqs = [ distanceSq y (c .+^ x*^(b ^+^ x*^a))
+                                | (x,y) <- normlsdIdd pSpls' ]
+                         (dtls',pSpls') = case dtls of
+                             Left (Triple r₁ r₂ r₃)
+                               -> let [(r₁',s₁),(r₂',s₂),(r₃',s₃)] = map cdvs [r₁,r₂,r₃]
+                                  in (Left(Triple r₁' r₂' r₃'), s₁<>s₂<>s₃)
+                             Right pSpls -> (dtls, presplitList pSpls)
+                         (ParabolaParams c b a) = pFit
+                         
 
 rPCMSample :: Interval -> R -> (R->R) -> R-.^>R
 rPCMSample (Interval l r) δx f = recursivePCM (PCMRange l δx) [f x | x<-[l, l+δx .. r]] 
@@ -327,24 +354,28 @@ flattenPCM_resoCut bb δx = case DiaBB.getCorners bb of
 
 
 
-solveToParabola :: (VectorSpace v, Floating (Scalar v)) => [v] -> ParabolaParams v
+solveToParabola :: (AffineSpace y, v~Diff y, VectorSpace v, Floating (Scalar v))
+                        => [y] -> ParabolaParams y
 solveToParabola [] = error
         "Parabola solve under-specified (need at least one reference point)."
 solveToParabola [y] = ParabolaParams { constCoeff=y, linCoeff=zeroV, quadrCoeff=zeroV }
 solveToParabola [y₁,y₂]  -- @[x₁, x₂] ≡ [-½, ½]@, and @f(½) = (y₁+y₂)/2 + ½·(y₂-y₁) = y₂@.
                          -- (Likewise for @f(-½) = y₁@).
-      = ParabolaParams { constCoeff = (y₁ ^+^ y₂) ^/ 2
-                       , linCoeff = y₂ ^-^ y₁
+      = ParabolaParams { constCoeff = alerp y₁ y₂ 0.5
+                       , linCoeff = y₂ .-. y₁
                        , quadrCoeff = zeroV }
 solveToParabola [y₁,y₂,y₃]
    -- @[x₁, x₂, x₃] ≡ [-⅔, 0, ⅔]@,
    -- so @f(⅔) = y₂ + ⅔·(y₃-y₁)·¾ + ⁴/₉ · (y₁ + y₃ - 2y₂) · ⁹/₈ = y₃@
                       -- (Likewise for @f(-⅔) = y₁@).
     = ParabolaParams { constCoeff = y₂
-                     , linCoeff = (y₃ ^-^ y₁) ^* (3/4)
-                     , quadrCoeff = (y₁ ^+^ y₃ ^-^ 2*^y₂) ^* (9/8) }
+                     , linCoeff = (y₃ .-. y₁) ^* (3/4)
+                     , quadrCoeff = (alerp y₁ y₃ 0.5 .-. y₂) ^* (9/4) }
 solveToParabola _ = error "Parabola solve over-specified (can't solve more than three points)."
 
+
+normlsdIdd :: Fractional x => SplitList y -> [(x, y)]
+normlsdIdd (SplitList l n) = zip [(k+1/2)/fromIntegral n | k<-iterate(+1)0] l
 
 
 rPCMParabolaRange :: (R-.^>R) -> Interval -> Interval
