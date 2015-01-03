@@ -27,7 +27,7 @@ module Graphics.Dynamic.Plot.R2 (
         -- ** Class  
         , Plottable(..)
         -- ** Simple function plots 
-        , fnPlot, continFnPlot, continParamPlot
+        , fnPlot, continFnPlot, continParamPlot, plotPCM
         -- ** View selection
         , xInterval, yInterval
         ) where
@@ -61,7 +61,7 @@ import Control.Category.Constrained.Prelude
 import Control.Arrow.Constrained
 import Control.Monad.Constrained
 
-import Control.Lens ((^.))
+import Control.Lens hiding ((...))
 
   
 import Control.Concurrent.Async
@@ -293,7 +293,7 @@ recursivePCM xrng_g ys = calcDeviations . go xrng_g $ presplitList ys
            where cdvs ( RecursivePCM pFit dtls _ sSpc@(PCMRange xl wsp) slLn )
                     = ( RecursivePCM pFit dtls' (DevBoxes stdDev maxDev) sSpc slLn
                       , pSpls' )
-                   where stdDev = sqrt $ sum msqs
+                   where stdDev = sqrt $ sum msqs / fromIntegral (splListLen pSpls')
                          maxDev = maximum $ sqrt <$> msqs
                          msqs = [ distanceSq y (c .+^ x*^(b ^+^ x*^a))
                                 | (x,y) <- normlsdIdd pSpls' ]
@@ -322,7 +322,10 @@ instance Plottable (R-.^>R) where
          xr = wsp * fromIntegral gSplN
          plot (GraphWindowSpec{..}) = Plot [] . trace $ flattenPCM_resoCut bb δx rPCM
           where 
-                trace (p:q:ps) = simpleLine p q <> trace (q:ps)
+                trace ((p,DevBoxes σp δp) : qd@(q,DevBoxes σq δq) : ps)
+                     = Dia.strokeLocLoop (Dia.fromVertices
+                           [_y+~σq $ q, _y+~σp $ p, _y-~σp $ p, _y-~σq $ q
+                           ,_y+~σq $ q ]) <> trace (qd:ps)
                 trace _ = mempty
                 w = rBound - lBound; h = tBound - bBound
                 δx = w * 3/fromIntegral xResolution
@@ -332,7 +335,7 @@ instance Plottable (R-.^>R) where
                       -- take deviations from quadratic-fit into account.
   
 
-flattenPCM_resoCut :: DiaBB.BoundingBox R2 -> R -> (R-.^>R) -> [Dia.P2]
+flattenPCM_resoCut :: DiaBB.BoundingBox R2 -> R -> (R-.^>R) -> [(Dia.P2, DevBoxes R)]
 flattenPCM_resoCut bb δx = case DiaBB.getCorners bb of
                              Nothing -> const []
                              Just cs -> ($[]) . go' cs
@@ -343,7 +346,7 @@ flattenPCM_resoCut bb δx = case DiaBB.getCorners bb of
           | w > δx, Left (Triple s1 s2 s3) <- details
                 = go s1 . go s2 . go s3
           | otherwise 
-                = (xm ^& constCoeff pFit :)
+                = ((xm ^& constCoeff pFit, fitDevs) :)
          where xr = x₁ + w
                xm = x₁ + w / 2
                w = wsp * fromIntegral splN
@@ -641,7 +644,7 @@ plotWindow graphs' = do
                        fontPts = 12
                        transform :: Diagram -> Diagram
                        transform = nmScale . clr
-                         where clr | Just c <- graphColor  = Dia.lcA c
+                         where clr | Just c <- graphColor  = Dia.lcA c . Dia.fcA c
                                    | otherwise             = id
                                nmScale -- | usesNormalisedCanvas  = id
                                        | otherwise             = normaliseView
