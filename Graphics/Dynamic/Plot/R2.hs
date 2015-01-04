@@ -71,7 +71,7 @@ import Control.DeepSeq
 import Data.List (foldl', sort, intercalate, isPrefixOf, isInfixOf, find, zip4)
 import Data.Maybe
 import Data.Semigroup
-import Data.Foldable (foldMap)
+import Data.Foldable (fold, foldMap)
 import Data.Function (on)
 import Data.VectorSpace
 import Data.AffineSpace
@@ -241,8 +241,8 @@ deriving instance (AffineSpace y, Show y, Show (Diff y)) => Show (ParabolaParams
 parabolaMeanInCtrdUnitIntv ::
      (AffineSpace y, v~Diff y, VectorSpace v, Fractional (Scalar v))
                                  => ParabolaParams y -> y
-parabolaMeanInCtrdUnitIntv (ParabolaParams{..}) = constCoeff .+^ quadrCoeff ^/ 24
-     -- @∫ x² dx = x²/3@, thus @₀∫¹'² x² dx = 1/(2³ · 3) = 1/24@.
+parabolaMeanInCtrdUnitIntv (ParabolaParams{..}) = constCoeff .+^ quadrCoeff ^/ 3
+     -- @∫ x² dx = x²/3@, thus @₀∫¹ x² dx = 1/(1³ · 3) = 1/3@.
 
 data DevBoxes y = DevBoxes { stdDeviation, maxDeviation :: Scalar (Diff y) }
                 
@@ -322,11 +322,16 @@ instance Plottable (R-.^>R) where
          xr = wsp * fromIntegral gSplN
          plot (GraphWindowSpec{..}) = Plot [] . trace $ flattenPCM_resoCut bb δx rPCM
           where 
-                trace ((p,DevBoxes σp δp) : qd@(q,DevBoxes σq δq) : ps)
+                trace dpth = trStRange dpth <> fold [trMBound [p & _y +~ s*δ
+                                                              | (p, DevBoxes _ δ) <- dpth ]
+                                                    | s <- [-1, 1] ]
+                trStRange ((p,DevBoxes σp _) : qd@(q,DevBoxes σq _) : ps)
                      = Dia.strokeLocLoop (Dia.fromVertices
                            [_y+~σq $ q, _y+~σp $ p, _y-~σp $ p, _y-~σq $ q
-                           ,_y+~σq $ q ]) <> trace (qd:ps)
-                trace _ = mempty
+                           ,_y+~σq $ q ]) <> trStRange (qd:ps)
+                trStRange _ = mempty
+                trMBound l = Dia.fromVertices l & Dia.dashingO [2,2] 0
+                
                 w = rBound - lBound; h = tBound - bBound
                 δx = w * 3/fromIntegral xResolution
                 bb = Interval lBound rBound
@@ -382,12 +387,17 @@ normlsdIdd (SplitList l n) = zip [(k+1/2)/fromIntegral n | k<-iterate(+1)0] l
 
 
 rPCMParabolaRange :: (R-.^>R) -> Interval -> Interval
-rPCMParabolaRange rPCM@(RecursivePCM (ParabolaParams c b a) _ _ _ _) (Interval l r)
-   | r < (-1)   = spInterval $ c - b + a
-   | l > 1      = spInterval $ c + b + a
-   | l < (-1)   = rPCMParabolaRange rPCM $ Interval (-1) r
-   | r > 1      = rPCMParabolaRange rPCM $ Interval l 1
-   | otherwise  = (c + l*(b + l*a)) ... (c + r*(b + r*a))
+rPCMParabolaRange rPCM@(RecursivePCM _ _ (DevBoxes _ δ) _ _) ix
+             = let (Interval b t) = rppm rPCM ix in Interval (b-δ) (t+δ)
+ where rppm rPCM@(RecursivePCM (ParabolaParams c b a) _ _ _ _) (Interval l r)
+         | r < (-1)   = spInterval $ c - b + a
+         | l > 1      = spInterval $ c + b + a
+         | l < (-1)   = rppm rPCM $ Interval (-1) r
+         | r > 1      = rppm rPCM $ Interval l 1
+         | xe <- - b/(2*a), xe > l, xe < r
+                      = ( (c + l*(b + l*a)) ... (c + xe*(b + xe*a)) )
+                     <> ( (c + xe*(b + xe*a)) ... (c + r*(b + r*a)) )
+         | otherwise  = (c + l*(b + l*a)) ... (c + r*(b + r*a))
 
 
 
