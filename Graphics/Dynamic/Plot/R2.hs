@@ -34,6 +34,10 @@ module Graphics.Dynamic.Plot.R2 (
 
 import Graphics.Dynamic.Plot.Colour
 
+
+
+import qualified Prelude
+
 -- import Graphics.DrawingCombinators ((%%), R, R2)
 -- import qualified Graphics.DrawingCombinators as Draw
 -- import qualified Graphics.UI.GLFW as GLFW
@@ -57,7 +61,7 @@ import qualified System.Glib.Signals (on)
 import Control.Monad.Trans (liftIO)
 
 import qualified Control.Category.Hask as Hask
-import Control.Category.Constrained.Prelude
+import Control.Category.Constrained.Prelude hiding ((^))
 import Control.Arrow.Constrained
 import Control.Monad.Constrained
 
@@ -89,6 +93,10 @@ import System.Exit
 import System.Process
 import Data.Time
 
+
+
+(^) :: Num n => n -> Int -> n
+(^) = (Prelude.^)
 
 
 type R = Double
@@ -254,7 +262,7 @@ deriving instance (AffineSpace y, v~Diff y, Show (Scalar v), VectorSpace v)
 data PCMRange x = PCMRange { pcmStart, pcmSampleDuration :: x } deriving (Show)
  
 data x -.^> y
-   = RecursivePCM { linFitFit :: LinFitParams y
+   = RecursivePCM { rPCMlinFit :: LinFitParams y
                   , details :: Either (Pair (x-.^>y)) [y]
                   , pFitDeviations :: DevBoxes y
                   , samplingSpec :: PCMRange x
@@ -274,7 +282,7 @@ recursivePCM xrng_g ys = calcDeviations . go xrng_g $ presplitList ys
              Right sps
               | [sp1, sp2] <- lIndThru xl sps
                      -> let pFit = solveToLinFit
-                               $ (linFitMeanInCtrdUnitIntv.linFitFit) <$> [sp1,sp2]
+                               $ (linFitMeanInCtrdUnitIntv.rPCMlinFit) <$> [sp1,sp2]
                         in RecursivePCM pFit
                                         (Left $ Pair sp1 sp2)
                                         (undefined)
@@ -291,20 +299,41 @@ recursivePCM xrng_g ys = calcDeviations . go xrng_g $ presplitList ys
           evenSplitErr = error "'splitEvenly' returned wrong number of slices."
           
           calcDeviations :: (x-.^>y) -> x-.^>y
-          calcDeviations = fst . cdvs
-           where cdvs ( RecursivePCM pFit dtls _ sSpc@(PCMRange xl wsp) slLn )
+          calcDeviations = fst . cdvs Nothing Nothing
+           where cdvs lPFits rPFits ( RecursivePCM pFit dtls _ sSpc@(PCMRange xl wsp) slLn )
                     = ( RecursivePCM pFit dtls' (DevBoxes stdDev maxDev) sSpc slLn
                       , pSpls' )
                    where stdDev = sqrt $ sum msqs / fromIntegral (splListLen pSpls')
                          maxDev = maximum $ sqrt <$> msqs
-                         msqs = [ distanceSq y (b .+^ x*^a)
+                         msqs = [ distanceSq y $ ff x
                                 | (x,y) <- normlsdIdd pSpls' ]
+                         ff x | x < 0, x' <- -x
+                              , Just(RecursivePCM{rPCMlinFit=LinFitParams b'l a'l}) <- lPFits
+                                           = b .+^ (b'l.-.b) ^* h₀₁ x'
+                                               .+^ a ^* h₁₀ x'
+                                               .+^ a'l ^* h₁₁ x'
+                              | x > 0
+                              , Just(RecursivePCM{rPCMlinFit=LinFitParams b'r a'r}) <- rPFits
+                                           = b .+^ (b'r.-.b) ^* h₀₁ x
+                                               .+^ a ^* h₁₀ x
+                                               .+^ a'r ^* h₁₁ x
+                              | otherwise  = (b .+^ x*^a)
+                          where h₀₀ x' = (1 + x) * (1 - x/2)^2  -- Cubic Hermite splines
+                                h₀₁ x' = x^2 * (3 - x) / 4
+                                h₁₀ x' = x * (2 - x)^2 / 8
+                                h₁₁ x' = x^2 * (x - 2) / 8
                          (dtls',pSpls') = case dtls of
                              Left (Pair r₁ r₂)
-                               -> let [(r₁',s₁),(r₂',s₂)] = map cdvs [r₁,r₂]
+                               -> let (r₁',s₁) = cdvs (rRoute=<<lPFits) (Just r₂) r₁
+                                      (r₂',s₂) = cdvs (Just r₁) (lRoute=<<rPFits) r₂
                                   in (Left(Pair r₁' r₂'), s₁<>s₂)
                              Right pSpls -> (dtls, presplitList pSpls)
                          (LinFitParams b a) = pFit
+                 
+                 lRoute (RecursivePCM {details = Right _}) = Nothing
+                 lRoute (RecursivePCM {details = Left (Pair l _)}) = Just l
+                 rRoute (RecursivePCM {details = Right _}) = Nothing
+                 rRoute (RecursivePCM {details = Left (Pair _ r)}) = Just r
                          
 
 rPCMSample :: Interval -> R -> (R->R) -> R-.^>R
