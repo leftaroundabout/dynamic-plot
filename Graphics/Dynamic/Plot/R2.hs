@@ -210,6 +210,8 @@ instance Plottable Diagram where
 --                 trace _ = mempty
   
 
+data Pair p = Pair !p !p
+       deriving (Hask.Functor, Show, Eq, Ord)
 data Triple p = Triple !p !p !p
        deriving (Hask.Functor, Show, Eq, Ord)
 
@@ -234,15 +236,15 @@ instance Semigroup (SplitList a) where
   SplitList l n <> SplitList l' n' = SplitList (l<>l') (n+n')
 
 
-data ParabolaParams y = ParabolaParams { constCoeff :: y
-                                       , linCoeff, quadrCoeff :: Diff y }
-deriving instance (AffineSpace y, Show y, Show (Diff y)) => Show (ParabolaParams y)
+data LinFitParams y = LinFitParams { constCoeff :: y
+                                   , linCoeff :: Diff y }
+deriving instance (AffineSpace y, Show y, Show (Diff y)) => Show (LinFitParams y)
 
-parabolaMeanInCtrdUnitIntv ::
+
+linFitMeanInCtrdUnitIntv ::
      (AffineSpace y, v~Diff y, VectorSpace v, Fractional (Scalar v))
-                                 => ParabolaParams y -> y
-parabolaMeanInCtrdUnitIntv (ParabolaParams{..}) = constCoeff .+^ quadrCoeff ^/ 3
-     -- @∫ x² dx = x²/3@, thus @₀∫¹ x² dx = 1/(1³ · 3) = 1/3@.
+                                 => LinFitParams y -> y
+linFitMeanInCtrdUnitIntv (LinFitParams{..}) = constCoeff
 
 data DevBoxes y = DevBoxes { stdDeviation, maxDeviation :: Scalar (Diff y) }
                 
@@ -252,8 +254,8 @@ deriving instance (AffineSpace y, v~Diff y, Show (Scalar v), VectorSpace v)
 data PCMRange x = PCMRange { pcmStart, pcmSampleDuration :: x } deriving (Show)
  
 data x -.^> y
-   = RecursivePCM { parabolaFit :: ParabolaParams y
-                  , details :: Either (Triple (x-.^>y)) [y]
+   = RecursivePCM { linFitFit :: LinFitParams y
+                  , details :: Either (Pair (x-.^>y)) [y]
                   , pFitDeviations :: DevBoxes y
                   , samplingSpec :: PCMRange x
                   , splIdLen :: Int
@@ -268,17 +270,17 @@ recursivePCM :: forall x y v .
                      => PCMRange x -> [y] -> x-.^>y
 recursivePCM xrng_g ys = calcDeviations . go xrng_g $ presplitList ys
     where go :: PCMRange x -> SplitList y -> x-.^>y
-          go xrng@(PCMRange xl wsp) l@(SplitList _ n) = case splitEvenly 3 l of
+          go xrng@(PCMRange xl wsp) l@(SplitList _ n) = case splitEvenly 2 l of
              Right sps
-              | [sp1, sp2, sp3] <- lIndThru xl sps
-                     -> let pFit = solveToParabola
-                               $ (parabolaMeanInCtrdUnitIntv.parabolaFit) <$> [sp1,sp2,sp3]
+              | [sp1, sp2] <- lIndThru xl sps
+                     -> let pFit = solveToLinFit
+                               $ (linFitMeanInCtrdUnitIntv.linFitFit) <$> [sp1,sp2]
                         in RecursivePCM pFit
-                                        (Left $ Triple sp1 sp2 sp3)
-                                        (undefined) -- DevBoxes 0 0 0)
+                                        (Left $ Pair sp1 sp2)
+                                        (undefined)
                                         xrng n
              Right _ -> evenSplitErr
-             Left pSpls -> RecursivePCM (solveToParabola pSpls)
+             Left pSpls -> RecursivePCM (solveToLinFit pSpls)
                                         (Right pSpls)
                                         (undefined)
                                         xrng n
@@ -295,14 +297,14 @@ recursivePCM xrng_g ys = calcDeviations . go xrng_g $ presplitList ys
                       , pSpls' )
                    where stdDev = sqrt $ sum msqs / fromIntegral (splListLen pSpls')
                          maxDev = maximum $ sqrt <$> msqs
-                         msqs = [ distanceSq y (c .+^ x*^(b ^+^ x*^a))
+                         msqs = [ distanceSq y (b .+^ x*^a)
                                 | (x,y) <- normlsdIdd pSpls' ]
                          (dtls',pSpls') = case dtls of
-                             Left (Triple r₁ r₂ r₃)
-                               -> let [(r₁',s₁),(r₂',s₂),(r₃',s₃)] = map cdvs [r₁,r₂,r₃]
-                                  in (Left(Triple r₁' r₂' r₃'), s₁<>s₂<>s₃)
+                             Left (Pair r₁ r₂)
+                               -> let [(r₁',s₁),(r₂',s₂)] = map cdvs [r₁,r₂]
+                                  in (Left(Pair r₁' r₂'), s₁<>s₂)
                              Right pSpls -> (dtls, presplitList pSpls)
-                         (ParabolaParams c b a) = pFit
+                         (LinFitParams b a) = pFit
                          
 
 rPCMSample :: Interval -> R -> (R->R) -> R-.^>R
@@ -313,7 +315,7 @@ instance Plottable (R-.^>R) where
   plot rPCM@(RecursivePCM gPFit gDetails gFitDevs (PCMRange x₀ wsp) gSplN)
             = DynamicPlottable{
                 relevantRange_x = const . pure $ Interval x₀ xr
-              , relevantRange_y = fmap $ rPCMParabolaRange rPCM
+              , relevantRange_y = fmap $ rPCMLinFitRange rPCM
               , isTintableMonochromic = True
               , axesNecessity = 1
               , dynamicPlot = plot
@@ -348,56 +350,45 @@ flattenPCM_resoCut bb δx = case DiaBB.getCorners bb of
         go rPCM@(RecursivePCM pFit details fitDevs (PCMRange x₁ wsp) splN)
           | DiaBB.isEmptyBox $ DiaBB.intersection bb sqRange
                 = id
-          | w > δx, Left (Triple s1 s2 s3) <- details
-                = go s1 . go s2 . go s3
+          | w > δx, Left (Pair s1 s2) <- details
+                = go s1 . go s2
           | otherwise 
                 = ((xm ^& constCoeff pFit, fitDevs) :)
          where xr = x₁ + w
                xm = x₁ + w / 2
                w = wsp * fromIntegral splN
-               sqRange = xRange -*| rPCMParabolaRange rPCM xRange_norm'd
+               sqRange = xRange -*| rPCMLinFitRange rPCM xRange_norm'd
                xRange = x₁ ... xr
                xRange_norm'd = max (-1) ((lCorn^._x - xm)/w)
                            ... min   1  ((rCorn^._x - xm)/w)
 
 
 
-solveToParabola :: (AffineSpace y, v~Diff y, VectorSpace v, Floating (Scalar v))
-                        => [y] -> ParabolaParams y
-solveToParabola [] = error
-        "Parabola solve under-specified (need at least one reference point)."
-solveToParabola [y] = ParabolaParams { constCoeff=y, linCoeff=zeroV, quadrCoeff=zeroV }
-solveToParabola [y₁,y₂]  -- @[x₁, x₂] ≡ [-½, ½]@, and @f(½) = (y₁+y₂)/2 + ½·(y₂-y₁) = y₂@.
-                         -- (Likewise for @f(-½) = y₁@).
-      = ParabolaParams { constCoeff = alerp y₁ y₂ 0.5
-                       , linCoeff = y₂ .-. y₁
-                       , quadrCoeff = zeroV }
-solveToParabola [y₁,y₂,y₃]
-   -- @[x₁, x₂, x₃] ≡ [-⅔, 0, ⅔]@,
-   -- so @f(⅔) = y₂ + ⅔·(y₃-y₁)·¾ + ⁴/₉ · (y₁ + y₃ - 2y₂) · ⁹/₈ = y₃@
-                      -- (Likewise for @f(-⅔) = y₁@).
-    = ParabolaParams { constCoeff = y₂
-                     , linCoeff = (y₃ .-. y₁) ^* (3/4)
-                     , quadrCoeff = (alerp y₁ y₃ 0.5 .-. y₂) ^* (9/4) }
-solveToParabola _ = error "Parabola solve over-specified (can't solve more than three points)."
+solveToLinFit :: (AffineSpace y, v~Diff y, VectorSpace v, Floating (Scalar v))
+                        => [y] -> LinFitParams y
+solveToLinFit [] = error
+        "LinFit solve under-specified (need at least one reference point)."
+solveToLinFit [y] = LinFitParams { constCoeff=y, linCoeff=zeroV }
+solveToLinFit [y₁,y₂]  -- @[x₁, x₂] ≡ [-½, ½]@, and @f(½) = (y₁+y₂)/2 + ½·(y₂-y₁) = y₂@.
+                       -- (Likewise for @f(-½) = y₁@).
+      = LinFitParams { constCoeff = alerp y₁ y₂ 0.5
+                     , linCoeff = y₂ .-. y₁ }
+solveToLinFit _ = error "LinFit solve over-specified (can't solve more than two points)."
 
 
 normlsdIdd :: Fractional x => SplitList y -> [(x, y)]
 normlsdIdd (SplitList l n) = zip [(k+1/2)/fromIntegral n | k<-iterate(+1)0] l
 
 
-rPCMParabolaRange :: (R-.^>R) -> Interval -> Interval
-rPCMParabolaRange rPCM@(RecursivePCM _ _ (DevBoxes _ δ) _ _) ix
+rPCMLinFitRange :: (R-.^>R) -> Interval -> Interval
+rPCMLinFitRange rPCM@(RecursivePCM _ _ (DevBoxes _ δ) _ _) ix
              = let (Interval b t) = rppm rPCM ix in Interval (b-δ) (t+δ)
- where rppm rPCM@(RecursivePCM (ParabolaParams c b a) _ _ _ _) (Interval l r)
-         | r < (-1)   = spInterval $ c - b + a
-         | l > 1      = spInterval $ c + b + a
+ where rppm rPCM@(RecursivePCM (LinFitParams b a) _ _ _ _) (Interval l r)
+         | r < (-1)   = spInterval $ b - a
+         | l > 1      = spInterval $ b + a
          | l < (-1)   = rppm rPCM $ Interval (-1) r
          | r > 1      = rppm rPCM $ Interval l 1
-         | xe <- - b/(2*a), xe > l, xe < r
-                      = ( (c + l*(b + l*a)) ... (c + xe*(b + xe*a)) )
-                     <> ( (c + xe*(b + xe*a)) ... (c + r*(b + r*a)) )
-         | otherwise  = (c + l*(b + l*a)) ... (c + r*(b + r*a))
+         | otherwise  = (b + l*a) ... (b + r*a)
 
 
 
