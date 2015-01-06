@@ -223,6 +223,16 @@ data Pair p = Pair !p !p
 data Triple p = Triple !p !p !p
        deriving (Hask.Functor, Show, Eq, Ord)
 
+data DiffList a = DiffList { getDiffList :: [a]->[a], diffListLen :: Int }
+diffList :: [a] -> DiffList a
+diffList l = DiffList (l++) (length l)
+
+instance Semigroup (DiffList a) where
+  DiffList dl n <> DiffList dl' n' = DiffList (dl . dl') (n+n')
+instance Monoid (DiffList a) where
+  mappend = (<>); mempty = DiffList id 0
+
+
 data SplitList a = SplitList { getSplList :: [a], splListLen :: Int }
        deriving (Hask.Functor)
 presplitList :: [a] -> SplitList a
@@ -243,6 +253,11 @@ splitEvenly k (SplitList l n)
 instance Semigroup (SplitList a) where
   SplitList l n <> SplitList l' n' = SplitList (l<>l') (n+n')
 
+fromDiffList :: DiffList a -> SplitList a
+fromDiffList (DiffList f n) = SplitList (f[]) n
+
+
+
 
 data LinFitParams y = LinFitParams { constCoeff :: y
                                    , linCoeff :: Diff y }
@@ -254,10 +269,17 @@ linFitMeanInCtrdUnitIntv ::
                                  => LinFitParams y -> y
 linFitMeanInCtrdUnitIntv (LinFitParams{..}) = constCoeff
 
+
+
+
+
 data DevBoxes y = DevBoxes { stdDeviation, maxDeviation :: Scalar (Diff y) }
                 
 deriving instance (AffineSpace y, v~Diff y, Show (Scalar v), VectorSpace v)
                => Show (DevBoxes y)
+
+
+
 
 data PCMRange x = PCMRange { pcmStart, pcmSampleDuration :: x } deriving (Show)
  
@@ -273,7 +295,7 @@ deriving instance ( Show x, Show y
             => Show (x -.^> y)
 
 recursivePCM :: forall x y v .
-          ( VectorSpace x, Num (Scalar x)
+          ( VectorSpace x, Real (Scalar x)
           , AffineSpace y, v~Diff y, InnerSpace v, Floating (Scalar v), Ord (Scalar v) )
                      => PCMRange x -> [y] -> x-.^>y
 recursivePCM xrng_g ys = calcDeviations . go xrng_g $ presplitList ys
@@ -300,43 +322,74 @@ recursivePCM xrng_g ys = calcDeviations . go xrng_g $ presplitList ys
           
           calcDeviations :: (x-.^>y) -> x-.^>y
           calcDeviations = fst . cdvs Nothing Nothing
-           where cdvs lPFits rPFits ( RecursivePCM pFit dtls _ sSpc@(PCMRange xl wsp) slLn )
+           where cdvs :: Maybe(x-.^>y) -> Maybe(x-.^>y) -> (x-.^>y) -> (x-.^>y, DiffList y)
+                 cdvs lPFits rPFits
+                         rPCM@( RecursivePCM pFit dtls _ sSpc@(PCMRange xl wsp) slLn )
                     = ( RecursivePCM pFit dtls' (DevBoxes stdDev maxDev) sSpc slLn
                       , pSpls' )
-                   where stdDev = sqrt $ sum msqs / fromIntegral (splListLen pSpls')
+                   where stdDev = sqrt $ sum msqs / fromIntegral slLn
                          maxDev = maximum $ sqrt <$> msqs
                          msqs = [ distanceSq y $ ff x
-                                | (x,y) <- normlsdIdd pSpls' ]
-                         ff x | x < 0, x' <- -x
-                              , Just(RecursivePCM{rPCMlinFit=LinFitParams b'l a'l}) <- lPFits
-                                           = b .+^ (b'l.-.b) ^* h₀₁ x'
-                                               .+^ a ^* h₁₀ x'
-                                               .+^ a'l ^* h₁₁ x'
-                              | x > 0
-                              , Just(RecursivePCM{rPCMlinFit=LinFitParams b'r a'r}) <- rPFits
-                                           = b .+^ (b'r.-.b) ^* h₀₁ x
-                                               .+^ a ^* h₁₀ x
-                                               .+^ a'r ^* h₁₁ x
-                              | otherwise  = (b .+^ x*^a)
-                          where h₀₀ x' = (1 + x) * (1 - x/2)^2  -- Cubic Hermite splines
-                                h₀₁ x' = x^2 * (3 - x) / 4
-                                h₁₀ x' = x * (2 - x)^2 / 8
-                                h₁₁ x' = x^2 * (x - 2) / 8
+                                | (x,y) <- normlsdIdd $ fromDiffList pSpls' ]
+                         ff = l₀splineRep (Pair lPFits rPFits) rPCM
                          (dtls',pSpls') = case dtls of
                              Left (Pair r₁ r₂)
                                -> let (r₁',s₁) = cdvs (rRoute=<<lPFits) (Just r₂) r₁
                                       (r₂',s₂) = cdvs (Just r₁) (lRoute=<<rPFits) r₂
-                                  in (Left(Pair r₁' r₂'), s₁<>s₂)
-                             Right pSpls -> (dtls, presplitList pSpls)
+                                  in (Left(Pair r₁' r₂'), s₁ <> s₂)
+                             Right pSpls -> (dtls, diffList pSpls)
                          (LinFitParams b a) = pFit
                  
-                 lRoute (RecursivePCM {details = Right _}) = Nothing
-                 lRoute (RecursivePCM {details = Left (Pair l _)}) = Just l
-                 rRoute (RecursivePCM {details = Right _}) = Nothing
-                 rRoute (RecursivePCM {details = Left (Pair _ r)}) = Just r
+lRoute, rRoute :: (x-.^>y) -> Maybe (x-.^>y)
+lRoute (RecursivePCM {details = Right _}) = Nothing
+lRoute (RecursivePCM {details = Left (Pair l _)}) = Just l
+rRoute (RecursivePCM {details = Right _}) = Nothing
+rRoute (RecursivePCM {details = Left (Pair _ r)}) = Just r
                          
+splineRep :: ( AffineSpace y, v~Diff y, InnerSpace v, Floating (Scalar v), Ord (Scalar v) )
+                     => Int         -- ^ Number of subdivisions to \"go down\".
+                        -> (R-.^>y) -> R -> y
+splineRep n₀ rPCM@(RecursivePCM _ _ _ (PCMRange xl wsp) slLn)
+              = go n₀ Nothing Nothing rPCM . normaliseR
+ where go n lPFits rPFits (RecursivePCM _ (Left (Pair r₁ r₂)) _ _ slLn)
+         | n>0, f₁ <- go (n-1) (rRoute=<<lPFits) (Just r₂) r₁
+              , f₂ <- go (n-1) (Just r₁) (lRoute=<<rPFits) r₂
+                =  \x -> if x<0.5 then f₁ $ x*2
+                                  else f₂ $ x*2 - 1
+       go _ lPFits rPFits rPCM = l₀splineRep (Pair lPFits rPFits) rPCM
+       
+       normaliseR x = (x - xl)/(wsp * fromIntegral slLn)
 
-rPCMSample :: Interval -> R -> (R->R) -> R-.^>R
+l₀splineRep ::
+          ( VectorSpace x, Num (Scalar x)
+          , AffineSpace y, v~Diff y, InnerSpace v, Floating (Scalar v), Ord (Scalar v) )
+                     => Pair (Maybe (x-.^>y)) -> (x-.^>y)
+                            -> R{-Sample position normalised to [0,1]-} -> y
+l₀splineRep (Pair lPFits rPFits)
+            (RecursivePCM{ rPCMlinFit=LinFitParams b a
+                         , samplingSpec=PCMRange x₀ wsp
+                         , splIdLen = n })
+               = f
+ where f x | x < 0.5, t <- realToFrac $ 0.5 - x
+           , Just(RecursivePCM{rPCMlinFit=LinFitParams b'l a'l}) <- lPFits
+                        = b .+^ (b'l.-.b) ^* h₀₁ t
+                            .-^ a ^* h₁₀ t
+                            .-^ a'l ^* h₁₁ t
+           | x > 0.5, t <- realToFrac $ x - 0.5
+           , Just(RecursivePCM{rPCMlinFit=LinFitParams b'r a'r}) <- rPFits
+                        = b .+^ (b'r.-.b) ^* h₀₁ t
+                            .+^ a ^* h₁₀ t
+                            .+^ a'r ^* h₁₁ t
+           | t <- realToFrac $ x-0.5
+                        = b .+^ t*^a
+       h₀₀ t = (1 + 2*t) * (1 - t)^2  -- Cubic Hermite splines
+       h₀₁ t = t^2 * (3 - 2*t)
+       h₁₀ t = t * (1 - t)^2
+       h₁₁ t = t^2 * (t - 1)
+
+
+
+rPCMSample :: Interval R -> R -> (R->R) -> R-.^>R
 rPCMSample (Interval l r) δx f = recursivePCM (PCMRange l δx) [f x | x<-[l, l+δx .. r]] 
                    
 
@@ -409,7 +462,7 @@ normlsdIdd :: Fractional x => SplitList y -> [(x, y)]
 normlsdIdd (SplitList l n) = zip [(k+1/2)/fromIntegral n | k<-iterate(+1)0] l
 
 
-rPCMLinFitRange :: (R-.^>R) -> Interval -> Interval
+rPCMLinFitRange :: (R-.^>R) -> Interval R -> Interval R
 rPCMLinFitRange rPCM@(RecursivePCM _ _ (DevBoxes _ δ) _ _) ix
              = let (Interval b t) = rppm rPCM ix in Interval (b-δ) (t+δ)
  where rppm rPCM@(RecursivePCM (LinFitParams b a) _ _ _ _) (Interval l r)
@@ -456,10 +509,14 @@ moveStepRel (δx,δy) (ζx,ζy) (GraphWindowSpec l r b t xRes yRes clSchm)
 
 
 
-data Interval = Interval !R !R deriving (Show)
-instance Semigroup Interval where  -- WRT closed hull of the union.
+data Interval r = Interval !r !r deriving (Show)
+instance (Ord r) => Semigroup (Interval r) where  -- WRT closed hull of the union.
   Interval l₁ u₁ <> Interval l₂ u₂ = Interval (min l₁ l₂) (max u₁ u₂)
-onInterval :: ((R,R) -> (R,R)) -> Interval -> Interval 
+
+realInterval :: Real r => Interval r -> Interval R
+realInterval (Interval a b) = Interval (realToFrac a) (realToFrac b)
+
+onInterval :: ((R,R) -> (R,R)) -> Interval R -> Interval R
 onInterval f (Interval l r) = uncurry Interval $ f (l, r)
 
 infixl 6 ...
@@ -469,20 +526,23 @@ infixl 6 ...
 --   interval\" [3,1]).
 --   The fixity @infixl 6@ was chosen so you can write 2D bounding-boxes as e.g.
 --   @-1...4 -*| -1...1@.
-(...) :: R -> R -> Interval
+(...) :: (Ord r) => r -> r -> Interval r
 x1...x2 | x1 < x2    = Interval x1 x2
         | otherwise  = Interval x2 x1
 
-spInterval :: R -> Interval
+spInterval :: r -> Interval r
 spInterval x = Interval x x
 
-intersects :: Interval -> Interval -> Bool
+intersects :: Ord r => Interval r -> Interval r -> Bool
 intersects (Interval a b) (Interval c d) = a<=d && b>=c
+
+includes :: Ord r => Interval r -> r -> Bool
+Interval a b `includes` x = x>=a && x<=b
 
 infix 5 -*|
 
 -- | Cartesian product of intervals.
-(-*|) :: Interval -> Interval -> DiaBB.BoundingBox R2
+(-*|) :: Interval R -> Interval R -> DiaBB.BoundingBox R2
 Interval l r -*| Interval b t = DiaBB.fromCorners (l^&b) (r^&t)
 
 
@@ -497,7 +557,7 @@ instance Monoid Plot where
   mappend = (<>)
 
 data DynamicPlottable = DynamicPlottable { 
-        relevantRange_x, relevantRange_y :: Option Interval -> Option Interval
+        relevantRange_x, relevantRange_y :: Option (Interval R) -> Option (Interval R)
       -- , usesNormalisedCanvas :: Bool
       , isTintableMonochromic :: Bool
       , axesNecessity :: Necessity
