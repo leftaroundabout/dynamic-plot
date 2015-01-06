@@ -406,13 +406,21 @@ instance Plottable (R-.^>R) where
          xr = wsp * fromIntegral gSplN
          plot (GraphWindowSpec{..}) = Plot [] . trace $ flattenPCM_resoCut bb δx rPCM
           where 
-                trace dpth = trStRange dpth <> fold [trMBound [p & _y +~ s*δ
-                                                              | (p, DevBoxes _ δ) <- dpth ]
-                                                    | s <- [-1, 1] ]
-                trStRange ((p,DevBoxes σp _) : qd@(q,DevBoxes σq _) : ps)
-                     = Dia.strokeLocLoop (Dia.fromVertices
-                           [_y+~σq $ q, _y+~σp $ p, _y-~σp $ p, _y-~σq $ q
-                           ,_y+~σq $ q ]) <> trStRange (qd:ps)
+                trace dpth = fold [ trMBound [ p & _y +~ s*δ
+                                             | (p, DevBoxes _ δ) <- dpth ]
+                                  | s <- [-1, 1] ]
+                             <> trStRange dpth
+                trStRange ((p,DevBoxes σp δp) : qd@(q,DevBoxes σq δq) : ps)
+                     = (let η = (σp/δp + σq/δq)/2
+                        in Dia.opacity (1-η)
+                            (Dia.strokeLocLoop (Dia.fromVertices
+                             [_y+~σq $ q, _y+~σp $ p, _y-~σp $ p, _y-~σq $ q
+                             ,_y+~σq $ q ]))
+                        <> Dia.opacity (η^2)
+                            (Dia.strokeLocLoop (Dia.fromVertices
+                             [_y+~δq $ q, _y+~δp $ p, _y-~δp $ p, _y-~δq $ q
+                             ,_y+~δq $ q ]))
+                       ) <> trStRange (qd:ps)
                 trStRange _ = mempty
                 trMBound l = Dia.fromVertices l & Dia.dashingO [2,2] 0
                 
