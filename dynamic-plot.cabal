@@ -18,6 +18,7 @@ Library
                      , transformers
                      , mtl
                      , vector-space>=0.8
+                     , MemoTrie
                      , vector
                      , containers
                      , semigroups
@@ -50,3 +51,4 @@ Library
   ghc-options:       -O2
   Exposed-modules:   Graphics.Dynamic.Plot.R2
   Other-modules:     Graphics.Dynamic.Plot.Colour
+                     , Data.LinearMap.HerMetric
