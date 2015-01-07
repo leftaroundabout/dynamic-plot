@@ -22,46 +22,43 @@ import Diagrams.Prelude
 
 
 
-class (HasBasis v, InnerSpace v, RealFloat (Scalar v), HasTrie (Basis v))
+class ( HasBasis v, RealFloat (Scalar v), HasTrie (Basis v)
+      , VectorSpace (DualSpace v), HasBasis (DualSpace v)
+      , Scalar v ~ Scalar (DualSpace v), Basis v ~ Basis (DualSpace v) )
     => HasMetric v where
-  toScalar :: v -> Maybe (Scalar v)
+  type DualSpace v :: *
+  type DualSpace v = v
+  (<.>^) :: DualSpace v -> v -> Scalar v
+  
+
+(^<.>) :: HasMetric v => v -> DualSpace v -> Scalar v
+ket ^<.> bra = bra <.>^ ket
 
 instance HasMetric Double where
-  toScalar = Just
-instance (HasMetric v) => HasMetric (v,v) where
-  toScalar _ = Nothing
+  (<.>^) = (<.>)
+instance (HasMetric v, HasMetric w, Scalar v ~ Scalar w) => HasMetric (v,w) where
+  type DualSpace (v,w) = (DualSpace v, DualSpace w)
+  (v,w)<.>^(v',w') = v<.>^v' + w<.>^w'
 instance HasMetric R2 where
-  toScalar v | v==zeroV   = Just 0
-             | otherwise  = Nothing
+  (<.>^) = (<.>)
 
 
 -- | 'HerMetric' is a portmanteau of /Hermitian/ and /metric/ (in the sense as used
 --   in e.g. general relativity).
-data HerMetric v = IsotropMetric (Scalar v)
-                 | HerMetric (v :-* v)
+newtype HerMetric v = HerMetric { getHerMetric :: DualSpace v :-* v }
 
 instance HasMetric v => AdditiveGroup (HerMetric v) where
-  zeroV = IsotropMetric 0
-  negateV (IsotropMetric i) = IsotropMetric $ negate i
+  zeroV = HerMetric zeroV
   negateV (HerMetric m) = HerMetric $ negateV m
-  IsotropMetric a ^+^ IsotropMetric b = IsotropMetric $ a + b
-  IsotropMetric a ^+^ HerMetric m = HerMetric $ idL ^* a ^+^ m
-  HerMetric m ^+^ IsotropMetric a = HerMetric $ m ^+^ idL ^* a
   HerMetric m ^+^ HerMetric n = HerMetric $ m ^+^ n
 instance HasMetric v => VectorSpace (HerMetric v) where
   type Scalar (HerMetric v) = Scalar v
-  s *^ (IsotropMetric a) = IsotropMetric $ s * a
   s *^ (HerMetric m) = HerMetric $ s *^ m 
 
 projector :: HasMetric v => v -> HerMetric v
-projector v = case toScalar v of
-   Nothing -> HerMetric (linear $ \u -> v ^* (u<.>v))
-   Just s  -> IsotropMetric $ s*s
+projector v = HerMetric (linear $ \u -> v ^* (v^<.>u))
 
 
-metric :: HasMetric v => HerMetric v -> v -> Scalar v
-metric (HerMetric m) v = sqrt $ v <.> lapply m v
-
-basisMetric :: HasMetric v => HerMetric v -> Basis v -> Scalar v
-basisMetric (HerMetric m) b = sqrt $ basisValue b <.> atBasis m b
+metric :: HasMetric v => HerMetric v -> DualSpace v -> Scalar v
+metric (HerMetric m) v = sqrt $ v <.>^ lapply m v
 
