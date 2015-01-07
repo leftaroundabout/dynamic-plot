@@ -43,7 +43,7 @@ import qualified Prelude
 -- import qualified Graphics.UI.GLFW as GLFW
 -- import qualified Graphics.Rendering.OpenGL as OpenGL
 -- import Graphics.Rendering.OpenGL (($=))
-import Diagrams.Prelude (R2, (^&), (&), _x, _y)
+import Diagrams.Prelude (R2, P2, (^&), (&), _x, _y)
 import qualified Diagrams.Prelude as Dia
 import qualified Diagrams.TwoD.Size as Dia
 import qualified Diagrams.BoundingBox as DiaBB
@@ -79,6 +79,7 @@ import Data.Foldable (fold, foldMap)
 import Data.Function (on)
 import Data.VectorSpace
 import Data.AffineSpace
+import Data.LinearMap.HerMetric
 import qualified Data.Map.Lazy as Map
 
 import Data.Manifold ((:-->))
@@ -271,12 +272,9 @@ linFitMeanInCtrdUnitIntv (LinFitParams{..}) = constCoeff
 
 
 
-
-
-data DevBoxes y = DevBoxes { stdDeviation, maxDeviation :: Scalar (Diff y) }
+data DevBoxes y = DevBoxes { deviations :: HerMetric (Diff y)
+                           , maxDeviation :: Scalar (Diff y) }
                 
-deriving instance (AffineSpace y, v~Diff y, Show (Scalar v), VectorSpace v)
-               => Show (DevBoxes y)
 
 
 
@@ -290,13 +288,10 @@ data x -.^> y
                   , samplingSpec :: PCMRange x
                   , splIdLen :: Int
                   }
-deriving instance ( Show x, Show y
-                  , AffineSpace y, v~Diff y, Show v, VectorSpace v, Show (Scalar v))
-            => Show (x -.^> y)
 
 recursivePCM :: forall x y v .
           ( VectorSpace x, Real (Scalar x)
-          , AffineSpace y, v~Diff y, InnerSpace v, Floating (Scalar v), Ord (Scalar v) )
+          , AffineSpace y, v~Diff y, InnerSpace v, HasMetric v, RealFloat (Scalar v) )
                      => PCMRange x -> [y] -> x-.^>y
 recursivePCM xrng_g ys = calcDeviations . go xrng_g $ presplitList ys
     where go :: PCMRange x -> SplitList y -> x-.^>y
@@ -327,9 +322,9 @@ recursivePCM xrng_g ys = calcDeviations . go xrng_g $ presplitList ys
                          rPCM@( RecursivePCM pFit dtls _ sSpc@(PCMRange xl wsp) slLn )
                     = ( RecursivePCM pFit dtls' (DevBoxes stdDev maxDev) sSpc slLn
                       , pSpls' )
-                   where stdDev = sqrt $ sum msqs / fromIntegral slLn
-                         maxDev = maximum $ sqrt <$> msqs
-                         msqs = [ distanceSq y $ ff x
+                   where stdDev = (^/ fromIntegral slLn) . sumV $ projector <$> msqs
+                         maxDev =     sqrt           . maximum $ magnitudeSq <$> msqs
+                         msqs = [ (y .-. ff x)
                                 | (x,y) <- normlsdIdd $ fromDiffList pSpls' ]
                          ff = l₀splineRep (Pair lPFits rPFits) rPCM
                          (dtls',pSpls') = case dtls of
@@ -362,7 +357,7 @@ splineRep n₀ rPCM@(RecursivePCM _ _ _ (PCMRange xl wsp) slLn)
 
 l₀splineRep ::
           ( VectorSpace x, Num (Scalar x)
-          , AffineSpace y, v~Diff y, InnerSpace v, Floating (Scalar v), Ord (Scalar v) )
+          , AffineSpace y, v~Diff y, VectorSpace v, Floating (Scalar v), Ord (Scalar v) )
                      => Pair (Maybe (x-.^>y)) -> (x-.^>y)
                             -> R{-Sample position normalised to [0,1]-} -> y
 l₀splineRep (Pair lPFits rPFits)
@@ -389,7 +384,8 @@ l₀splineRep (Pair lPFits rPFits)
 
 
 
-rPCMSample :: Interval R -> R -> (R->R) -> R-.^>R
+rPCMSample :: (AffineSpace y, v~Diff y, InnerSpace v, HasMetric v, RealFloat (Scalar v))
+       => Interval R -> R -> (R->y) -> R-.^>y
 rPCMSample (Interval l r) δx f = recursivePCM (PCMRange l δx) [f x | x<-[l, l+δx .. r]] 
                    
 
@@ -405,6 +401,51 @@ instance Plottable (R-.^>R) where
    where 
          xr = wsp * fromIntegral gSplN
          plot (GraphWindowSpec{..}) = Plot [] . trace $ flattenPCM_resoCut bb δx rPCM
+          where 
+                trace dpth = fold [ trMBound [ p & _y +~ s*δ
+                                             | (p, DevBoxes _ δ) <- dpth ]
+                                  | s <- [-1, 1] ]
+                             <> trStRange dpth
+                trStRange ((p,DevBoxes σp' δp) : qd@(q,DevBoxes σq' δq) : ps)
+                     = (let η = (σp/δp + σq/δq)/2
+                        in Dia.opacity (1-η)
+                            (Dia.strokeLocLoop (Dia.fromVertices
+                             [_y+~σq $ q, _y+~σp $ p, _y-~σp $ p, _y-~σq $ q
+                             ,_y+~σq $ q ]))
+                        <> Dia.opacity (η^2)
+                            (Dia.strokeLocLoop (Dia.fromVertices
+                             [_y+~δq $ q, _y+~δp $ p, _y-~δp $ p, _y-~δq $ q
+                             ,_y+~δq $ q ]))
+                       ) <> trStRange (qd:ps)
+                 where [σp,σq] = map (`metric`1) [σp', σq']
+                trStRange _ = mempty
+                trMBound l = Dia.fromVertices l & Dia.dashingO [2,2] 0
+                
+                w = rBound - lBound; h = tBound - bBound
+                δx = w * 3/fromIntegral xResolution
+                bb = Interval lBound rBound
+                 -*| Interval (bBound - h*10) (tBound + h*10) -- Heuristic \"buffering\",
+                      -- to account for the missing ability of 'flattenPCM_resoCut' to
+                      -- take deviations from quadratic-fit into account.
+  
+
+instance Plottable (R-.^>P2) where
+  plot rPCM@(RecursivePCM gPFit gDetails gFitDevs (PCMRange t₀ τsp) gSplN)
+            = DynamicPlottable{
+                relevantRange_x = const . pure $ Interval xl xr
+              , relevantRange_y = const . pure $ Interval yl yr
+              , isTintableMonochromic = True
+              , axesNecessity = 1
+              , dynamicPlot = plot
+              }
+   where 
+         xm = constCoeff gPFit ^._x
+                ; xl = xm - maxDeviation gFitDevs
+                ; xr = xm + maxDeviation gFitDevs
+         ym = constCoeff gPFit ^._y
+                ; yl = ym - maxDeviation gFitDevs
+                ; yr = ym + maxDeviation gFitDevs
+         plot (GraphWindowSpec{..}) = Plot [] mempty {-. trace $ flattenPCM_resoCut bb δx rPCM
           where 
                 trace dpth = fold [ trMBound [ p & _y +~ s*δ
                                              | (p, DevBoxes _ δ) <- dpth ]
@@ -430,6 +471,7 @@ instance Plottable (R-.^>R) where
                  -*| Interval (bBound - h*10) (tBound + h*10) -- Heuristic \"buffering\",
                       -- to account for the missing ability of 'flattenPCM_resoCut' to
                       -- take deviations from quadratic-fit into account.
+                         -}
   
 
 flattenPCM_resoCut :: DiaBB.BoundingBox R2 -> R -> (R-.^>R) -> [(Dia.P2, DevBoxes R)]
@@ -451,6 +493,26 @@ flattenPCM_resoCut bb δx = case DiaBB.getCorners bb of
                xRange = x₁ ... xr
                xRange_norm'd = max (-1) ((lCorn^._x - xm)/w)
                            ... min   1  ((rCorn^._x - xm)/w)
+
+-- flattenPCM_P2_resoCut :: DiaBB.BoundingBox R2 -> R -> (R-.^>P2) -> [(Dia.P2, DevBoxes P2)]
+-- flattenPCM_P2_resoCut bb δx = case DiaBB.getCorners bb of
+--                                 Nothing -> const []
+--                                 Just cs -> ($[]) . go' cs
+--  where go' cs@(lCorn,rCorn) = go where
+--         go rPCM@(RecursivePCM pFit details fitDevs (PCMRange x₁ wsp) splN)
+--           | DiaBB.isEmptyBox $ DiaBB.intersection bb sqRange
+--                 = id
+--           | w > δx, Left (Pair s1 s2) <- details
+--                 = go s1 . go s2
+--           | otherwise 
+--                 = ((xm ^& constCoeff pFit, fitDevs) :)
+--          where xr = x₁ + w
+--                xm = x₁ + w / 2
+--                w = wsp * fromIntegral splN
+--                sqRange = xRange -*| rPCMLinFitRange rPCM xRange_norm'd
+--                xRange = x₁ ... xr
+--                xRange_norm'd = max (-1) ((lCorn^._x - xm)/w)
+--                            ... min   1  ((rCorn^._x - xm)/w)
 
 
 
