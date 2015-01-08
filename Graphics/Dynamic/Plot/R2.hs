@@ -494,25 +494,24 @@ flattenPCM_resoCut bb δx = case DiaBB.getCorners bb of
                xRange_norm'd = max (-1) ((lCorn^._x - xm)/w)
                            ... min   1  ((rCorn^._x - xm)/w)
 
--- flattenPCM_P2_resoCut :: DiaBB.BoundingBox R2 -> R -> (R-.^>P2) -> [(Dia.P2, DevBoxes P2)]
--- flattenPCM_P2_resoCut bb δx = case DiaBB.getCorners bb of
---                                 Nothing -> const []
---                                 Just cs -> ($[]) . go' cs
---  where go' cs@(lCorn,rCorn) = go where
---         go rPCM@(RecursivePCM pFit details fitDevs (PCMRange x₁ wsp) splN)
---           | DiaBB.isEmptyBox $ DiaBB.intersection bb sqRange
---                 = id
---           | w > δx, Left (Pair s1 s2) <- details
---                 = go s1 . go s2
---           | otherwise 
---                 = ((xm ^& constCoeff pFit, fitDevs) :)
---          where xr = x₁ + w
---                xm = x₁ + w / 2
---                w = wsp * fromIntegral splN
---                sqRange = xRange -*| rPCMLinFitRange rPCM xRange_norm'd
---                xRange = x₁ ... xr
---                xRange_norm'd = max (-1) ((lCorn^._x - xm)/w)
---                            ... min   1  ((rCorn^._x - xm)/w)
+flattenPCM_P2_resoCut :: DiaBB.BoundingBox R2 -> DualSpace R2
+                              -> (x-.^>P2) -> [(Dia.P2, DevBoxes P2)]
+flattenPCM_P2_resoCut bb δ = case DiaBB.getCorners bb of
+                                Nothing -> const []
+                                Just cs -> ($[]) . go' cs
+ where go' cs@(lCorn,rCorn) = go where
+        go rPCM@(RecursivePCM pFit details fitDevs@(DevBoxes dev _) (PCMRange x₁ wsp) splN)
+          | DiaBB.isEmptyBox $ DiaBB.intersection bb sqRange
+                = id
+          | metric dev δ > 1, Left (Pair s1 s2) <- details
+                = go s1 . go s2
+          | otherwise 
+                = ((pm, fitDevs) :)
+         where pm = constCoeff pFit
+               p₀ = pm .-^ linCoeff pFit; pe = pm .+^ linCoeff pFit
+               ux = metric dev $ 1^&0; uy = metric dev $ 0^&1
+               [xl,xr] = sort[p₀^._x, pe^._x]; [yb,yt] = sort[p₀^._y, pe^._y]
+               sqRange = Interval (xl - ux) (xr + ux) -*| Interval (yb - uy) (yt + uy)
 
 
 
