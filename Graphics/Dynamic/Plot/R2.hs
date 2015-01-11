@@ -46,6 +46,8 @@ import qualified Prelude
 import Diagrams.Prelude (R2, P2, (^&), (&), _x, _y)
 import qualified Diagrams.Prelude as Dia
 import qualified Diagrams.TwoD.Size as Dia
+import qualified Diagrams.TwoD.Types as DiaTypes
+import Diagrams.BoundingBox (BoundingBox)
 import qualified Diagrams.BoundingBox as DiaBB
 import qualified Diagrams.Backend.Cairo as Cairo
 import qualified Diagrams.Backend.Cairo.Text as CairoTxt
@@ -102,10 +104,8 @@ import Data.Time
 
 type R = Double
 
-type Diagram = Dia.Diagram Cairo.B Dia.R2
+type Diagram = Dia.Diagram Cairo.B R2
 
-bla :: Dia.V Diagram
-bla = Dia.r2(1,0)
 
 
 
@@ -402,10 +402,10 @@ instance Plottable (R-.^>R) where
          xr = wsp * fromIntegral gSplN
          plot (GraphWindowSpec{..}) = Plot [] . trace $ flattenPCM_resoCut bb δx rPCM
           where 
-                trace dpth = fold [ trMBound [ p & _y +~ s*δ
-                                             | (p, DevBoxes _ δ) <- dpth ]
+                trace dPath = fold [ trMBound [ p & _y +~ s*δ
+                                             | (p, DevBoxes _ δ) <- dPath ]
                                   | s <- [-1, 1] ]
-                             <> trStRange dpth
+                             <> trStRange dPath
                 trStRange ((p,DevBoxes σp' δp) : qd@(q,DevBoxes σq' δq) : ps)
                      = (let η = (σp/δp + σq/δq)/2
                         in Dia.opacity (1-η)
@@ -424,7 +424,7 @@ instance Plottable (R-.^>R) where
                 w = rBound - lBound; h = tBound - bBound
                 δx = w * 3/fromIntegral xResolution
                 bb = Interval lBound rBound
-                 -*| Interval (bBound - h*10) (tBound + h*10) -- Heuristic \"buffering\",
+                 -*| Interval (bBound - h) (tBound + h) -- Heuristic \"buffering\",
                       -- to account for the missing ability of 'flattenPCM_resoCut' to
                       -- take deviations from quadratic-fit into account.
   
@@ -432,49 +432,33 @@ instance Plottable (R-.^>R) where
 instance Plottable (R-.^>P2) where
   plot rPCM@(RecursivePCM gPFit gDetails gFitDevs (PCMRange t₀ τsp) gSplN)
             = DynamicPlottable{
-                relevantRange_x = const . pure $ Interval xl xr
-              , relevantRange_y = const . pure $ Interval yl yr
+                relevantRange_x = const $ pure xRange
+              , relevantRange_y = const $ pure yRange
               , isTintableMonochromic = True
               , axesNecessity = 1
               , dynamicPlot = plot
               }
-   where 
-         xm = constCoeff gPFit ^._x
-                ; xl = xm - maxDeviation gFitDevs
-                ; xr = xm + maxDeviation gFitDevs
-         ym = constCoeff gPFit ^._y
-                ; yl = ym - maxDeviation gFitDevs
-                ; yr = ym + maxDeviation gFitDevs
-         plot (GraphWindowSpec{..}) = Plot [] mempty {-. trace $ flattenPCM_resoCut bb δx rPCM
-          where 
-                trace dpth = fold [ trMBound [ p & _y +~ s*δ
-                                             | (p, DevBoxes _ δ) <- dpth ]
-                                  | s <- [-1, 1] ]
-                             <> trStRange dpth
-                trStRange ((p,DevBoxes σp δp) : qd@(q,DevBoxes σq δq) : ps)
-                     = (let η = (σp/δp + σq/δq)/2
-                        in Dia.opacity (1-η)
+   where plot (GraphWindowSpec{..}) = Plot [] . trStRange . calcNormDevs
+                                        $ flattenPCM_P2_resoCut bb ((1/δx) ^& (1/δy)) rPCM
+          where calcNormDevs :: [((P2,R2),DevBoxes P2)] -> [(P2,P2)]
+                calcNormDevs = map $ \((p,v), DevBoxes σ _)
+                       -> let d = metriScale σ $ turnLeft v
+                          in (p .+^ d, p .-^ d)
+                trStRange ((pl,pr) : qd@(ql,qr) : ps)
+                     = Dia.opacity 0.3
                             (Dia.strokeLocLoop (Dia.fromVertices
-                             [_y+~σq $ q, _y+~σp $ p, _y-~σp $ p, _y-~σq $ q
-                             ,_y+~σq $ q ]))
-                        <> Dia.opacity (η^2)
-                            (Dia.strokeLocLoop (Dia.fromVertices
-                             [_y+~δq $ q, _y+~δp $ p, _y-~δp $ p, _y-~δq $ q
-                             ,_y+~δq $ q ]))
-                       ) <> trStRange (qd:ps)
+                             [ ql, pl, pr, qr, ql ]
+                       )) <> trStRange (qd:ps)
                 trStRange _ = mempty
-                trMBound l = Dia.fromVertices l & Dia.dashingO [2,2] 0
                 
                 w = rBound - lBound; h = tBound - bBound
                 δx = w * 3/fromIntegral xResolution
-                bb = Interval lBound rBound
-                 -*| Interval (bBound - h*10) (tBound + h*10) -- Heuristic \"buffering\",
-                      -- to account for the missing ability of 'flattenPCM_resoCut' to
-                      -- take deviations from quadratic-fit into account.
-                         -}
+                δy = h * 3/fromIntegral yResolution
+         (xRange,yRange) = xyRanges bb
+         bb = rPCM_R2_boundingBox rPCM
   
 
-flattenPCM_resoCut :: DiaBB.BoundingBox R2 -> R -> (R-.^>R) -> [(Dia.P2, DevBoxes R)]
+flattenPCM_resoCut :: BoundingBox R2 -> R -> (R-.^>R) -> [(P2, DevBoxes R)]
 flattenPCM_resoCut bb δx = case DiaBB.getCorners bb of
                              Nothing -> const []
                              Just cs -> ($[]) . go' cs
@@ -494,24 +478,32 @@ flattenPCM_resoCut bb δx = case DiaBB.getCorners bb of
                xRange_norm'd = max (-1) ((lCorn^._x - xm)/w)
                            ... min   1  ((rCorn^._x - xm)/w)
 
-flattenPCM_P2_resoCut :: DiaBB.BoundingBox R2 -> DualSpace R2
-                              -> (x-.^>P2) -> [(Dia.P2, DevBoxes P2)]
+flattenPCM_P2_resoCut :: BoundingBox R2 -> DualSpace R2
+                              -> (x-.^>P2) -> [((P2, R2), DevBoxes P2)]
 flattenPCM_P2_resoCut bb δ = case DiaBB.getCorners bb of
                                 Nothing -> const []
                                 Just cs -> ($[]) . go' cs
  where go' cs@(lCorn,rCorn) = go where
-        go rPCM@(RecursivePCM pFit details fitDevs@(DevBoxes dev _) (PCMRange x₁ wsp) splN)
-          | DiaBB.isEmptyBox $ DiaBB.intersection bb sqRange
+        go rPCM@(RecursivePCM (LinFitParams pm pa) details fitDevs@(DevBoxes dev _) _ _)
+          | DiaBB.isEmptyBox $ DiaBB.intersection bb (rPCM_R2_boundingBox rPCM)
                 = id
           | metric dev δ > 1, Left (Pair s1 s2) <- details
                 = go s1 . go s2
           | otherwise 
-                = ((pm, fitDevs) :)
-         where pm = constCoeff pFit
-               p₀ = pm .-^ linCoeff pFit; pe = pm .+^ linCoeff pFit
-               ux = metric dev $ 1^&0; uy = metric dev $ 0^&1
-               [xl,xr] = sort[p₀^._x, pe^._x]; [yb,yt] = sort[p₀^._y, pe^._y]
-               sqRange = Interval (xl - ux) (xr + ux) -*| Interval (yb - uy) (yt + uy)
+                = (((pm, dir), fitDevs) :)
+         where dir = normalized pa
+
+turnLeft :: R2 -> R2
+turnLeft (DiaTypes.R2 x y) = DiaTypes.R2 (-y) x
+
+
+rPCM_R2_boundingBox :: (x-.^>P2) -> BoundingBox R2
+rPCM_R2_boundingBox rPCM@(RecursivePCM pFit _ (DevBoxes dev _) _ _)
+          = Interval (xl - ux) (xr + ux) -*| Interval (yb - uy) (yt + uy)
+ where pm = constCoeff pFit
+       p₀ = pm .-^ linCoeff pFit; pe = pm .+^ linCoeff pFit
+       ux = metric dev $ 1^&0; uy = metric dev $ 0^&1
+       [xl,xr] = sort[p₀^._x, pe^._x]; [yb,yt] = sort[p₀^._y, pe^._y]
 
 
 
@@ -611,8 +603,18 @@ Interval a b `includes` x = x>=a && x<=b
 infix 5 -*|
 
 -- | Cartesian product of intervals.
-(-*|) :: Interval R -> Interval R -> DiaBB.BoundingBox R2
+(-*|) :: Interval R -> Interval R -> BoundingBox R2
 Interval l r -*| Interval b t = DiaBB.fromCorners (l^&b) (r^&t)
+
+-- | Inverse of @uncurry ('-*|')@. /This is a partial function/, since
+--   'BoundingBox'es can be empty.
+xyRanges :: BoundingBox R2 -> (Interval R, Interval R)
+xyRanges bb = let Just (c₁, c₂) = DiaBB.getCorners bb
+              in (c₁^._x ... c₂^._x, c₁^._y ... c₂^._y)
+
+
+
+
 
 
 data Plot = Plot {

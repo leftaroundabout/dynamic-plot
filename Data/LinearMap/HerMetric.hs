@@ -62,3 +62,7 @@ projector v = HerMetric (linear $ \u -> v ^* (v^<.>u))
 metric :: HasMetric v => HerMetric v -> DualSpace v -> Scalar v
 metric (HerMetric m) v = sqrt $ v <.>^ lapply m v
 
+
+metriScale :: HasMetric v => HerMetric v -> DualSpace v -> DualSpace v
+metriScale m v = metric m v *^ v
+
