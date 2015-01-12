@@ -438,8 +438,9 @@ instance Plottable (R-.^>P2) where
               , axesNecessity = 1
               , dynamicPlot = plot
               }
-   where plot (GraphWindowSpec{..}) = Plot [] . trStRange . calcNormDevs
-                                        $ flattenPCM_P2_resoCut bbView [(1/δx)^&0, 0^&(1/δy)] rPCM
+   where plot (GraphWindowSpec{..}) = Plot []
+                        . foldMap (trStRange . calcNormDevs)
+                        $ flattenPCM_P2_resoCut bbView [(1/δx)^&0, 0^&(1/δy)] rPCM
           where calcNormDevs :: [((P2,R2),DevBoxes P2)] -> [(P2,P2)]
                 calcNormDevs = map $ \((p,v), DevBoxes σ _)
                        -> let d = metriScale σ $ turnLeft v
@@ -480,19 +481,19 @@ flattenPCM_resoCut bb δx = case DiaBB.getCorners bb of
                            ... min   1  ((rCorn^._x - xm)/w)
 
 flattenPCM_P2_resoCut :: BoundingBox R2 -> [DualSpace R2]
-                              -> (x-.^>P2) -> [((P2, R2), DevBoxes P2)]
+                              -> (x-.^>P2) -> [[((P2, R2), DevBoxes P2)]]
 flattenPCM_P2_resoCut bb δs = case DiaBB.getCorners bb of
                                 Nothing -> const []
-                                Just cs -> ($[]) . go' cs
+                                Just cs -> ($[[]]) . go' cs
  where go' cs@(lCorn,rCorn) = go where
         go rPCM@(RecursivePCM (LinFitParams pm pa) details fitDevs@(DevBoxes dev _) _ _)
           | DiaBB.isEmptyBox $ DiaBB.intersection bb (rPCM_R2_boundingBox rPCM)
-                = id
+                = ([]:)
           | metrics dev δs > 1 || (sum $ ((^2).(pa<.>^)) <$> δs) > 3
           , Left (Pair s1 s2) <- details
                 = go s1 . go s2
           | otherwise 
-                = (((pm, dir), fitDevs) :)
+                = \(h:r) -> (((pm, dir), fitDevs) : h) : r
          where dir = case magnitude pa of 0 -> zeroV; m -> pa ^/ m
 
 turnLeft :: R2 -> R2
