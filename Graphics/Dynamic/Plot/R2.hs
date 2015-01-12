@@ -8,17 +8,18 @@
 -- Portability : requires GHC>6 extensions
 
 
-{-# LANGUAGE NoMonomorphismRestriction #-}
-{-# LANGUAGE ScopedTypeVariables       #-}
-{-# LANGUAGE RecordWildCards           #-}
-{-# LANGUAGE TupleSections             #-}
-{-# LANGUAGE TypeOperators             #-}
-{-# LANGUAGE FlexibleInstances         #-}
-{-# LANGUAGE UndecidableInstances      #-}
-{-# LANGUAGE LambdaCase                #-}
-{-# LANGUAGE NoImplicitPrelude         #-}
-{-# LANGUAGE DeriveFunctor             #-}
-{-# LANGUAGE StandaloneDeriving        #-}
+{-# LANGUAGE NoMonomorphismRestriction  #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE TupleSections              #-}
+{-# LANGUAGE TypeOperators              #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE NoImplicitPrelude          #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE DeriveFunctor              #-}
+{-# LANGUAGE StandaloneDeriving         #-}
 
 module Graphics.Dynamic.Plot.R2 (
         -- * Interactive display
@@ -75,10 +76,12 @@ import Control.DeepSeq
 
 
 import Data.List (foldl', sort, intercalate, isPrefixOf, isInfixOf, find, zip4)
+import qualified Data.Vector as Arr
 import Data.Maybe
 import Data.Semigroup
 import Data.Foldable (fold, foldMap)
 import Data.Function (on)
+
 import Data.VectorSpace
 import Data.AffineSpace
 import Data.LinearMap.HerMetric
@@ -225,8 +228,8 @@ data Triple p = Triple !p !p !p
        deriving (Hask.Functor, Show, Eq, Ord)
 
 data DiffList a = DiffList { getDiffList :: [a]->[a], diffListLen :: Int }
-diffList :: [a] -> DiffList a
-diffList l = DiffList (l++) (length l)
+diffList :: Arr.Vector a -> DiffList a
+diffList l = DiffList (Arr.toList l++) (Arr.length l)
 
 instance Semigroup (DiffList a) where
   DiffList dl n <> DiffList dl' n' = DiffList (dl . dl') (n+n')
@@ -234,28 +237,27 @@ instance Monoid (DiffList a) where
   mappend = (<>); mempty = DiffList id 0
 
 
-data SplitList a = SplitList { getSplList :: [a], splListLen :: Int }
-       deriving (Hask.Functor)
+newtype SplitList a = SplitList { getSplList :: Arr.Vector a }
+       deriving (Hask.Functor, Monoid)
 presplitList :: [a] -> SplitList a
-presplitList l = SplitList l (length l)
+presplitList = SplitList . Arr.fromList
 
-splitEvenly :: Int -> SplitList a -> Either [a] [SplitList a]
+splitEvenly :: Int -> SplitList a -> Either (Arr.Vector a) [SplitList a]
 splitEvenly k _ | k < 1  = error "Can't split a list to less than one part."
-splitEvenly k (SplitList l n)
-  | k >= n     = Left l
-  | otherwise  = Right $ splits l splitIs 0
+splitEvenly k (SplitList v)
+  | k >= n     = Left v
+  | otherwise  = Right $ splits splitIs 0
  where splitIs = take k . map round . tail
                     $ iterate (+ (fromIntegral n/fromIntegral k :: Double)) 0
-       splits r [_] _ = [SplitList r (length r)]
-       splits r (i:is) i₀ = let sl = i-i₀
-                                (r₀,r') = splitAt sl r
-                            in SplitList r₀ sl : splits r' is i
+       splits [_] i₀ = [SplitList $ Arr.drop i₀ v]
+       splits (i:is) i₀ = SplitList (Arr.slice i₀ (i-i₀) v) : splits is i
+       n = Arr.length v
 
 instance Semigroup (SplitList a) where
-  SplitList l n <> SplitList l' n' = SplitList (l<>l') (n+n')
+  SplitList l <> SplitList l' = SplitList (l Arr.++ l')
 
 fromDiffList :: DiffList a -> SplitList a
-fromDiffList (DiffList f n) = SplitList (f[]) n
+fromDiffList (DiffList f _) = SplitList . Arr.fromList $ f[]
 
 
 
@@ -283,7 +285,7 @@ data PCMRange x = PCMRange { pcmStart, pcmSampleDuration :: x } deriving (Show)
  
 data x -.^> y
    = RecursivePCM { rPCMlinFit :: LinFitParams y
-                  , details :: Either (Pair (x-.^>y)) [y]
+                  , details :: Either (Pair (x-.^>y)) (Arr.Vector y)
                   , pFitDeviations :: DevBoxes y
                   , samplingSpec :: PCMRange x
                   , splIdLen :: Int
@@ -295,7 +297,7 @@ recursivePCM :: forall x y v .
                      => PCMRange x -> [y] -> x-.^>y
 recursivePCM xrng_g ys = calcDeviations . go xrng_g $ presplitList ys
     where go :: PCMRange x -> SplitList y -> x-.^>y
-          go xrng@(PCMRange xl wsp) l@(SplitList _ n) = case splitEvenly 2 l of
+          go xrng@(PCMRange xl wsp) l@(SplitList arr) = case splitEvenly 2 l of
              Right sps
               | [sp1, sp2] <- lIndThru xl sps
                      -> let pFit = solveToLinFit
@@ -303,15 +305,15 @@ recursivePCM xrng_g ys = calcDeviations . go xrng_g $ presplitList ys
                         in RecursivePCM pFit
                                         (Left $ Pair sp1 sp2)
                                         (undefined)
-                                        xrng n
+                                        xrng $ Arr.length arr
              Right _ -> evenSplitErr
-             Left pSpls -> RecursivePCM (solveToLinFit pSpls)
+             Left pSpls -> RecursivePCM (solveToLinFit $ Arr.toList pSpls)
                                         (Right pSpls)
                                         (undefined)
-                                        xrng n
+                                        xrng $ Arr.length arr
            where lIndThru _ [] = []
-                 lIndThru x₀₁ (sp₁@(SplitList _ n₁):sps)
-                        = let x₀₂ = x₀₁ ^+^ fromIntegral n₁ *^ wsp
+                 lIndThru x₀₁ (sp₁@(SplitList arr₁):sps)
+                        = let x₀₂ = x₀₁ ^+^ fromIntegral (Arr.length arr₁) *^ wsp
                           in go (PCMRange x₀₁ wsp) sp₁ : lIndThru x₀₂ sps          
           evenSplitErr = error "'splitEvenly' returned wrong number of slices."
           
@@ -523,7 +525,8 @@ solveToLinFit _ = error "LinFit solve over-specified (can't solve more than two 
 
 
 normlsdIdd :: Fractional x => SplitList y -> [(x, y)]
-normlsdIdd (SplitList l n) = zip [(k+1/2)/fromIntegral n | k<-iterate(+1)0] l
+normlsdIdd (SplitList l) = zip [ (k+1/2)/fromIntegral (Arr.length l)
+                               | k<-iterate(+1)0] $ Arr.toList l
 
 
 rPCMLinFitRange :: (R-.^>R) -> Interval R -> Interval R
