@@ -439,7 +439,7 @@ instance Plottable (R-.^>P2) where
               , dynamicPlot = plot
               }
    where plot (GraphWindowSpec{..}) = Plot [] . trStRange . calcNormDevs
-                                        $ flattenPCM_P2_resoCut bb ((1/δx) ^& (1/δy)) rPCM
+                                        $ flattenPCM_P2_resoCut bbView [(1/δx)^&0, 0^&(1/δy)] rPCM
           where calcNormDevs :: [((P2,R2),DevBoxes P2)] -> [(P2,P2)]
                 calcNormDevs = map $ \((p,v), DevBoxes σ _)
                        -> let d = metriScale σ $ turnLeft v
@@ -454,8 +454,9 @@ instance Plottable (R-.^>P2) where
                 w = rBound - lBound; h = tBound - bBound
                 δx = w * 3/fromIntegral xResolution
                 δy = h * 3/fromIntegral yResolution
-         (xRange,yRange) = xyRanges bb
+                bbView = Interval lBound rBound -*| Interval bBound tBound
          bb = rPCM_R2_boundingBox rPCM
+         (xRange,yRange) = xyRanges bb
   
 
 flattenPCM_resoCut :: BoundingBox R2 -> R -> (R-.^>R) -> [(P2, DevBoxes R)]
@@ -478,20 +479,21 @@ flattenPCM_resoCut bb δx = case DiaBB.getCorners bb of
                xRange_norm'd = max (-1) ((lCorn^._x - xm)/w)
                            ... min   1  ((rCorn^._x - xm)/w)
 
-flattenPCM_P2_resoCut :: BoundingBox R2 -> DualSpace R2
+flattenPCM_P2_resoCut :: BoundingBox R2 -> [DualSpace R2]
                               -> (x-.^>P2) -> [((P2, R2), DevBoxes P2)]
-flattenPCM_P2_resoCut bb δ = case DiaBB.getCorners bb of
+flattenPCM_P2_resoCut bb δs = case DiaBB.getCorners bb of
                                 Nothing -> const []
                                 Just cs -> ($[]) . go' cs
  where go' cs@(lCorn,rCorn) = go where
         go rPCM@(RecursivePCM (LinFitParams pm pa) details fitDevs@(DevBoxes dev _) _ _)
           | DiaBB.isEmptyBox $ DiaBB.intersection bb (rPCM_R2_boundingBox rPCM)
                 = id
-          | metric dev δ > 1, Left (Pair s1 s2) <- details
+          | metrics dev δs > 1 || (sum $ ((^2).(pa<.>^)) <$> δs) > 3
+          , Left (Pair s1 s2) <- details
                 = go s1 . go s2
           | otherwise 
                 = (((pm, dir), fitDevs) :)
-         where dir = normalized pa
+         where dir = case magnitude pa of 0 -> zeroV; m -> pa ^/ m
 
 turnLeft :: R2 -> R2
 turnLeft (DiaTypes.R2 x y) = DiaTypes.R2 (-y) x
@@ -611,6 +613,8 @@ Interval l r -*| Interval b t = DiaBB.fromCorners (l^&b) (r^&t)
 xyRanges :: BoundingBox R2 -> (Interval R, Interval R)
 xyRanges bb = let Just (c₁, c₂) = DiaBB.getCorners bb
               in (c₁^._x ... c₂^._x, c₁^._y ... c₂^._y)
+
+
 
 
 

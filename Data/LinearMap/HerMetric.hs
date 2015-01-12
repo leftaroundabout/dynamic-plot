@@ -12,8 +12,8 @@ module Data.LinearMap.HerMetric (
   , (^<.>)
   , HerMetric
   , projector
-  , metricSq, metric
-  , counterMetricSq, counterMetric
+  , metricSq, metric, metrics
+  , metriScale
   ) where
     
 
@@ -75,6 +75,9 @@ metric (HerMetric m) v = sqrt $ v <.>^ lapply m v
 metriScale :: HasMetric v => HerMetric v -> DualSpace v -> DualSpace v
 metriScale m v = metric m v *^ v
 
+
+metrics :: HasMetric v => HerMetric v -> [DualSpace v] -> Scalar v
+metrics m vs = sqrt . sum $ metricSq m <$> vs
 
 
 
