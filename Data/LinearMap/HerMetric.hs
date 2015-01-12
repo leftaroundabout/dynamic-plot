@@ -76,27 +76,6 @@ metriScale :: HasMetric v => HerMetric v -> DualSpace v -> DualSpace v
 metriScale m v = metric m v *^ v
 
 
--- | Trace of the composition of two metrics.
-counterMetricSq, counterMetric :: (HasMetric v, DualSpace (DualSpace v) ~ v)
-       => HerMetric v -> HerMetric (DualSpace v) -> Scalar v
-counterMetricSq (HerMetric m) (HerMetric n)
-          = trace $ m *.* n
-counterMetric (HerMetric m) (HerMetric n)
-          = sqrt . trace $ m *.* n
 
 
-class (HasBasis v) => CompleteBasis v where
-  -- | Should really be @['Basis' v]@, but that would require some phantom type.
-  --   Instead of that, we just include each basis element's vector representation.
-  enumBasis :: [(Basis v, v)]
-  
-instance CompleteBasis Double where
-  enumBasis = [((), 1)]
-instance CompleteBasis R2 where
-  enumBasis = decompose
-  
-
-
-trace :: (CompleteBasis v, InnerSpace v) => (v :-* v) -> Scalar v
-trace m = sum [ v <.> atBasis m b | (b,v) <- enumBasis ]
 
