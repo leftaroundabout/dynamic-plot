@@ -283,20 +283,27 @@ data DevBoxes y = DevBoxes { deviations :: HerMetric (Diff y)
 
 data PCMRange x = PCMRange { pcmStart, pcmSampleDuration :: x } deriving (Show)
  
-data x -.^> y
+data RecursivePCM n x y
    = RecursivePCM { rPCMlinFit :: LinFitParams y
-                  , details :: Either (Pair (x-.^>y)) (Arr.Vector y)
+                  , details :: Either (Pair (RecursivePCM n x y)) (Arr.Vector y)
                   , pFitDeviations :: DevBoxes y
                   , samplingSpec :: PCMRange x
                   , splIdLen :: Int
+                  , rPCMNodeInfo :: n
                   }
+fmapRPCMNodeInfo :: (n->n') -> RecursivePCM n x y -> RecursivePCM n' x y
+fmapRPCMNodeInfo f (RecursivePCM l d v s n i) = RecursivePCM l d' v s n $ f i
+ where d' = case d of Left rs' -> Left (fmap (fmapRPCMNodeInfo f) rs')
+                      Right ps -> Right ps
+
+type (-.^>) = RecursivePCM ()
 
 recursivePCM :: forall x y v .
           ( VectorSpace x, Real (Scalar x)
           , AffineSpace y, v~Diff y, InnerSpace v, HasMetric v, RealFloat (Scalar v) )
                      => PCMRange x -> [y] -> x-.^>y
 recursivePCM xrng_g ys = calcDeviations . go xrng_g $ presplitList ys
-    where go :: PCMRange x -> SplitList y -> x-.^>y
+    where go :: PCMRange x -> SplitList y -> RecursivePCM (Arr.Vector y) x y
           go xrng@(PCMRange xl wsp) l@(SplitList arr) = case splitEvenly 2 l of
              Right sps
               | [sp1, sp2] <- lIndThru xl sps
@@ -305,39 +312,43 @@ recursivePCM xrng_g ys = calcDeviations . go xrng_g $ presplitList ys
                         in RecursivePCM pFit
                                         (Left $ Pair sp1 sp2)
                                         (undefined)
-                                        xrng $ Arr.length arr
+                                        xrng (Arr.length arr)
+                                        arr
              Right _ -> evenSplitErr
              Left pSpls -> RecursivePCM (solveToLinFit $ Arr.toList pSpls)
                                         (Right pSpls)
                                         (undefined)
-                                        xrng $ Arr.length arr
+                                        xrng (Arr.length arr)
+                                        arr
            where lIndThru _ [] = []
                  lIndThru x₀₁ (sp₁@(SplitList arr₁):sps)
                         = let x₀₂ = x₀₁ ^+^ fromIntegral (Arr.length arr₁) *^ wsp
                           in go (PCMRange x₀₁ wsp) sp₁ : lIndThru x₀₂ sps          
           evenSplitErr = error "'splitEvenly' returned wrong number of slices."
           
-          calcDeviations :: (x-.^>y) -> x-.^>y
-          calcDeviations = fst . cdvs Nothing Nothing
-           where cdvs :: Maybe(x-.^>y) -> Maybe(x-.^>y) -> (x-.^>y) -> (x-.^>y, DiffList y)
-                 cdvs lPFits rPFits
-                         rPCM@( RecursivePCM pFit dtls _ sSpc@(PCMRange xl wsp) slLn )
-                    = ( RecursivePCM pFit dtls' (DevBoxes stdDev maxDev) sSpc slLn
-                      , pSpls' )
+          calcDeviations :: RecursivePCM (Arr.Vector y) x y -> x-.^>y
+          calcDeviations = cdvs Nothing Nothing
+           where cdvs lPFits rPFits
+                         rPCM@( RecursivePCM pFit dtls _ sSpc@(PCMRange xl wsp) slLn pts )
+                    = RecursivePCM pFit dtls' (DevBoxes stdDev maxDev) sSpc slLn ()
                    where stdDev = (^/ fromIntegral slLn) . sumV $ projector <$> msqs
                          maxDev =     sqrt           . maximum $ magnitudeSq <$> msqs
                          msqs = [ (y .-. ff x)
-                                | (x,y) <- normlsdIdd $ fromDiffList pSpls' ]
+                                | (x,y) <- normlsdIdd $ SplitList pts ]
                          ff = l₀splineRep (Pair lPFits rPFits) rPCM
-                         (dtls',pSpls') = case dtls of
+                         dtls' = case dtls of
                              Left (Pair r₁ r₂)
-                               -> let (r₁',s₁) = cdvs (rRoute=<<lPFits) (Just r₂) r₁
-                                      (r₂',s₂) = cdvs (Just r₁) (lRoute=<<rPFits) r₂
-                                  in (Left(Pair r₁' r₂'), s₁ <> s₂)
-                             Right pSpls -> (dtls, diffList pSpls)
+                               -> let r₁' = cdvs (rRoute=<<lPFits)
+                                                 (Just r₂)
+                                                 r₁
+                                      r₂' = cdvs (Just r₁)
+                                                 (lRoute=<<rPFits)
+                                                 r₂
+                                  in Left $ Pair r₁' r₂'
+                             Right pSpls -> Right pSpls
                          (LinFitParams b a) = pFit
                  
-lRoute, rRoute :: (x-.^>y) -> Maybe (x-.^>y)
+lRoute, rRoute :: RecursivePCM n x y -> Maybe (RecursivePCM n x y)
 lRoute (RecursivePCM {details = Right _}) = Nothing
 lRoute (RecursivePCM {details = Left (Pair l _)}) = Just l
 rRoute (RecursivePCM {details = Right _}) = Nothing
@@ -346,9 +357,9 @@ rRoute (RecursivePCM {details = Left (Pair _ r)}) = Just r
 splineRep :: ( AffineSpace y, v~Diff y, InnerSpace v, Floating (Scalar v), Ord (Scalar v) )
                      => Int         -- ^ Number of subdivisions to \"go down\".
                         -> (R-.^>y) -> R -> y
-splineRep n₀ rPCM@(RecursivePCM _ _ _ (PCMRange xl wsp) slLn)
+splineRep n₀ rPCM@(RecursivePCM _ _ _ (PCMRange xl wsp) slLn ())
               = go n₀ Nothing Nothing rPCM . normaliseR
- where go n lPFits rPFits (RecursivePCM _ (Left (Pair r₁ r₂)) _ _ slLn)
+ where go n lPFits rPFits (RecursivePCM _ (Left (Pair r₁ r₂)) _ _ slLn ())
          | n>0, f₁ <- go (n-1) (rRoute=<<lPFits) (Just r₂) r₁
               , f₂ <- go (n-1) (Just r₁) (lRoute=<<rPFits) r₂
                 =  \x -> if x<0.5 then f₁ $ x*2
@@ -360,7 +371,7 @@ splineRep n₀ rPCM@(RecursivePCM _ _ _ (PCMRange xl wsp) slLn)
 l₀splineRep ::
           ( VectorSpace x, Num (Scalar x)
           , AffineSpace y, v~Diff y, VectorSpace v, Floating (Scalar v), Ord (Scalar v) )
-                     => Pair (Maybe (x-.^>y)) -> (x-.^>y)
+                     => Pair (Maybe (RecursivePCM n x y)) -> (RecursivePCM n x y)
                             -> R{-Sample position normalised to [0,1]-} -> y
 l₀splineRep (Pair lPFits rPFits)
             (RecursivePCM{ rPCMlinFit=LinFitParams b a
@@ -392,7 +403,7 @@ rPCMSample (Interval l r) δx f = recursivePCM (PCMRange l δx) [f x | x<-[l, l+
                    
 
 instance Plottable (R-.^>R) where
-  plot rPCM@(RecursivePCM gPFit gDetails gFitDevs (PCMRange x₀ wsp) gSplN)
+  plot rPCM@(RecursivePCM gPFit gDetails gFitDevs (PCMRange x₀ wsp) gSplN ())
             = DynamicPlottable{
                 relevantRange_x = const . pure $ Interval x₀ xr
               , relevantRange_y = fmap $ rPCMLinFitRange rPCM
@@ -432,7 +443,7 @@ instance Plottable (R-.^>R) where
   
 
 instance Plottable (R-.^>P2) where
-  plot rPCM@(RecursivePCM gPFit gDetails gFitDevs (PCMRange t₀ τsp) gSplN)
+  plot rPCM@(RecursivePCM gPFit gDetails gFitDevs (PCMRange t₀ τsp) gSplN ())
             = DynamicPlottable{
                 relevantRange_x = const $ pure xRange
               , relevantRange_y = const $ pure yRange
@@ -467,7 +478,7 @@ flattenPCM_resoCut bb δx = case DiaBB.getCorners bb of
                              Nothing -> const []
                              Just cs -> ($[]) . go' cs
  where go' cs@(lCorn,rCorn) = go where
-        go rPCM@(RecursivePCM pFit details fitDevs (PCMRange x₁ wsp) splN)
+        go rPCM@(RecursivePCM pFit details fitDevs (PCMRange x₁ wsp) splN ())
           | DiaBB.isEmptyBox $ DiaBB.intersection bb sqRange
                 = id
           | w > δx, Left (Pair s1 s2) <- details
@@ -488,7 +499,7 @@ flattenPCM_P2_resoCut bb δs = case DiaBB.getCorners bb of
                                 Nothing -> const []
                                 Just cs -> ($[[]]) . go' cs
  where go' cs@(lCorn,rCorn) = go where
-        go rPCM@(RecursivePCM (LinFitParams pm pa) details fitDevs@(DevBoxes dev _) _ _)
+        go rPCM@(RecursivePCM (LinFitParams pm pa) details fitDevs@(DevBoxes dev _) _ _ ())
           | DiaBB.isEmptyBox $ DiaBB.intersection bb (rPCM_R2_boundingBox rPCM)
                 = ([]:)
           | metrics dev δs > 1 || (sum $ ((^2).(pa<.>^)) <$> δs) > 3
@@ -503,7 +514,7 @@ turnLeft (DiaTypes.R2 x y) = DiaTypes.R2 (-y) x
 
 
 rPCM_R2_boundingBox :: (x-.^>P2) -> BoundingBox R2
-rPCM_R2_boundingBox rPCM@(RecursivePCM pFit _ (DevBoxes dev _) _ _)
+rPCM_R2_boundingBox rPCM@(RecursivePCM pFit _ (DevBoxes dev _) _ _ ())
           = Interval (xl - ux) (xr + ux) -*| Interval (yb - uy) (yt + uy)
  where pm = constCoeff pFit
        p₀ = pm .-^ linCoeff pFit; pe = pm .+^ linCoeff pFit
@@ -530,9 +541,9 @@ normlsdIdd (SplitList l) = zip [ (k+1/2)/fromIntegral (Arr.length l)
 
 
 rPCMLinFitRange :: (R-.^>R) -> Interval R -> Interval R
-rPCMLinFitRange rPCM@(RecursivePCM _ _ (DevBoxes _ δ) _ _) ix
+rPCMLinFitRange rPCM@(RecursivePCM _ _ (DevBoxes _ δ) _ _ ()) ix
              = let (Interval b t) = rppm rPCM ix in Interval (b-δ) (t+δ)
- where rppm rPCM@(RecursivePCM (LinFitParams b a) _ _ _ _) (Interval l r)
+ where rppm rPCM@(RecursivePCM (LinFitParams b a) _ _ _ _ ()) (Interval l r)
          | r < (-1)   = spInterval $ b - a
          | l > 1      = spInterval $ b + a
          | l < (-1)   = rppm rPCM $ Interval (-1) r
@@ -543,6 +554,8 @@ rPCMLinFitRange rPCM@(RecursivePCM _ _ (DevBoxes _ δ) _ _) ix
 
 plotPCM :: [R] -> DynamicPlottable
 plotPCM = plot . recursivePCM (PCMRange (0 :: Double) 1)
+
+-- plotSamples :: [R2]
 
 
 
