@@ -454,7 +454,7 @@ instance Plottable (R-.^>R) where
                       -- take deviations from quadratic-fit into account.
   
 
-instance Plottable (R-.^>P2) where
+instance Plottable (RecursiveSamples R P2 (DevBoxes P2)) where
   plot rPCM@(RecursivePCM gPFit gDetails gFitDevs (PCMRange t₀ τsp) gSplN ())
             = DynamicPlottable{
                 relevantRange_x = const $ pure xRange
@@ -466,10 +466,11 @@ instance Plottable (R-.^>P2) where
    where plot (GraphWindowSpec{..}) = Plot []
                         . foldMap (trStRange . calcNormDevs)
                         $ flattenPCM_P2_resoCut bbView [(1/δx)^&0, 0^&(1/δy)] rPCM
-          where calcNormDevs :: [((P2,R2),DevBoxes P2)] -> [(P2,P2)]
-                calcNormDevs = map $ \((p,v), DevBoxes σ _)
+          where calcNormDevs :: Either [((P2,R2),DevBoxes P2)] raw -> [(P2,P2)]
+                calcNormDevs (Left appr) = (`map`appr) $ \((p,v), DevBoxes σ _)
                        -> let d = metriScale σ $ turnLeft v
                           in (p .+^ d, p .-^ d)
+                calcNormDevs (Right _) = []
                 trStRange ((pl,pr) : qd@(ql,qr) : ps)
                      = Dia.opacity 0.3
                             (Dia.strokeLocLoop (Dia.fromVertices
@@ -506,26 +507,30 @@ flattenPCM_resoCut bb δx = case DiaBB.getCorners bb of
                            ... min   1  ((rCorn^._x - xm)/w)
 
 flattenPCM_P2_resoCut :: BoundingBox R2 -> [DualSpace R2]
-                              -> (x-.^>P2) -> [[((P2, R2), DevBoxes P2)]]
+                              -> (RecursiveSamples x P2 t)
+                              -> [ Either [((P2, R2), DevBoxes P2)]
+                                          [(P2, t)]                 ]
 flattenPCM_P2_resoCut bb δs = case DiaBB.getCorners bb of
                                 Nothing -> const []
-                                Just cs -> ($[[]]) . go' cs
+                                Just cs -> ($[]) . go' cs
  where go' cs@(lCorn,rCorn) = go where
         go rPCM@(RecursivePCM (LinFitParams pm pa) details fitDevs@(DevBoxes dev _) _ _ ())
           | DiaBB.isEmptyBox $ DiaBB.intersection bb (rPCM_R2_boundingBox rPCM)
-                = ([]:)
+                = (Left [] :)
           | metrics dev δs > 1 || (sum $ ((^2).(pa<.>^)) <$> δs) > 3
           , Left (Pair s1 s2) <- details
                 = go s1 . go s2
           | otherwise 
-                = \(h:r) -> (((pm, dir), fitDevs) : h) : r
+                = \case
+                     (Left h : r) -> Left (((pm, dir), fitDevs) : h) : r
+                     r -> Left [((pm, dir), fitDevs)] : r
          where dir = case magnitude pa of 0 -> zeroV; m -> pa ^/ m
 
 turnLeft :: R2 -> R2
 turnLeft (DiaTypes.R2 x y) = DiaTypes.R2 (-y) x
 
 
-rPCM_R2_boundingBox :: (x-.^>P2) -> BoundingBox R2
+rPCM_R2_boundingBox :: (RecursiveSamples x P2 t) -> BoundingBox R2
 rPCM_R2_boundingBox rPCM@(RecursivePCM pFit _ (DevBoxes dev _) _ _ ())
           = Interval (xl - ux) (xr + ux) -*| Interval (yb - uy) (yt + uy)
  where pm = constCoeff pFit
