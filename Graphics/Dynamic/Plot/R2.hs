@@ -283,27 +283,35 @@ data DevBoxes y = DevBoxes { deviations :: HerMetric (Diff y)
 
 data PCMRange x = PCMRange { pcmStart, pcmSampleDuration :: x } deriving (Show)
  
-data RecursivePCM n x y
+data RecursiveSamples' n x y t
    = RecursivePCM { rPCMlinFit :: LinFitParams y
-                  , details :: Either (Pair (RecursivePCM n x y)) (Arr.Vector y)
+                  , details :: Either (Pair (RecursiveSamples' n x y t))
+                                      (Arr.Vector (y,t))
                   , pFitDeviations :: DevBoxes y
                   , samplingSpec :: PCMRange x
                   , splIdLen :: Int
                   , rPCMNodeInfo :: n
                   }
+instance Hask.Functor (RecursiveSamples' n x y) where
+  fmap f (RecursivePCM l d v s n i) = RecursivePCM l d' v s n i
+   where d' = case d of Left rs' -> Left (fmap (fmap f) rs')
+                        Right ps -> Right $ fmap (second f) ps
+
 fmapRPCMNodeInfo :: (n->n') -> RecursivePCM n x y -> RecursivePCM n' x y
 fmapRPCMNodeInfo f (RecursivePCM l d v s n i) = RecursivePCM l d' v s n $ f i
  where d' = case d of Left rs' -> Left (fmap (fmapRPCMNodeInfo f) rs')
                       Right ps -> Right ps
 
-type (-.^>) = RecursivePCM ()
+type RecursiveSamples = RecursiveSamples' ()
+type RecursivePCM n x y = RecursiveSamples' n x y ()
+type (x-.^>y) = RecursivePCM () x y
 
-recursivePCM :: forall x y v .
+recursiveSamples :: forall x y v t .
           ( VectorSpace x, Real (Scalar x)
           , AffineSpace y, v~Diff y, InnerSpace v, HasMetric v, RealFloat (Scalar v) )
-                     => PCMRange x -> [y] -> x-.^>y
-recursivePCM xrng_g ys = calcDeviations . go xrng_g $ presplitList ys
-    where go :: PCMRange x -> SplitList y -> RecursivePCM (Arr.Vector y) x y
+                     => PCMRange x -> [(y,t)] -> RecursiveSamples x y t
+recursiveSamples xrng_g ys = calcDeviations . go xrng_g $ presplitList ys
+    where go :: PCMRange x -> SplitList (y,t) -> RecursiveSamples' (Arr.Vector y) x y t
           go xrng@(PCMRange xl wsp) l@(SplitList arr) = case splitEvenly 2 l of
              Right sps
               | [sp1, sp2] <- lIndThru xl sps
@@ -313,20 +321,21 @@ recursivePCM xrng_g ys = calcDeviations . go xrng_g $ presplitList ys
                                         (Left $ Pair sp1 sp2)
                                         (undefined)
                                         xrng (Arr.length arr)
-                                        arr
+                                        (fmap fst arr)
              Right _ -> evenSplitErr
-             Left pSpls -> RecursivePCM (solveToLinFit $ Arr.toList pSpls)
-                                        (Right pSpls)
+             Left pSpls -> RecursivePCM (solveToLinFit $ Arr.toList (fmap fst pSpls))
+                                        (Right $ pSpls)
                                         (undefined)
                                         xrng (Arr.length arr)
-                                        arr
+                                        (fmap fst arr)
            where lIndThru _ [] = []
                  lIndThru x₀₁ (sp₁@(SplitList arr₁):sps)
                         = let x₀₂ = x₀₁ ^+^ fromIntegral (Arr.length arr₁) *^ wsp
                           in go (PCMRange x₀₁ wsp) sp₁ : lIndThru x₀₂ sps          
           evenSplitErr = error "'splitEvenly' returned wrong number of slices."
           
-          calcDeviations :: RecursivePCM (Arr.Vector y) x y -> x-.^>y
+          calcDeviations :: RecursiveSamples' (Arr.Vector y) x y t
+                         -> RecursiveSamples x y t
           calcDeviations = cdvs Nothing Nothing
            where cdvs lPFits rPFits
                          rPCM@( RecursivePCM pFit dtls _ sSpc@(PCMRange xl wsp) slLn pts )
@@ -338,22 +347,24 @@ recursivePCM xrng_g ys = calcDeviations . go xrng_g $ presplitList ys
                          ff = l₀splineRep (Pair lPFits rPFits) rPCM
                          dtls' = case dtls of
                              Left (Pair r₁ r₂)
-                               -> let r₁' = cdvs (rRoute=<<lPFits)
-                                                 (Just r₂)
-                                                 r₁
-                                      r₂' = cdvs (Just r₁)
-                                                 (lRoute=<<rPFits)
-                                                 r₂
+                               -> let r₁' = cdvs (rRoute=<<lPFits) (Just r₂) r₁
+                                      r₂' = cdvs (Just r₁) (lRoute=<<rPFits) r₂
                                   in Left $ Pair r₁' r₂'
                              Right pSpls -> Right pSpls
                          (LinFitParams b a) = pFit
-                 
-lRoute, rRoute :: RecursivePCM n x y -> Maybe (RecursivePCM n x y)
+lRoute, rRoute :: RecursiveSamples' n x y t -> Maybe (RecursiveSamples' n x y t)
 lRoute (RecursivePCM {details = Right _}) = Nothing
 lRoute (RecursivePCM {details = Left (Pair l _)}) = Just l
 rRoute (RecursivePCM {details = Right _}) = Nothing
 rRoute (RecursivePCM {details = Left (Pair _ r)}) = Just r
                          
+
+recursivePCM :: ( VectorSpace x, Real (Scalar x)
+                , AffineSpace y, v~Diff y, InnerSpace v, HasMetric v, RealFloat (Scalar v) )
+                     => PCMRange x -> [y] -> x-.^>y
+recursivePCM xrng_g = recursiveSamples xrng_g . fmap (,())
+
+
 splineRep :: ( AffineSpace y, v~Diff y, InnerSpace v, Floating (Scalar v), Ord (Scalar v) )
                      => Int         -- ^ Number of subdivisions to \"go down\".
                         -> (R-.^>y) -> R -> y
@@ -371,7 +382,8 @@ splineRep n₀ rPCM@(RecursivePCM _ _ _ (PCMRange xl wsp) slLn ())
 l₀splineRep ::
           ( VectorSpace x, Num (Scalar x)
           , AffineSpace y, v~Diff y, VectorSpace v, Floating (Scalar v), Ord (Scalar v) )
-                     => Pair (Maybe (RecursivePCM n x y)) -> (RecursivePCM n x y)
+                     => Pair (Maybe (RecursiveSamples' n x y t'))
+                           -> (RecursiveSamples' n x y t)
                             -> R{-Sample position normalised to [0,1]-} -> y
 l₀splineRep (Pair lPFits rPFits)
             (RecursivePCM{ rPCMlinFit=LinFitParams b a
