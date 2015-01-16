@@ -306,11 +306,11 @@ type RecursiveSamples = RecursiveSamples' ()
 type RecursivePCM n x y = RecursiveSamples' n x y ()
 type (x-.^>y) = RecursivePCM () x y
 
-recursiveSamples :: forall x y v t .
+recursiveSamples' :: forall x y v t .
           ( VectorSpace x, Real (Scalar x)
           , AffineSpace y, v~Diff y, InnerSpace v, HasMetric v, RealFloat (Scalar v) )
                      => PCMRange x -> [(y,t)] -> RecursiveSamples x y t
-recursiveSamples xrng_g ys = calcDeviations . go xrng_g $ presplitList ys
+recursiveSamples' xrng_g ys = calcDeviations . go xrng_g $ presplitList ys
     where go :: PCMRange x -> SplitList (y,t) -> RecursiveSamples' (Arr.Vector y) x y t
           go xrng@(PCMRange xl wsp) l@(SplitList arr) = case splitEvenly 2 l of
              Right sps
@@ -359,10 +359,15 @@ rRoute (RecursivePCM {details = Right _}) = Nothing
 rRoute (RecursivePCM {details = Left (Pair _ r)}) = Just r
                          
 
+recursiveSamples :: 
+          ( AffineSpace y, v~Diff y, InnerSpace v, HasMetric v, RealFloat (Scalar v) )
+                     => [(y,t)] -> RecursiveSamples Int y t
+recursiveSamples = recursiveSamples' (PCMRange 0 1)
+
 recursivePCM :: ( VectorSpace x, Real (Scalar x)
                 , AffineSpace y, v~Diff y, InnerSpace v, HasMetric v, RealFloat (Scalar v) )
                      => PCMRange x -> [y] -> x-.^>y
-recursivePCM xrng_g = recursiveSamples xrng_g . fmap (,())
+recursivePCM xrng_g = recursiveSamples' xrng_g . fmap (,())
 
 
 splineRep :: ( AffineSpace y, v~Diff y, InnerSpace v, Floating (Scalar v), Ord (Scalar v) )
@@ -454,7 +459,7 @@ instance Plottable (R-.^>R) where
                       -- take deviations from quadratic-fit into account.
   
 
-instance Plottable (RecursiveSamples R P2 (DevBoxes P2)) where
+instance Plottable (RecursiveSamples Int P2 (DevBoxes P2)) where
   plot rPCM@(RecursivePCM gPFit gDetails gFitDevs (PCMRange t₀ τsp) gSplN ())
             = DynamicPlottable{
                 relevantRange_x = const $ pure xRange
@@ -464,19 +469,23 @@ instance Plottable (RecursiveSamples R P2 (DevBoxes P2)) where
               , dynamicPlot = plot
               }
    where plot (GraphWindowSpec{..}) = Plot []
-                        . foldMap (trStRange . calcNormDevs)
+                        . foldMap trStRange
                         $ flattenPCM_P2_resoCut bbView [(1/δx)^&0, 0^&(1/δy)] rPCM
-          where calcNormDevs :: Either [((P2,R2),DevBoxes P2)] raw -> [(P2,P2)]
-                calcNormDevs (Left appr) = (`map`appr) $ \((p,v), DevBoxes σ _)
-                       -> let d = metriScale σ $ turnLeft v
-                          in (p .+^ d, p .-^ d)
-                calcNormDevs (Right _) = []
-                trStRange ((pl,pr) : qd@(ql,qr) : ps)
-                     = Dia.opacity 0.3
-                            (Dia.strokeLocLoop (Dia.fromVertices
-                             [ ql, pl, pr, qr, ql ]
-                       )) <> trStRange (qd:ps)
-                trStRange _ = mempty
+          where trStRange (Left appr) = trSR $ map calcNormDev appr
+                 where trSR ((pl,pr) : qd@(ql,qr) : ps)
+                        = Dia.opacity 0.3
+                               (Dia.strokeLocLoop (Dia.fromVertices
+                                [ ql, pl, pr, qr, ql ]
+                          )) <> trSR (qd:ps)
+                       trSR _ = mempty
+                       calcNormDev ((p,v), DevBoxes σ _) = (p .+^ d, p .-^ d)
+                        where d = metriScale σ $ turnLeft v
+                trStRange (Right pts) = (`foldMap`pts)
+                   $ \(p, DevBoxes dv _)
+                              -> let δx = metric dv $ 1^&0
+                                     δy = metric dv $ 0^&1
+                                 in simpleLine (_x +~ δx $ p) (_x -~ δx $ p)
+                                    <> simpleLine (_y +~ δy $ p) (_y -~ δy $ p)
                 
                 w = rBound - lBound; h = tBound - bBound
                 δx = w * 3/fromIntegral xResolution
@@ -516,10 +525,12 @@ flattenPCM_P2_resoCut bb δs = case DiaBB.getCorners bb of
  where go' cs@(lCorn,rCorn) = go where
         go rPCM@(RecursivePCM (LinFitParams pm pa) details fitDevs@(DevBoxes dev _) _ _ ())
           | DiaBB.isEmptyBox $ DiaBB.intersection bb (rPCM_R2_boundingBox rPCM)
-                = (Left [] :)
+                = \case l@(Left [] : _) -> l
+                        l -> Left [] : l
           | metrics dev δs > 1 || (sum $ ((^2).(pa<.>^)) <$> δs) > 3
           , Left (Pair s1 s2) <- details
                 = go s1 . go s2
+          | Right pts <- details = (Right (Arr.toList pts) :)
           | otherwise 
                 = \case
                      (Left h : r) -> Left (((pm, dir), fitDevs) : h) : r
