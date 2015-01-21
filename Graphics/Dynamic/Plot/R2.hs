@@ -486,11 +486,16 @@ instance Plottable (RecursiveSamples Int P2 (DevBoxes P2)) where
                                      δy = metric dv $ 0^&1
                                  in simpleLine (_x +~ δx $ p) (_x -~ δx $ p)
                                     <> simpleLine (_y +~ δy $ p) (_y -~ δy $ p)
+                                    <> (Dia.rect (δx*2) (δy*2) & transparentFill
+                                                               & Dia.lwO 1
+                                                               & Dia.opacity 0.7
+                                                               & Dia.moveTo p)
                 
                 w = rBound - lBound; h = tBound - bBound
                 δx = w * 3/fromIntegral xResolution
                 δy = h * 3/fromIntegral yResolution
                 bbView = Interval lBound rBound -*| Interval bBound tBound
+                transparentFill = Dia.fcA $ Dia.grey `Dia.withOpacity` 0
          bb = rPCM_R2_boundingBox rPCM
          (xRange,yRange) = xyRanges bb
   
