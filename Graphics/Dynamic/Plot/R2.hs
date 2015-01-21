@@ -28,9 +28,13 @@ module Graphics.Dynamic.Plot.R2 (
         -- ** Class  
         , Plottable(..)
         -- ** Simple function plots 
-        , fnPlot, continFnPlot, continParamPlot, plotPCM
+        , fnPlot, paramPlot
+        , continFnPlot
+        , tracePlot
         -- ** View selection
         , xInterval, yInterval
+        -- ** Plot type
+        , DynamicPlottable
         ) where
 
 import Graphics.Dynamic.Plot.Colour
@@ -116,7 +120,7 @@ class Plottable p where
   plot :: p -> DynamicPlottable
 
 instance (RealFloat r₁, RealFloat r₂) => Plottable (r₁ -> r₂) where
-  plot f = fnPlot $ realToFrac . f . realToFrac
+  plot f = continFnPlot $ realToFrac . f . realToFrac
 
 -- {-# RULES "plot/R->R" plot = fnPlot #-}
 
@@ -470,7 +474,7 @@ instance Plottable (RecursiveSamples Int P2 (DevBoxes P2)) where
               }
    where plot (GraphWindowSpec{..}) = Plot []
                         . foldMap trStRange
-                        $ flattenPCM_P2_resoCut bbView [(0.5/δx)^&0, 0^&(0.5/δy)] rPCM
+                        $ flattenPCM_P2_resoCut bbView [(1/δxl)^&0, 0^&(1/δyl)] rPCM
           where trStRange (Left appr) = trSR $ map calcNormDev appr
                  where trSR ((pl,pr) : qd@(ql,qr) : ps)
                         = Dia.opacity 0.3
@@ -487,16 +491,27 @@ instance Plottable (RecursiveSamples Int P2 (DevBoxes P2)) where
                                  in if δxm > δx && δym > δy
                                       then simpleLine (_x +~ δxm $ p) (_x -~ δxm $ p)
                                             <> simpleLine (_y +~ δym $ p) (_y -~ δym $ p)
-                                      else (Dia.rect (δxm*2) (δym*2)
-                                                & Dia.lwO 2
+                                      else (Dia.rect (max δx $ δxm*2) (max δy $ δym*2)
                                                 & Dia.moveTo p)
                 
                 w = rBound - lBound; h = tBound - bBound
-                δx = w * 3/fromIntegral xResolution
-                δy = h * 3/fromIntegral yResolution
+                δxl = 6 * δx; δyl = 6 * δy
+                δx = w/fromIntegral xResolution; δy = h/fromIntegral yResolution
                 bbView = Interval lBound rBound -*| Interval bBound tBound
          bb = rPCM_R2_boundingBox rPCM
          (xRange,yRange) = xyRanges bb
+
+
+
+instance Plottable (Int -.^> P2) where
+  plot = plot . fmap (\() -> DevBoxes zeroV zeroV :: DevBoxes P2)
+
+
+
+-- | Plot a sequence of points. The appearance of the plot will be automatically
+--   chosen to match resolution and point density.
+tracePlot :: [(Double, Double)] -> DynamicPlottable
+tracePlot = plot . recursiveSamples . map ((,()) . Dia.p2)
   
 
 flattenPCM_resoCut :: BoundingBox R2 -> R -> (R-.^>R) -> [(P2, DevBoxes R)]
@@ -585,8 +600,8 @@ rPCMLinFitRange rPCM@(RecursivePCM _ _ (DevBoxes _ δ) _ _ ()) ix
 
 
 
-plotPCM :: [R] -> DynamicPlottable
-plotPCM = plot . recursivePCM (PCMRange (0 :: Double) 1)
+rPCMPlot :: [R] -> DynamicPlottable
+rPCMPlot = plot . recursivePCM (PCMRange (0 :: Double) 1)
 
 -- plotSamples :: [R2]
 
@@ -700,6 +715,28 @@ data GraphViewState = GraphViewState {
 
                 
 
+-- | Plot some plot objects to a new interactive GTK window. Useful for a quick
+--   preview of some unknown data or real-valued functions.
+--   Example:
+-- 
+-- @
+--     plotWindow [ fnPlot cos
+--                , tracePlot [(x,y) | x<-[-1,-0.96..1]
+--                                   , y<-[0,0.01..1]
+--                                   , abs (x^2 + y^2 - 1) < 0.01 ]]
+-- @
+-- 
+--   This gives such a plot window:
+-- 
+--   <<images/examples/cos-encircle-points.png>>
+-- 
+--   And that can with the mouse wheel be zoomed/browsed, like
+-- 
+--   <<images/examples/cos-encircle-points-far.png>>
+--  
+--   The individual objects you want to plot can be evaluated in multiple threads, so
+--   a single hard calculatation won't freeze the responsitivity of the whole window.
+--   Invoke e.g. from @ghci +RTS -N4@ to benefit from this.
 plotWindow :: [DynamicPlottable] -> IO GraphWindowSpec
 plotWindow [] = plotWindow [dynamicAxes]
 plotWindow graphs' = do
@@ -851,18 +888,14 @@ plotWindow graphs' = do
                        antTK = DiagramTK { viewScope = currentView 
                                          , textTools = TextTK defaultTxtStyle
                                                                   txtSize aspect 0.2 0.2 }
-                       txtSize -- | usesNormalisedCanvas  = fontPts / fromIntegral yResolution
-                               | otherwise             = h * fontPts / fromIntegral yResolution
-                       aspect  -- | usesNormalisedCanvas  = 1
-                               | otherwise             = w * fromIntegral yResolution
+                       txtSize = h * fontPts / fromIntegral yResolution
+                       aspect  = w * fromIntegral yResolution
                                                          / (h * fromIntegral xResolution)
                        fontPts = 12
                        transform :: Diagram -> Diagram
-                       transform = nmScale . clr
+                       transform = normaliseView . clr
                          where clr | Just c <- graphColor  = Dia.lcA c . Dia.fcA c
                                    | otherwise             = id
-                               nmScale -- | usesNormalisedCanvas  = id
-                                       | otherwise             = normaliseView
                      in transform $ foldMap (prerenderAnnotation antTK) plotAnnotations
                                  <> getPlot
 
@@ -999,8 +1032,19 @@ defaultKeyMap _ = Nothing
 -- instance NFData Draw.R
 
 
-fnPlot :: (R -> R) -> DynamicPlottable
-fnPlot f = DynamicPlottable{
+-- | Plot an (assumed continuous) function in the usual way.
+--   Since this uses functions of actual 'Double' values, you have more liberty
+--   of defining functions with range-pattern-matching etc., which is at the moment
+--   not possible in the ':-->' category.
+-- 
+--   However, because 'Double' can't really proove properties of a mathematical
+--   function, aliasing and similar problems are not taken into account. So it only works
+--   accurately when the function is locally linear on pixel scales, much like in most
+--   other plot programs.
+--   
+--   Use 'fnPlot' whenever possible, which automatically adjusts the resolution so the plot is guaranteed accurate.
+continFnPlot :: (Double -> Double) -> DynamicPlottable
+continFnPlot f = DynamicPlottable{
                relevantRange_x = const mempty
              , relevantRange_y = yRangef
              -- , usesNormalisedCanvas = False
@@ -1018,18 +1062,32 @@ fnPlot f = DynamicPlottable{
        l!n | (x:_)<-drop n l  = x
            | otherwise         = error "Function appears to yield NaN most of the time. Cannot be plotted."
 
-continFnPlot :: (forall m . 𝓒⁰.Manifold m 
+                                 
+-- | Plot a continuous function in the usual way, taking arguments from the
+--   x-Coordinate and results to the y one.
+--   The signature looks more complicated than it is; think about it as requiring
+--   a polymorphic 'Floating' function. Any simple expression like
+--   @'fnPlot' (\\x -> sin x / exp (x^2))@ will work.
+-- 
+--   Under the hood this uses the category of continuous functions, ':-->', to proove
+--   that no details are omitted (like small high-frequency bumps). The flip side is that
+--   this does not always work very efficiently, in fact it can easily become exponentially
+--   slow for some parameters.
+--   Make sure to run multithreaded, to prevent hanging your program this way.
+fnPlot :: (forall m . 𝓒⁰.Manifold m 
                    => ProxyVal (:-->) m Double -> ProxyVal (:-->) m Double) 
                       -> DynamicPlottable
-continFnPlot f = plot fc
+fnPlot f = plot fc
  where fc :: Double :--> Double
        fc = alg f
        
-continParamPlot :: (forall m . 𝓒⁰.Manifold m 
+-- | Plot a continuous, &#x201c;parametric function&#x201d;, i.e. mapping the real
+--   line to a path in &#x211d;&#xb2;.
+paramPlot :: (forall m . 𝓒⁰.Manifold m 
                     => ProxyVal (:-->) m Double 
                         -> (ProxyVal (:-->) m Double, ProxyVal (:-->) m Double)) 
                      -> DynamicPlottable
-continParamPlot f = plot fc
+paramPlot f = plot fc
  where fc :: Double :--> (Double, Double)
        fc = alg1to2 f
 
@@ -1114,7 +1172,7 @@ simpleLine p q = Dia.fromVertices [p,q] & Dia.lwO 2
 -- Note there is nothing special about these \"flag\" objects: /any/ 'Plottable' can request a 
 -- certain view, e.g. for a discrete point cloud it's obvious and a function defines at least
 -- a @y@-range for a given @x@-range. Only use explicit range when necessary.
-xInterval, yInterval :: (R, R) -> DynamicPlottable
+xInterval, yInterval :: (Double, Double) -> DynamicPlottable
 xInterval (l,r) = DynamicPlottable { 
                relevantRange_x = const . return $ Interval l r
              , relevantRange_y = const mempty
