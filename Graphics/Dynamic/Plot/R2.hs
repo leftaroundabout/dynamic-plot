@@ -470,7 +470,7 @@ instance Plottable (RecursiveSamples Int P2 (DevBoxes P2)) where
               }
    where plot (GraphWindowSpec{..}) = Plot []
                         . foldMap trStRange
-                        $ flattenPCM_P2_resoCut bbView [(1/δx)^&0, 0^&(1/δy)] rPCM
+                        $ flattenPCM_P2_resoCut bbView [(0.5/δx)^&0, 0^&(0.5/δy)] rPCM
           where trStRange (Left appr) = trSR $ map calcNormDev appr
                  where trSR ((pl,pr) : qd@(ql,qr) : ps)
                         = Dia.opacity 0.3
@@ -482,20 +482,19 @@ instance Plottable (RecursiveSamples Int P2 (DevBoxes P2)) where
                         where d = metriScale σ $ turnLeft v
                 trStRange (Right pts) = (`foldMap`pts)
                    $ \(p, DevBoxes dv _)
-                              -> let δx = metric dv $ 1^&0
-                                     δy = metric dv $ 0^&1
-                                 in simpleLine (_x +~ δx $ p) (_x -~ δx $ p)
-                                    <> simpleLine (_y +~ δy $ p) (_y -~ δy $ p)
-                                    <> (Dia.rect (δx*2) (δy*2) & transparentFill
-                                                               & Dia.lwO 1
-                                                               & Dia.opacity 0.7
-                                                               & Dia.moveTo p)
+                              -> let δxm = metric dv $ 1^&0
+                                     δym = metric dv $ 0^&1
+                                 in if δxm > δx && δym > δy
+                                      then simpleLine (_x +~ δxm $ p) (_x -~ δxm $ p)
+                                            <> simpleLine (_y +~ δym $ p) (_y -~ δym $ p)
+                                      else (Dia.rect (δxm*2) (δym*2)
+                                                & Dia.lwO 2
+                                                & Dia.moveTo p)
                 
                 w = rBound - lBound; h = tBound - bBound
                 δx = w * 3/fromIntegral xResolution
                 δy = h * 3/fromIntegral yResolution
                 bbView = Interval lBound rBound -*| Interval bBound tBound
-                transparentFill = Dia.fcA $ Dia.grey `Dia.withOpacity` 0
          bb = rPCM_R2_boundingBox rPCM
          (xRange,yRange) = xyRanges bb
   
@@ -532,7 +531,7 @@ flattenPCM_P2_resoCut bb δs = case DiaBB.getCorners bb of
           | DiaBB.isEmptyBox $ DiaBB.intersection bb (rPCM_R2_boundingBox rPCM)
                 = \case l@(Left [] : _) -> l
                         l -> Left [] : l
-          | metrics dev δs > 1 || (sum $ ((^2).(pa<.>^)) <$> δs) > 3
+          | metrics dev δs > 0.5 || (sum $ ((^2).(pa<.>^)) <$> δs) > 3
           , Left (Pair s1 s2) <- details
                 = go s1 . go s2
           | Right pts <- details = (Right (Arr.toList pts) :)
@@ -548,7 +547,8 @@ turnLeft (DiaTypes.R2 x y) = DiaTypes.R2 (-y) x
 
 rPCM_R2_boundingBox :: (RecursiveSamples x P2 t) -> BoundingBox R2
 rPCM_R2_boundingBox rPCM@(RecursivePCM pFit _ (DevBoxes dev _) _ _ ())
-          = Interval (xl - ux) (xr + ux) -*| Interval (yb - uy) (yt + uy)
+          =    Interval (xl - ux*2) (xr + ux*2)
+           -*| Interval (yb - uy*2) (yt + uy*2)
  where pm = constCoeff pFit
        p₀ = pm .-^ linCoeff pFit; pe = pm .+^ linCoeff pFit
        ux = metric dev $ 1^&0; uy = metric dev $ 0^&1
