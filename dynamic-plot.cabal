@@ -2,10 +2,25 @@ Name:                dynamic-plot
 Version:             0.1
 Category:            graphics
 Synopsis:            Interactive diagram windows
-Description:         When plotting functions etc., it is often not known a priori what
-                     range should be displayed, what resolution is needed, and so on. The
-                     most efficient way to set these parameters is in an interactive
-                     window.
+Description:         Haskell excels at handling data like continuous functions
+                     in a nice way, i.e. without discretising anything to finite arrays as
+                     is typically done in languages like Matlab. Instead, you can simply pass
+                     around functions or infinite data structures (or /very/ high-resolution data
+                     that would be infeasible to handle in a strict language).
+                     .
+                     However when you want to /view/ the data, it will eventually need to be exported out of Haskell
+                     in some finite form. The purpose of this library is to delay this discretisation
+                     as long as possible: it implements an interactive plotting window that accepts continuous/recursive
+                     data and only &#x201c;flattens&#x201d; it according to the specific view configuration.
+                     You can then zoom in to a shown diagram and it will automatically calculate
+                     the features more detailedly, or zoom out and discover previosly unexpected
+                     features. You don't need to worry about specifying the range and/or resolution beforehand:
+                     the program will try to find a suitable default view based on /all/ data your displaying,
+                     and you can always still zoom, resize or move later.
+                     .
+                     <http://projects.haskell.org/diagrams> are used as the &#x201c;pre-rendered&#x201d; type. This
+                     makes the output usable in a very wide range of applications, though at the moment only the GTK
+                     window view is implemented.
 License:             GPL-3
 License-file:        COPYING
 Author:              Justus Sagemüller

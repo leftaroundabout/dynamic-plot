@@ -128,7 +128,6 @@ instance Plottable (Double :--> Double) where
   plot f = DynamicPlottable{
              relevantRange_x = const mempty
            , relevantRange_y = fmap yRangef
-           -- , usesNormalisedCanvas = False
            , isTintableMonochromic = True
            , axesNecessity = 1
            , dynamicPlot = plot }
@@ -153,7 +152,6 @@ instance Plottable (Double :--> (Double, Double)) where
   plot f = DynamicPlottable{
              relevantRange_x = const mempty
            , relevantRange_y = const mempty
-           -- , usesNormalisedCanvas = False
            , isTintableMonochromic = True
            , axesNecessity = 1
            , dynamicPlot = plot }
@@ -196,34 +194,6 @@ instance Plottable Diagram where
 
 
 
--- data SampledPath p = SampledPath [p]
---                    | DepthLazyPath [(p, SampledPath p)]
---            deriving (Functor)
--- 
--- flattenSplPath :: SampledPath p -> [p]
--- flattenSplPath (SampledPath pth) = pth
--- flattenSplPath (DepthLazyPath pth) = foldMap (\(p, pth') -> p : flattenSplPath pth') pth
--- 
--- instance Foldable SampledPath where
---   foldMap f pth = foldMap f $ flattenSplPath pth
--- 
--- 
--- instance Plottable (SampledPath R2) where
---   plot (SampledPath p) = DynamicPlottable{
---                            relevantRange_x = const $ foldMap (spInterval . (^._x)) p
---                          , relevantRange_y = const $ foldMap (spInterval . (^._y)) p
---                          , isTintableMonochromic = True
---                          , axesNecessity = 1
---                          , dynamicPlot = plot
---                          }
---    where 
---          plot (GraphWindowSpec{..}) = Plot [] (trace curve)
---           where curve :: [Dia.P2]
---                 curve = map convℝ² $ 𝓒⁰.finiteGraphContinℝtoℝ mWindow f
---                 mWindow = 𝓒⁰.GraphWindowSpec (c lBound) (c rBound) (c bBound) (c tBound) 
---                                                  xResolution yResolution
---                 trace (p:q:ps) = simpleLine p q <> trace (q:ps)
---                 trace _ = mempty
   
 
 data Pair p = Pair !p !p
@@ -508,8 +478,17 @@ instance Plottable (Int -.^> P2) where
 
 
 
--- | Plot a sequence of points. The appearance of the plot will be automatically
---   chosen to match resolution and point density.
+-- | Plot a sequence of points @(x,y)@. The appearance of the plot will be automatically
+--   chosen to match resolution and point density: at low densities, each point will simply
+--   get displayed on its own. When the density goes so high you couldn't distinguish
+--   individual points anyway, we switch to a &#x201c;trace view&#x201d;, approximating
+--   the probability density function around a &#x201c;local mean path&#x201d;, which is
+--   rather more insightful (and much less obstructive/clunky) than a simple cloud of
+--   independent points.
+--   
+--   In principle, this should be able to handle vast amounts of data
+--   (so you can, say, directly plot an audio file); at the moment the implementation
+--   isn't efficient enough and will get slow for more than some 100000 data points.
 tracePlot :: [(Double, Double)] -> DynamicPlottable
 tracePlot = plot . recursiveSamples . map ((,()) . Dia.p2)
   
@@ -698,7 +677,6 @@ instance Monoid Plot where
 
 data DynamicPlottable = DynamicPlottable { 
         relevantRange_x, relevantRange_y :: Option (Interval R) -> Option (Interval R)
-      -- , usesNormalisedCanvas :: Bool
       , isTintableMonochromic :: Bool
       , axesNecessity :: Necessity
       , dynamicPlot :: GraphWindowSpec -> Plot
@@ -716,7 +694,9 @@ data GraphViewState = GraphViewState {
                 
 
 -- | Plot some plot objects to a new interactive GTK window. Useful for a quick
---   preview of some unknown data or real-valued functions.
+--   preview of some unknown data or real-valued functions; things like selection
+--   of reasonable view range and colourisation are automatically chosen.
+--   
 --   Example:
 -- 
 -- @
@@ -1039,15 +1019,18 @@ defaultKeyMap _ = Nothing
 -- 
 --   However, because 'Double' can't really proove properties of a mathematical
 --   function, aliasing and similar problems are not taken into account. So it only works
---   accurately when the function is locally linear on pixel scales, much like in most
---   other plot programs.
+--   accurately when the function is locally linear on pixel scales (what most
+--   other plot programs just assume silently). In case of singularities, the
+--   naïve thing is done (extend as far as possible; vertical line at sign change),
+--   which again is common enough though not really right.
 --   
---   Use 'fnPlot' whenever possible, which automatically adjusts the resolution so the plot is guaranteed accurate.
+--   We'd like to recommend using 'fnPlot' whenever possible, which automatically adjusts
+--   the resolution so the plot is guaranteed accurate (but it's not usable yet for
+--   a lot of real applications).
 continFnPlot :: (Double -> Double) -> DynamicPlottable
 continFnPlot f = DynamicPlottable{
                relevantRange_x = const mempty
              , relevantRange_y = yRangef
-             -- , usesNormalisedCanvas = False
              , isTintableMonochromic = True
              , axesNecessity = 1
              , dynamicPlot = plot }
@@ -1067,13 +1050,21 @@ continFnPlot f = DynamicPlottable{
 --   x-Coordinate and results to the y one.
 --   The signature looks more complicated than it is; think about it as requiring
 --   a polymorphic 'Floating' function. Any simple expression like
---   @'fnPlot' (\\x -> sin x / exp (x^2))@ will work.
--- 
+--   @'fnPlot' (\\x -> sin x / exp (x^2))@ will work (but the view must not contain
+--   singularities).
+--   
 --   Under the hood this uses the category of continuous functions, ':-->', to proove
 --   that no details are omitted (like small high-frequency bumps). The flip side is that
 --   this does not always work very efficiently, in fact it can easily become exponentially
 --   slow for some parameters.
---   Make sure to run multithreaded, to prevent hanging your program this way.
+--   Make sure to run multithreaded, to prevent hanging your program this way. Also consider
+--   limiting the memory: if you try to plot across singularities, the program may well
+--   eat up all available resorces before failing. (But it will never &#x201c;succeed&#x201d; and
+--   plot something wrong!)
+--   
+--   In the future, we would like to switch to the category of piecewise continuously-differentiable
+--   functions. That wouldn't suffer from said problems, and should
+--   also generally be more efficient. (That category is not yet implemented in Haskell.)
 fnPlot :: (forall m . 𝓒⁰.Manifold m 
                    => ProxyVal (:-->) m Double -> ProxyVal (:-->) m Double) 
                       -> DynamicPlottable
@@ -1128,7 +1119,6 @@ dynamicAxes :: DynamicPlottable
 dynamicAxes = DynamicPlottable { 
                relevantRange_x = const mempty
              , relevantRange_y = const mempty   
-             -- , usesNormalisedCanvas = False
              , isTintableMonochromic = False
              , axesNecessity = superfluent
              , dynamicPlot = plot }
@@ -1167,16 +1157,15 @@ simpleLine p q = Dia.fromVertices [p,q] & Dia.lwO 2
 
 
 
--- | When you \"plot\" 'xInterval' / 'yInterval', it is ensured that the (initial) view encompasses 
+-- | When you &#x201c;plot&#x201d; 'xInterval' / 'yInterval', it is ensured that the (initial) view encompasses 
 -- (at least) the specified range.
--- Note there is nothing special about these \"flag\" objects: /any/ 'Plottable' can request a 
+-- Note there is nothing special about these &#x201c;flag&#x201d; objects: /any/ 'Plottable' can request a 
 -- certain view, e.g. for a discrete point cloud it's obvious and a function defines at least
 -- a @y@-range for a given @x@-range. Only use explicit range when necessary.
 xInterval, yInterval :: (Double, Double) -> DynamicPlottable
 xInterval (l,r) = DynamicPlottable { 
                relevantRange_x = const . return $ Interval l r
              , relevantRange_y = const mempty
-             -- , usesNormalisedCanvas = False
              , isTintableMonochromic = False
              , axesNecessity = 0
              , dynamicPlot = plot }
@@ -1184,7 +1173,6 @@ xInterval (l,r) = DynamicPlottable {
 yInterval (b,t) = DynamicPlottable { 
                relevantRange_x = const mempty
              , relevantRange_y = const . return $ Interval b t
-             -- , usesNormalisedCanvas = False
              , isTintableMonochromic = False
              , axesNecessity = 0
              , dynamicPlot = plot }
