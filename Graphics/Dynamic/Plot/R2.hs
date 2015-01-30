@@ -76,7 +76,7 @@ import Control.Category.Constrained.Prelude hiding ((^))
 import Control.Arrow.Constrained
 import Control.Monad.Constrained
 
-import Control.Lens hiding ((...))
+import Control.Lens hiding ((...), (<.>))
 
   
 import Control.Concurrent.Async
@@ -108,6 +108,11 @@ import System.Process
 import Data.Time
 
 
+
+
+instance HasMetric R2 where
+  type DualSpace R2 = R2
+  (<.>^) = (<.>)
 
 (^) :: Num n => n -> Int -> n
 (^) = (Prelude.^)
