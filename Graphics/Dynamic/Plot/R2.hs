@@ -113,6 +113,8 @@ import Data.Time
 instance HasMetric R2 where
   type DualSpace R2 = R2
   (<.>^) = (<.>)
+  functional f = f(1^&0) ^& f(0^&1)
+  doubleDual = id; doubleDual' = id
 
 (^) :: Num n => n -> Int -> n
 (^) = (Prelude.^)
@@ -257,8 +259,8 @@ linFitMeanInCtrdUnitIntv (LinFitParams{..}) = constCoeff
 
 
 
-data DevBoxes y = DevBoxes { deviations :: HerMetric (Diff y)
-                           , maxDeviation :: Scalar (Diff y) }
+data DevBoxes y = DevBoxes { deviations :: HerMetric' (Diff y)
+                           , maxDeviation :: Scalar (Diff y)   }
                 
 
 
@@ -323,7 +325,7 @@ recursiveSamples' xrng_g ys = calcDeviations . go xrng_g $ presplitList ys
            where cdvs lPFits rPFits
                          rPCM@( RecursivePCM pFit dtls _ sSpc@(PCMRange xl wsp) slLn pts )
                     = RecursivePCM pFit dtls' (DevBoxes stdDev maxDev) sSpc slLn ()
-                   where stdDev = (^/ fromIntegral slLn) . sumV $ projector <$> msqs
+                   where stdDev = (^/ fromIntegral slLn) . sumV $ projector' <$> msqs
                          maxDev =     sqrt           . maximum $ magnitudeSq <$> msqs
                          msqs = [ (y .-. ff x)
                                 | (x,y) <- normlsdIdd $ SplitList pts ]
@@ -430,7 +432,7 @@ instance Plottable (R-.^>R) where
                              [_y+~δq $ q, _y+~δp $ p, _y-~δp $ p, _y-~δq $ q
                              ,_y+~δq $ q ]))
                        ) <> trStRange (qd:ps)
-                 where [σp,σq] = map (`metric`1) [σp', σq']
+                 where [σp,σq] = map (`metric'`1) [σp', σq']
                 trStRange _ = mempty
                 trMBound l = Dia.fromVertices l & Dia.dashingO [2,2] 0
                 
@@ -462,11 +464,11 @@ instance Plottable (RecursiveSamples Int P2 (DevBoxes P2)) where
                           )) <> trSR (qd:ps)
                        trSR _ = mempty
                        calcNormDev ((p,v), DevBoxes σ _) = (p .+^ d, p .-^ d)
-                        where d = metriScale σ $ turnLeft v
+                        where d = metriScale' σ $ turnLeft v
                 trStRange (Right pts) = (`foldMap`pts)
                    $ \(p, DevBoxes dv _)
-                              -> let δxm = metric dv $ 1^&0
-                                     δym = metric dv $ 0^&1
+                              -> let δxm = metric' dv $ 1^&0
+                                     δym = metric' dv $ 0^&1
                                  in if δxm > δx && δym > δy
                                       then simpleLine (_x +~ δxm $ p) (_x -~ δxm $ p)
                                             <> simpleLine (_y +~ δym $ p) (_y -~ δym $ p)
@@ -534,7 +536,7 @@ flattenPCM_P2_resoCut bb δs = case DiaBB.getCorners bb of
           | DiaBB.isEmptyBox $ DiaBB.intersection bb (rPCM_R2_boundingBox rPCM)
                 = \case l@(Left [] : _) -> l
                         l -> Left [] : l
-          | metrics dev δs > 0.5 || (sum $ ((^2).(pa<.>^)) <$> δs) > 3
+          | metrics' dev δs > 0.5 || (sum $ ((^2).(pa<.>^)) <$> δs) > 3
           , Left (Pair s1 s2) <- details
                 = go s1 . go s2
           | Right pts <- details = (Right (Arr.toList pts) :)
@@ -554,7 +556,7 @@ rPCM_R2_boundingBox rPCM@(RecursivePCM pFit _ (DevBoxes dev _) _ _ ())
            -*| Interval (yb - uy*2) (yt + uy*2)
  where pm = constCoeff pFit
        p₀ = pm .-^ linCoeff pFit; pe = pm .+^ linCoeff pFit
-       ux = metric dev $ 1^&0; uy = metric dev $ 0^&1
+       ux = metric' dev $ 1^&0; uy = metric' dev $ 0^&1
        [xl,xr] = sort[p₀^._x, pe^._x]; [yb,yt] = sort[p₀^._y, pe^._y]
 
 

@@ -1,5 +1,5 @@
 Name:                dynamic-plot
-Version:             0.1.0.0
+Version:             0.1.0.1
 Category:            graphics
 Synopsis:            Interactive diagram windows
 Description:         Haskell excels at handling data like continuous functions
