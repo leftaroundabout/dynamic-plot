@@ -38,7 +38,7 @@ module Graphics.Dynamic.Plot.R2 (
         -- ** View selection
         , xInterval, yInterval
         -- ** Auxiliary plot objects
-        , dynamicAxes
+        , dynamicAxes, noDynamicAxes
         -- ** Plot type
         , DynamicPlottable
         ) where
@@ -1131,6 +1131,8 @@ crtDynamicAxes (GraphWindowSpec {..}) = DynamicAxes yAxCls xAxCls
 
 
 
+-- | Coordinate axes with labels. For many plottable objects, these will be added
+--   automatically, by default (unless inhibited with 'noDynamicAxes').
 dynamicAxes :: DynamicPlottable
 dynamicAxes = DynamicPlottable { 
                relevantRange_x = const mempty
@@ -1161,6 +1163,14 @@ dynamicAxes = DynamicPlottable {
           = foldMap (uncurry simpleLine . crd . axisPosition) axes
              & Dia.lcA (Dia.grey `DCol.withOpacity` strength)
 
+
+noDynamicAxes :: DynamicPlottable
+noDynamicAxes = DynamicPlottable { 
+               relevantRange_x = const mempty
+             , relevantRange_y = const mempty   
+             , isTintableMonochromic = False
+             , axesNecessity = superfluent
+             , dynamicPlot = const mempty }
 
 
 type Necessity = Double
