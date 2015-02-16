@@ -37,6 +37,8 @@ module Graphics.Dynamic.Plot.R2 (
         , tracePlot
         -- ** View selection
         , xInterval, yInterval
+        -- ** Auxiliary plot objects
+        , dynamicAxes
         -- ** Plot type
         , DynamicPlottable
         ) where
@@ -129,6 +131,9 @@ type Diagram = Dia.Diagram Cairo.B R2
 
 class Plottable p where
   plot :: p -> DynamicPlottable
+
+instance Plottable DynamicPlottable where
+  plot = id
 
 instance (RealFloat r₁, RealFloat r₂) => Plottable (r₁ -> r₂) where
   plot f = continFnPlot $ realToFrac . f . realToFrac
