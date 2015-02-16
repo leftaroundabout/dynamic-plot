@@ -49,7 +49,7 @@ Library
                      , async
                      , deepseq
                      , process
-                     , constrained-categories
+                     , constrained-categories >= 0.2
                      , diagrams-core == 1.2.0.2
                      , diagrams-lib >= 1 && < 1.4
                      , diagrams-cairo == 1.2.0.2

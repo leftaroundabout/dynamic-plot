@@ -1082,7 +1082,7 @@ continFnPlot f = DynamicPlottable{
 --   functions. That wouldn't suffer from said problems, and should
 --   also generally be more efficient. (That category is not yet implemented in Haskell.)
 fnPlot :: (forall m . 𝓒⁰.Manifold m 
-                   => ProxyVal (:-->) m Double -> ProxyVal (:-->) m Double) 
+                   => AgentVal (:-->) m Double -> AgentVal (:-->) m Double) 
                       -> DynamicPlottable
 fnPlot f = plot fc
  where fc :: Double :--> Double
@@ -1091,8 +1091,8 @@ fnPlot f = plot fc
 -- | Plot a continuous, &#x201c;parametric function&#x201d;, i.e. mapping the real
 --   line to a path in &#x211d;&#xb2;.
 paramPlot :: (forall m . 𝓒⁰.Manifold m 
-                    => ProxyVal (:-->) m Double 
-                        -> (ProxyVal (:-->) m Double, ProxyVal (:-->) m Double)) 
+                    => AgentVal (:-->) m Double 
+                        -> (AgentVal (:-->) m Double, AgentVal (:-->) m Double)) 
                      -> DynamicPlottable
 paramPlot f = plot fc
  where fc :: Double :--> (Double, Double)
