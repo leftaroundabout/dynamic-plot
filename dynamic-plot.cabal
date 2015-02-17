@@ -29,6 +29,7 @@ Homepage:            https://github.com/leftaroundabout/dynamic-plot
 Build-Type:          Simple
 Cabal-Version:       >=1.10
 Extra-Doc-Files:     images/examples/*.png
+                     , images/examples/*.gif
 
 Source-Repository head
     type: git

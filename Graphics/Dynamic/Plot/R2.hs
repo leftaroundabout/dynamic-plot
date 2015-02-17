@@ -37,6 +37,9 @@ module Graphics.Dynamic.Plot.R2 (
         , tracePlot
         -- ** View selection
         , xInterval, yInterval
+        -- ** View dependance
+        , ViewXCenter(..), ViewYCenter(..), ViewWidth(..), ViewHeight(..)
+        , ViewXResolution(..), ViewYResolution(..)
         -- ** Auxiliary plot objects
         , dynamicAxes, noDynamicAxes
         -- ** Plot type
@@ -135,7 +138,7 @@ class Plottable p where
 instance Plottable DynamicPlottable where
   plot = id
 
-instance (RealFloat r₁, RealFloat r₂) => Plottable (r₁ -> r₂) where
+instance Plottable (R -> R) where
   plot f = continFnPlot $ realToFrac . f . realToFrac
 
 -- {-# RULES "plot/R->R" plot = fnPlot #-}
@@ -728,7 +731,7 @@ data GraphViewState = GraphViewState {
 -- 
 --   And that can with the mouse wheel be zoomed/browsed, like
 -- 
---   <<images/examples/cos-encircle-points-far.png>>
+--   <<images/examples/cos-encircle-points.gif>>
 --  
 --   The individual objects you want to plot can be evaluated in multiple threads, so
 --   a single hard calculatation won't freeze the responsitivity of the whole window.
@@ -1287,6 +1290,66 @@ prerenderAnnotation (DiagramTK{ textTools = TextTK{..}, viewScope = GraphWindowS
                      $ Dia.lc Dia.grey fullText
         
 
+
+
+-- | 'ViewXCenter', 'ViewYResolution' etc. can be used as arguments to some object
+--   you 'plot', if its rendering is to depend explicitly on the screen's visible range.
+--   You should not need to do that manually except for special applications (the
+--   standard plot objects like 'fnPlot' already take the range into account anyway)
+--   &#x2013; e.g. comparing  with the linear regression /of all visible points/
+--   from some sample with some function's tangent /at the screen center/.
+--   
+-- @
+-- plotWindow [fnPlot sin, plot $ \\(ViewXCenter xc) x -> sin xc + (x-xc) * cos xc]
+-- @
+-- 
+--   <<images/examples/sin-ctrd-tangents.gif>>
+newtype ViewXCenter = ViewXCenter { getViewXCenter :: Double }
+instance (Plottable p) => Plottable (ViewXCenter -> p) where
+  plot f = DynamicPlottable {
+               relevantRange_x = const mempty
+             , relevantRange_y = \g -> (`relevantRange_y`g) . plot . f . cxI =<< g
+             , isTintableMonochromic = isTintableMonochromic fcxVoid
+             , axesNecessity = axesNecessity fcxVoid
+             , dynamicPlot = \g -> dynamicPlot (plot . f $ cx g) g }
+    where cx (GraphWindowSpec{..}) = ViewXCenter $ (lBound+rBound)/2
+          cxI (Interval l r) = ViewXCenter $ (l+r)/2
+          fcxVoid = plot . f $ ViewXCenter 0.23421  -- Yup, it's magic.
+newtype ViewYCenter = ViewYCenter { getViewYCenter :: Double }
+instance (Plottable p) => Plottable (ViewYCenter -> p) where
+  plot f = DynamicPlottable {
+               relevantRange_x = \g -> (`relevantRange_x`g) . plot . f . cyI =<< g
+             , relevantRange_y = const mempty
+             , isTintableMonochromic = isTintableMonochromic fcyVoid
+             , axesNecessity = axesNecessity fcyVoid
+             , dynamicPlot = \g -> dynamicPlot (plot . f $ cy g) g }
+    where cy (GraphWindowSpec{..}) = ViewYCenter $ (bBound+tBound)/2
+          cyI (Interval b t) = ViewYCenter $ (b+t)/2
+          fcyVoid = plot . f $ ViewYCenter 0.319421  -- Alright, alright... the idea is to avoid exact equality with zero or any other number that might come up in some plot object, since such an equality can lead to div-by-zero problems.
+newtype ViewWidth = ViewWidth { getViewWidth :: Double }
+instance (Plottable p) => Plottable (ViewWidth -> p) where
+  plot f = DynamicPlottable {
+               relevantRange_x = const mempty
+             , relevantRange_y = \g -> (`relevantRange_y`g) . plot . f . wI =<< g
+             , isTintableMonochromic = isTintableMonochromic fwVoid
+             , axesNecessity = axesNecessity fwVoid
+             , dynamicPlot = \g -> dynamicPlot (plot . f $ w g) g }
+    where w (GraphWindowSpec{..}) = ViewWidth $ rBound - lBound
+          wI (Interval l r) = ViewWidth $ r - l
+          fwVoid = plot . f $ ViewWidth 2.142349
+newtype ViewHeight = ViewHeight { getViewHeight :: Double }
+instance (Plottable p) => Plottable (ViewHeight -> p) where
+  plot f = DynamicPlottable {
+               relevantRange_x = \g -> (`relevantRange_x`g) . plot . f . hI =<< g
+             , relevantRange_y = const mempty
+             , isTintableMonochromic = isTintableMonochromic fhVoid
+             , axesNecessity = axesNecessity fhVoid
+             , dynamicPlot = \g -> dynamicPlot (plot . f $ h g) g }
+    where h (GraphWindowSpec{..}) = ViewHeight $ tBound - bBound
+          hI (Interval b t) = ViewHeight $ t - b
+          fhVoid = plot . f $ ViewHeight 1.494213
+newtype ViewXResolution = ViewXResolution { getViewXResolution :: Int }
+newtype ViewYResolution = ViewYResolution { getViewYResolution :: Int }
 
 
 

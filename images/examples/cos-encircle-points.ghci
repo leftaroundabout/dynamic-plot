@@ -1,0 +1,1 @@
+plotWindow [fnPlot cos, tracePlot [(x,y) | x<-[-1,-0.96..1], y<-[0,0.01..1], abs (x^2 + y^2 - 1) < 0.01 ]]

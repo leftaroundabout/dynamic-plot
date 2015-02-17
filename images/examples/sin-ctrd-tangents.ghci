@@ -1,0 +1,1 @@
+plotWindow [fnPlot sin, plot $ \(ViewXCenter xc) x -> sin xc + (x-xc) * cos xc]
