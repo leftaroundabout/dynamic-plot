@@ -96,9 +96,12 @@ import Data.Foldable (fold, foldMap)
 import Data.Function (on)
 
 import Data.VectorSpace
+import Data.Basis
 import Data.AffineSpace
 import Data.LinearMap.HerMetric
 import qualified Data.Map.Lazy as Map
+
+import Data.Tagged
 
 import Data.Manifold ((:-->))
 import qualified Data.Manifold as 𝓒⁰
@@ -115,6 +118,13 @@ import Data.Time
 
 
 
+instance FiniteDimensional R2 where
+  dimension = Tagged 2
+  basisIndex = Tagged bi where bi b = if (basisValue b::R2)^._x > 0.5 then 0 else 1
+  indexBasis = Tagged ib
+   where ib 0 = bx; ib 1 = by
+         [(bx,_), (by,_)] = decompose (1^&1 :: R2)
+  completeBasis = Tagged . fmap fst $ decompose (1^&1 :: R2)
 instance HasMetric R2 where
   type DualSpace R2 = R2
   (<.>^) = (<.>)

@@ -1,5 +1,5 @@
 Name:                dynamic-plot
-Version:             0.1.0.1
+Version:             0.1.0.2
 Category:            graphics
 Synopsis:            Interactive diagram windows
 Description:         Haskell excels at handling data like continuous functions
@@ -42,6 +42,7 @@ Library
                      , vector-space>=0.8
                      , MemoTrie
                      , vector
+                     , tagged
                      , containers
                      , semigroups
                      , random
@@ -51,14 +52,14 @@ Library
                      , deepseq
                      , process
                      , constrained-categories >= 0.2
-                     , diagrams-core == 1.2.0.2
+                     , diagrams-core
                      , diagrams-lib >= 1 && < 1.4
-                     , diagrams-cairo == 1.2.0.2
+                     , diagrams-cairo
                      , diagrams-gtk
                      , gtk > 0.10 && < 0.15
                      , glib
                      , colour >= 2 && < 3
-                     , manifolds >= 0.1.0.1 && < 0.2
+                     , manifolds >= 0.1.1 && < 0.2
                      , lens
   Other-Extensions:  FlexibleInstances
                      , TypeFamilies
