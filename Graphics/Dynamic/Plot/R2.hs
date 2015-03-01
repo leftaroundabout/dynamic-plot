@@ -17,6 +17,7 @@
 {-# LANGUAGE TypeOperators              #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE ConstraintKinds            #-}
 {-# LANGUAGE UndecidableInstances       #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE NoImplicitPrelude          #-}
@@ -125,7 +126,7 @@ instance FiniteDimensional R2 where
    where ib 0 = bx; ib 1 = by
          [(bx,_), (by,_)] = decompose (1^&1 :: R2)
   completeBasis = Tagged . fmap fst $ decompose (1^&1 :: R2)
-instance HasMetric R2 where
+instance HasMetric' R2 where
   type DualSpace R2 = R2
   (<.>^) = (<.>)
   functional f = f(1^&0) ^& f(0^&1)
