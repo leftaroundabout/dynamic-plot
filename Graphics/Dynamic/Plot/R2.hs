@@ -100,6 +100,8 @@ import Data.VectorSpace
 import Data.Basis
 import Data.AffineSpace
 import Data.LinearMap.HerMetric
+import Data.Manifold.PseudoAffine
+import Data.Manifold.TreeCover
 import qualified Data.Map.Lazy as Map
 
 import Data.Tagged
@@ -131,6 +133,12 @@ instance HasMetric' R2 where
   (<.>^) = (<.>)
   functional f = f(1^&0) ^& f(0^&1)
   doubleDual = id; doubleDual' = id
+instance PseudoAffine P2 where
+  type PseudoDiff P2 = R2
+  p.-~.q = pure(p.-.q)
+  (.+~^) = (.+^)
+
+
 
 (^) :: Num n => n -> Int -> n
 (^) = (Prelude.^)
@@ -615,6 +623,48 @@ rPCMPlot = plot . recursivePCM (PCMRange (0 :: Double) 1)
 -- plotSamples :: [R2]
 
 
+instance Plottable (Shade P2) where
+  plot shade = DynamicPlottable{
+                relevantRange_x = const $ pure xRange
+              , relevantRange_y = const $ pure yRange
+              , isTintableMonochromic = True
+              , axesNecessity = 1
+              , dynamicPlot = plot
+              }
+   where plot grWS@(GraphWindowSpec{..}) = Plot mempty $ foldMap axLine eigVs 
+          where (pixWdth, pixHght) = pixelDim grWS
+                axLine eigV = simpleLine (ctr .-~^ eigV) (ctr .+~^ eigV)
+         (xRange,yRange) = shadeExtends shade
+         ctr = shadeCtr shade
+         eigVs = eigenSpan $ shadeExpanse shade
+
+instance Plottable (SimpleTree P2) where
+  plot (GenericTree Nothing) = plot ([] :: [SimpleTree P2])
+  plot (GenericTree (Just (ctr, root)))
+           = DynamicPlottable{
+                relevantRange_x = const $ pure xRange
+              , relevantRange_y = const $ pure yRange
+              , isTintableMonochromic = True
+              , axesNecessity = 1
+              , dynamicPlot = plot
+              }
+   where plot _ = Plot mempty $ go 4 ctr (treeBranches root)
+          where go w bctr = foldMap (\(c,GenericTree b)
+                                       -> autoDashLine w bctr c
+                                          <> go (w*0.6) c b     )
+         (xRange, yRange) = let allPoints = gPts tree
+                                (xmin,xmax) = (minimum&&&maximum) $ (^._x) <$> allPoints
+                                (ymin,ymax) = (minimum&&&maximum) $ (^._y) <$> allPoints
+                            in (xmin ... xmax, ymin ... ymax)
+          where gPts (GenericTree brchs) = foldr (\(c,b) r -> c : gPts b ++ r) [] brchs
+         tree = GenericTree [(ctr,root)]
+
+instance Plottable (Trees P2) where
+  plot (GenericTree ts) = plot $ (GenericTree . Just) <$> ts
+
+pixelDim :: GraphWindowSpec -> (R, R)
+pixelDim grWS = ( graphWindowWidth grWS / fromIntegral (xResolution grWS)
+                , graphWindowHeight grWS / fromIntegral (yResolution grWS) )
 
 
 
@@ -644,6 +694,10 @@ moveStepRel (δx,δy) (ζx,ζy) (GraphWindowSpec l r b t xRes yRes clSchm)
        r' = mx' + qx'                ; t' = my' + qy'
        zoomSafeGuard m = max (1e-250 + abs m*1e-6) . min 1e+250
 
+graphWindowWidth, graphWindowHeight :: GraphWindowSpec -> R
+graphWindowWidth grWS = rBound grWS - lBound grWS
+graphWindowHeight grWS = tBound grWS - bBound grWS
+
 
 
 data Interval r = Interval !r !r deriving (Show)
@@ -666,6 +720,11 @@ infixl 6 ...
 (...) :: (Ord r) => r -> r -> Interval r
 x1...x2 | x1 < x2    = Interval x1 x2
         | otherwise  = Interval x2 x1
+
+infixl ±
+(±) :: Real v => v -> v -> Interval v
+c ± δ | δ>0        = Interval (c-δ) (c+δ)
+      | otherwise  = Interval (c+δ) (c-δ)
 
 spInterval :: r -> Interval r
 spInterval x = Interval x x
@@ -690,6 +749,11 @@ xyRanges bb = let Just (c₁, c₂) = DiaBB.getCorners bb
 
 
 
+shadeExtends :: Shade P2 -> (Interval R, Interval R)
+shadeExtends shade
+      = ( (ctr^._x) ± sqrt (metric' expa $ 1^&0)
+        , (ctr^._y) ± sqrt (metric' expa $ 0^&1) )
+ where ctr = shadeCtr shade; expa = shadeExpanse shade
 
 
 
@@ -1193,7 +1257,14 @@ superfluent = -1e+32 :: Necessity
 
 
 simpleLine :: Dia.P2 -> Dia.P2 -> Diagram
-simpleLine p q = Dia.fromVertices [p,q] & Dia.lwO 2
+simpleLine = simpleLine' 2
+
+simpleLine' :: Double -> Dia.P2 -> Dia.P2 -> Diagram
+simpleLine' w p q = Dia.fromVertices [p,q] & Dia.lwO w
+
+autoDashLine :: Double -> Dia.P2 -> Dia.P2 -> Diagram
+autoDashLine w p q = simpleLine' (max 1 w) p q
+       & if w < 1 then Dia.dashingO [w*6, 3] 0 else id
 
 
 
