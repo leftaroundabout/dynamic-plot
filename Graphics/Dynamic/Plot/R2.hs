@@ -36,6 +36,7 @@ module Graphics.Dynamic.Plot.R2 (
         , fnPlot, paramPlot
         , continFnPlot
         , tracePlot
+        , PlainGraphics
         -- ** View selection
         , xInterval, yInterval
         -- ** View dependance
@@ -146,11 +147,20 @@ instance PseudoAffine P2 where
 
 type R = Double
 
-type Diagram = Dia.Diagram Cairo.B R2
+-- | Use 'plot' to directly include any 'Dia.Diagram'. (All 'DynamicPlottable'
+--   is internally rendered to that type.)
+-- 
+--   The exact type may change in the future: we'll probably stay with @diagrams@,
+--   but when document output is introduced the backend might become variable 
+--   or something else but 'Cairo.Cairo'.
+type PlainGraphics = Dia.Diagram Cairo.B R2
 
 
 
 
+-- | Class for types that can be plotted in some canonical, &#x201c;obvious&#x201d;
+--   way. If you want to display something and don't know about any specific caveats,
+--   try just using 'plot'!
 class Plottable p where
   plot :: p -> DynamicPlottable
 
@@ -215,7 +225,7 @@ instance (Plottable p) => Plottable [p] where
             }
    where l = map plot l0
 
-instance Plottable Diagram where
+instance Plottable PlainGraphics where
   plot d = DynamicPlottable{
              relevantRange_x = const $ Option rlx
            , relevantRange_y = const $ Option rly
@@ -761,7 +771,7 @@ shadeExtends shade
 
 data Plot = Plot {
        plotAnnotations :: [Annotation]
-     , getPlot :: Diagram
+     , getPlot :: PlainGraphics
   }
 instance Semigroup Plot where
   Plot a1 d1 <> Plot a2 d2 = Plot (a1<>a2) (d1<>d2)
@@ -857,7 +867,7 @@ plotWindow graphs' = do
                                 . Dia.scaleX (fromInt canvasX / 2)
                                 . Dia.scaleY (-fromInt canvasY / 2)
                                 . Dia.translate (1 ^& (-1))
-                                . Dia.withEnvelope (Dia.rect 2 2 :: Diagram)
+                                . Dia.withEnvelope (Dia.rect 2 2 :: PlainGraphics)
                                   $ dia
                 drawWindow <- GTK.widgetGetDrawWindow drawA
                 -- putStrLn $ "redrawing"++show(canvasX,canvasY)
@@ -944,8 +954,8 @@ plotWindow graphs' = do
    
    let refreshScreen = do
            currentView@(GraphWindowSpec{..}) <- readIORef viewState
-           let normaliseView :: Diagram -> Diagram
-               normaliseView = (Dia.scaleX xUnZ :: Diagram->Diagram) . Dia.scaleY yUnZ
+           let normaliseView :: PlainGraphics -> PlainGraphics
+               normaliseView = (Dia.scaleX xUnZ :: PlainGraphics->PlainGraphics) . Dia.scaleY yUnZ
                                 . Dia.translate (Dia.r2(-x₀,-y₀))
                   where xUnZ = 1/w; yUnZ = 1/h
                w = (rBound - lBound)/2; h = (tBound - bBound)/2
@@ -966,7 +976,7 @@ plotWindow graphs' = do
                        aspect  = w * fromIntegral yResolution
                                                          / (h * fromIntegral xResolution)
                        fontPts = 12
-                       transform :: Diagram -> Diagram
+                       transform :: PlainGraphics -> PlainGraphics
                        transform = normaliseView . clr
                          where clr | Just c <- graphColor  = Dia.lcA c . Dia.fcA c
                                    | otherwise             = id
@@ -1058,7 +1068,7 @@ autoDefaultView graphs = GraphWindowSpec l r b t defResX defResY defaultColourSc
   
 
 
--- render :: Diagram -> IO()
+-- render :: PlainGraphics -> IO()
 -- render = Dia.clearRender
 
 defResX, defResY :: Integral i => i
@@ -1256,13 +1266,13 @@ superfluent = -1e+32 :: Necessity
 
 
 
-simpleLine :: Dia.P2 -> Dia.P2 -> Diagram
+simpleLine :: Dia.P2 -> Dia.P2 -> PlainGraphics
 simpleLine = simpleLine' 2
 
-simpleLine' :: Double -> Dia.P2 -> Dia.P2 -> Diagram
+simpleLine' :: Double -> Dia.P2 -> Dia.P2 -> PlainGraphics
 simpleLine' w p q = Dia.fromVertices [p,q] & Dia.lwO w
 
-autoDashLine :: Double -> Dia.P2 -> Dia.P2 -> Diagram
+autoDashLine :: Double -> Dia.P2 -> Dia.P2 -> PlainGraphics
 autoDashLine w p q = simpleLine' (max 1 w) p q
        & if w < 1 then Dia.dashingO [w*6, 3] 0 else id
 
@@ -1331,7 +1341,7 @@ defaultTxtStyle = mempty & Dia.fontSizeO 9
                          & Dia.lc Dia.grey
 
 
-prerenderAnnotation :: DiagramTK -> Annotation -> Diagram
+prerenderAnnotation :: DiagramTK -> Annotation -> PlainGraphics
 prerenderAnnotation (DiagramTK{ textTools = TextTK{..}, viewScope = GraphWindowSpec{..} }) 
                     (Annotation{..})
        | TextAnnotation (PlainText str) (TextAlignment{..}) <- getAnnotation
