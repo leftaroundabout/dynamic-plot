@@ -134,10 +134,11 @@ instance HasMetric' R2 where
   (<.>^) = (<.>)
   functional f = f(1^&0) ^& f(0^&1)
   doubleDual = id; doubleDual' = id
-instance PseudoAffine P2 where
-  type PseudoDiff P2 = R2
-  p.-~.q = pure(p.-.q)
+instance Semimanifold P2 where
+  type Trajectory P2 = R2
   (.+~^) = (.+^)
+instance PseudoAffine P2 where
+  p.-~.q = pure(p.-.q)
 
 
 
