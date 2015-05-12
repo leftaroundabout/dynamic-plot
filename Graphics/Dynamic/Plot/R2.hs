@@ -36,6 +36,7 @@ module Graphics.Dynamic.Plot.R2 (
         , fnPlot, paramPlot
         , continFnPlot
         , tracePlot
+        , lineSegPlot
         , PlainGraphics
         -- ** View selection
         , xInterval, yInterval, forceXRange, forceYRange
@@ -545,6 +546,22 @@ instance Plottable (Int -.^> P2) where
 --   isn't efficient enough and will get slow for more than some 100000 data points.
 tracePlot :: [(Double, Double)] -> DynamicPlottable
 tracePlot = plot . recursiveSamples . map ((,()) . Dia.p2)
+
+-- | Simply connect the points by straight line segments, in the given order.
+--   Beware that this will always slow down the performance when the list is large;
+--   there is no &#201c;statistic optimisation&#201d; as in 'tracePlot'.
+lineSegPlot :: [(Double, Double)] -> DynamicPlottable
+lineSegPlot ps = DynamicPlottable{
+               relevantRange_x = atLeastInterval' $ foldMap (pure . spInterval . fst) ps
+             , relevantRange_y = atLeastInterval' $ foldMap (pure . spInterval . snd) ps
+             , isTintableMonochromic = True
+             , axesNecessity = 1
+             , dynamicPlot = plot }
+ where plot (GraphWindowSpec{..}) = Plot [] (trace ps)
+        where trace (p:q:ps) = simpleLine (Dia.p2 p) (Dia.p2 q) <> trace (q:ps)
+              trace _ = mempty
+
+
   
 
 flattenPCM_resoCut :: BoundingBox R2 -> R -> (R-.^>R) -> [(P2, DevBoxes R)]
@@ -816,7 +833,10 @@ otherDimDependence :: (Interval r->Interval r) -> RangeRequest r
 otherDimDependence = OtherDimDependantRange . fmap
 
 atLeastInterval :: Interval r -> RangeRequest r
-atLeastInterval i = OtherDimDependantRange $ const (pure i)
+atLeastInterval = atLeastInterval' . pure
+
+atLeastInterval' :: Option (Interval r) -> RangeRequest r
+atLeastInterval' = OtherDimDependantRange . const
 
                 
 
@@ -1315,7 +1335,7 @@ xInterval :: (Double, Double) -> DynamicPlottable
 -- | Like 'xInterval', this only affects what range is plotted. However, it doesn't merely
 --   request that a certain interval /should be visible/, but actually enforces particular
 --   values for the left and right boundary. Nothing outside the range will be plotted
---   (unless there is another, contradicting 'forceXRange'.)
+--   (unless there is another, contradicting 'forceXRange').
 forceXRange :: (Double, Double) -> DynamicPlottable
 
 yInterval, forceYRange :: (Double, Double) -> DynamicPlottable
