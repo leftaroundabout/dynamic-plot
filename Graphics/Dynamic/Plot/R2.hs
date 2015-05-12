@@ -134,6 +134,11 @@ instance HasMetric' R2 where
   (<.>^) = (<.>)
   functional f = f(1^&0) ^& f(0^&1)
   doubleDual = id; doubleDual' = id
+instance Semimanifold R2 where
+  type Needle R2 = R2
+  (.+~^) = (^+^)
+instance PseudoAffine R2 where
+  p.-~.q = pure(p^-^q)
 instance Semimanifold P2 where
   type Needle P2 = R2
   (.+~^) = (.+^)
