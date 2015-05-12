@@ -38,7 +38,7 @@ module Graphics.Dynamic.Plot.R2 (
         , tracePlot
         , PlainGraphics
         -- ** View selection
-        , xInterval, yInterval
+        , xInterval, yInterval, forceXRange, forceYRange
         -- ** View dependance
         , ViewXCenter(..), ViewYCenter(..), ViewWidth(..), ViewHeight(..)
         , ViewXResolution(..), ViewYResolution(..)
@@ -1310,20 +1310,35 @@ autoDashLine w p q = simpleLine' (max 1 w) p q
 -- Note there is nothing special about these &#x201c;flag&#x201d; objects: /any/ 'Plottable' can request a 
 -- certain view, e.g. for a discrete point cloud it's obvious and a function defines at least
 -- a @y@-range for a given @x@-range. Only use explicit range when necessary.
-xInterval, yInterval :: (Double, Double) -> DynamicPlottable
+xInterval :: (Double, Double) -> DynamicPlottable
+
+-- | Like 'xInterval', this only affects what range is plotted. However, it doesn't merely
+--   request that a certain interval /should be visible/, but actually enforces particular
+--   values for the left and right boundary. Nothing outside the range will be plotted
+--   (unless there is another, contradicting 'forceXRange'.)
+forceXRange :: (Double, Double) -> DynamicPlottable
+
+yInterval, forceYRange :: (Double, Double) -> DynamicPlottable
+
 xInterval (l,r) = DynamicPlottable { 
                relevantRange_x = atLeastInterval $ Interval l r
              , relevantRange_y = mempty
-             , isTintableMonochromic = False
-             , axesNecessity = 0
-             , dynamicPlot = plot }
+             , isTintableMonochromic = False, axesNecessity = 0, dynamicPlot = plot }
+ where plot _ = Plot mempty mempty
+forceXRange (l,r) = DynamicPlottable { 
+               relevantRange_x = MustBeThisRange $ Interval l r
+             , relevantRange_y = mempty
+             , isTintableMonochromic = False, axesNecessity = 0, dynamicPlot = plot }
  where plot _ = Plot mempty mempty
 yInterval (b,t) = DynamicPlottable { 
                relevantRange_x = mempty
              , relevantRange_y = atLeastInterval $ Interval b t
-             , isTintableMonochromic = False
-             , axesNecessity = 0
-             , dynamicPlot = plot }
+             , isTintableMonochromic = False, axesNecessity = 0, dynamicPlot = plot }
+ where plot _ = Plot mempty mempty
+forceYRange (b,t) = DynamicPlottable { 
+               relevantRange_x = mempty
+             , relevantRange_y = MustBeThisRange $ Interval b t
+             , isTintableMonochromic = False, axesNecessity = 0, dynamicPlot = plot }
  where plot _ = Plot mempty mempty
  
 
