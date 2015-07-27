@@ -38,6 +38,7 @@ module Graphics.Dynamic.Plot.R2 (
         , tracePlot
         , lineSegPlot
         , PlainGraphics
+        , shapePlot
         -- ** View selection
         , xInterval, yInterval, forceXRange, forceYRange
         -- ** View dependance
@@ -247,6 +248,14 @@ instance Plottable PlainGraphics where
                            , c1^._y ... c2^._y )
          plot _ = Plot [] d
 
+
+-- | Use a generic diagram within a plot.
+-- 
+--   Like with the various specialised function plotters, this will get automatically
+--   tinted to be distinguishable from other plot objects in the same window.
+--   Simply use 'plot' instead, if you want to view the diagram as-is.
+shapePlot :: PlainGraphics -> DynamicPlottable
+shapePlot d = (plot d) { isTintableMonochromic = True, axesNecessity = 0 }
 
 
   
