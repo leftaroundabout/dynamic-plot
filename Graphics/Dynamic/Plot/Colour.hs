@@ -7,7 +7,9 @@
 -- Stability   : experimental
 -- Portability : requires GHC>6 extensions
 
-module Graphics.Dynamic.Plot.Colour where
+module Graphics.Dynamic.Plot.Colour ( module Graphics.Dynamic.Plot.Colour
+                                    , Colour, AColour, FColour, ColourScheme
+                                    ) where
 
 
 import qualified Data.Colour as DCol
@@ -16,23 +18,8 @@ import qualified Data.Colour.Names as N
 import Data.Colour.CIE hiding (Colour)
 import qualified Data.Colour.CIE.Illuminant as Illum
 
+import Graphics.Dynamic.Plot.Internal.Types
 
-type FColour = DCol.Colour Double
-type AColour = DCol.AlphaColour Double
-
--- | Unlike the typical types such as 'Draw.Color', this one has /semantic/ 
---   more than physical meaning.
-data Colour = BaseColour BaseColour
-            | Contrast BaseColour
-            | Paler Colour
-            | CustomColour FColour
-            deriving (Eq)
-data BaseColour = Neutral -- ^ Either black or white, depending on the context.
-                | Red     -- ^ Contrast cyan.
-                | Yellow  -- ^ Contrast violet.
-                | Green   -- ^ Contrast magenta.
-                | Blue    -- ^ Contrast orange.
-                deriving (Eq, Show, Enum)
 
 
 neutral, contrast, grey
@@ -56,7 +43,6 @@ opposite (Contrast c) = BaseColour c
 opposite (Paler c) = Paler $ opposite c
 opposite (CustomColour c) = CustomColour $ hueInvert c
 
-type ColourScheme = Colour -> AColour
 
 defaultColourScheme :: ColourScheme
 defaultColourScheme (BaseColour Neutral) = opaque N.black

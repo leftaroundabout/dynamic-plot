@@ -37,7 +37,7 @@ module Graphics.Dynamic.Plot.R2 (
         , continFnPlot
         , tracePlot
         , lineSegPlot
-        , PlainGraphics
+        , PlainGraphicsR2
         , shapePlot
         -- ** View selection
         , xInterval, yInterval, forceXRange, forceYRange
@@ -48,19 +48,18 @@ module Graphics.Dynamic.Plot.R2 (
         , dynamicAxes, noDynamicAxes
         -- ** Plot type
         , DynamicPlottable
+        -- ** Legacy
+        , PlainGraphics
         ) where
 
 import Graphics.Dynamic.Plot.Colour
+import Graphics.Dynamic.Plot.Internal.Types
+import Graphics.Text.Annotation
 
 
 
 import qualified Prelude
 
--- import Graphics.DrawingCombinators ((%%), R, R2)
--- import qualified Graphics.DrawingCombinators as Draw
--- import qualified Graphics.UI.GLFW as GLFW
--- import qualified Graphics.Rendering.OpenGL as OpenGL
--- import Graphics.Rendering.OpenGL (($=))
 import Diagrams.Prelude (R2, P2, (^&), (&), _x, _y)
 import qualified Diagrams.Prelude as Dia
 import qualified Diagrams.TwoD.Size as Dia
@@ -124,44 +123,8 @@ import Data.Time
 
 
 
-instance FiniteDimensional R2 where
-  dimension = Tagged 2
-  basisIndex = Tagged bi where bi b = if (basisValue b::R2)^._x > 0.5 then 0 else 1
-  indexBasis = Tagged ib
-   where ib 0 = bx; ib 1 = by
-         [(bx,_), (by,_)] = decompose (1^&1 :: R2)
-  completeBasis = Tagged . fmap fst $ decompose (1^&1 :: R2)
-instance HasMetric' R2 where
-  type DualSpace R2 = R2
-  (<.>^) = (<.>)
-  functional f = f(1^&0) ^& f(0^&1)
-  doubleDual = id; doubleDual' = id
-instance Semimanifold R2 where
-  type Needle R2 = R2
-  (.+~^) = (^+^)
-instance PseudoAffine R2 where
-  p.-~.q = pure(p^-^q)
-instance Semimanifold P2 where
-  type Needle P2 = R2
-  (.+~^) = (.+^)
-instance PseudoAffine P2 where
-  p.-~.q = pure(p.-.q)
 
-
-
-(^) :: Num n => n -> Int -> n
-(^) = (Prelude.^)
-
-
-type R = Double
-
--- | Use 'plot' to directly include any 'Dia.Diagram'. (All 'DynamicPlottable'
---   is internally rendered to that type.)
--- 
---   The exact type may change in the future: we'll probably stay with @diagrams@,
---   but when document output is introduced the backend might become variable 
---   or something else but 'Cairo.Cairo'.
-type PlainGraphics = Dia.Diagram Cairo.B R2
+type PlainGraphics = PlainGraphicsR2
 
 
 
@@ -193,7 +156,7 @@ instance Plottable (Double :--> Double) where
           where (fgb, fgt) = (minimum &&& maximum) [f $ l, f $ m, f $ r]
                 m = l + (r-l) * 0.352479608143
          
-         plot (GraphWindowSpec{..}) = curve `deepseq` Plot [] (trace curve)
+         plot (GraphWindowSpecR2{..}) = curve `deepseq` Plot [] (trace curve)
           where curve :: [Dia.P2]
                 curve = map convℝ² $ 𝓒⁰.finiteGraphContinℝtoℝ mWindow f
                 mWindow = 𝓒⁰.GraphWindowSpec (c lBound) (c rBound) (c bBound) (c tBound) 
@@ -211,7 +174,7 @@ instance Plottable (Double :--> (Double, Double)) where
            , isTintableMonochromic = True
            , axesNecessity = 1
            , dynamicPlot = plot }
-   where plot (GraphWindowSpec{..}) = curves `deepseq` Plot [] (foldMap trace curves)
+   where plot (GraphWindowSpecR2{..}) = curves `deepseq` Plot [] (foldMap trace curves)
           where curves :: [[Dia.P2]]
                 curves = map (map convℝ²) $ 𝓒⁰.finiteGraphContinℝtoℝ² mWindow f
                 mWindow = 𝓒⁰.GraphWindowSpec (c lBound) (c rBound) (c bBound) (c tBound) 
@@ -260,202 +223,6 @@ shapePlot d = (plot d) { isTintableMonochromic = True, axesNecessity = 0 }
 
   
 
-data Pair p = Pair !p !p
-       deriving (Hask.Functor, Show, Eq, Ord)
-data Triple p = Triple !p !p !p
-       deriving (Hask.Functor, Show, Eq, Ord)
-
-data DiffList a = DiffList { getDiffList :: [a]->[a], diffListLen :: Int }
-diffList :: Arr.Vector a -> DiffList a
-diffList l = DiffList (Arr.toList l++) (Arr.length l)
-
-instance Semigroup (DiffList a) where
-  DiffList dl n <> DiffList dl' n' = DiffList (dl . dl') (n+n')
-instance Monoid (DiffList a) where
-  mappend = (<>); mempty = DiffList id 0
-
-
-newtype SplitList a = SplitList { getSplList :: Arr.Vector a }
-       deriving (Hask.Functor, Monoid)
-presplitList :: [a] -> SplitList a
-presplitList = SplitList . Arr.fromList
-
-splitEvenly :: Int -> SplitList a -> Either (Arr.Vector a) [SplitList a]
-splitEvenly k _ | k < 1  = error "Can't split a list to less than one part."
-splitEvenly k (SplitList v)
-  | k >= n     = Left v
-  | otherwise  = Right $ splits splitIs 0
- where splitIs = take k . map round . tail
-                    $ iterate (+ (fromIntegral n/fromIntegral k :: Double)) 0
-       splits [_] i₀ = [SplitList $ Arr.drop i₀ v]
-       splits (i:is) i₀ = SplitList (Arr.slice i₀ (i-i₀) v) : splits is i
-       n = Arr.length v
-
-instance Semigroup (SplitList a) where
-  SplitList l <> SplitList l' = SplitList (l Arr.++ l')
-
-fromDiffList :: DiffList a -> SplitList a
-fromDiffList (DiffList f _) = SplitList . Arr.fromList $ f[]
-
-
-
-
-data LinFitParams y = LinFitParams { constCoeff :: y
-                                   , linCoeff :: Diff y }
-deriving instance (AffineSpace y, Show y, Show (Diff y)) => Show (LinFitParams y)
-
-
-linFitMeanInCtrdUnitIntv ::
-     (AffineSpace y, v~Diff y, VectorSpace v, Fractional (Scalar v))
-                                 => LinFitParams y -> y
-linFitMeanInCtrdUnitIntv (LinFitParams{..}) = constCoeff
-
-
-
-data DevBoxes y = DevBoxes { deviations :: HerMetric' (Diff y)
-                           , maxDeviation :: Scalar (Diff y)   }
-                
-
-
-
-
-data PCMRange x = PCMRange { pcmStart, pcmSampleDuration :: x } deriving (Show)
- 
-data RecursiveSamples' n x y t
-   = RecursivePCM { rPCMlinFit :: LinFitParams y
-                  , details :: Either (Pair (RecursiveSamples' n x y t))
-                                      (Arr.Vector (y,t))
-                  , pFitDeviations :: DevBoxes y
-                  , samplingSpec :: PCMRange x
-                  , splIdLen :: Int
-                  , rPCMNodeInfo :: n
-                  }
-instance Hask.Functor (RecursiveSamples' n x y) where
-  fmap f (RecursivePCM l d v s n i) = RecursivePCM l d' v s n i
-   where d' = case d of Left rs' -> Left (fmap (fmap f) rs')
-                        Right ps -> Right $ fmap (second f) ps
-
-fmapRPCMNodeInfo :: (n->n') -> RecursivePCM n x y -> RecursivePCM n' x y
-fmapRPCMNodeInfo f (RecursivePCM l d v s n i) = RecursivePCM l d' v s n $ f i
- where d' = case d of Left rs' -> Left (fmap (fmapRPCMNodeInfo f) rs')
-                      Right ps -> Right ps
-
-type RecursiveSamples = RecursiveSamples' ()
-type RecursivePCM n x y = RecursiveSamples' n x y ()
-type (x-.^>y) = RecursivePCM () x y
-
-recursiveSamples' :: forall x y v t .
-          ( VectorSpace x, Real (Scalar x)
-          , AffineSpace y, v~Diff y, InnerSpace v, HasMetric v, RealFloat (Scalar v) )
-                     => PCMRange x -> [(y,t)] -> RecursiveSamples x y t
-recursiveSamples' xrng_g ys = calcDeviations . go xrng_g $ presplitList ys
-    where go :: PCMRange x -> SplitList (y,t) -> RecursiveSamples' (Arr.Vector y) x y t
-          go xrng@(PCMRange xl wsp) l@(SplitList arr) = case splitEvenly 2 l of
-             Right sps
-              | [sp1, sp2] <- lIndThru xl sps
-                     -> let pFit = solveToLinFit
-                               $ (linFitMeanInCtrdUnitIntv.rPCMlinFit) <$> [sp1,sp2]
-                        in RecursivePCM pFit
-                                        (Left $ Pair sp1 sp2)
-                                        (undefined)
-                                        xrng (Arr.length arr)
-                                        (fmap fst arr)
-             Right _ -> evenSplitErr
-             Left pSpls -> RecursivePCM (solveToLinFit $ Arr.toList (fmap fst pSpls))
-                                        (Right $ pSpls)
-                                        (undefined)
-                                        xrng (Arr.length arr)
-                                        (fmap fst arr)
-           where lIndThru _ [] = []
-                 lIndThru x₀₁ (sp₁@(SplitList arr₁):sps)
-                        = let x₀₂ = x₀₁ ^+^ fromIntegral (Arr.length arr₁) *^ wsp
-                          in go (PCMRange x₀₁ wsp) sp₁ : lIndThru x₀₂ sps          
-          evenSplitErr = error "'splitEvenly' returned wrong number of slices."
-          
-          calcDeviations :: RecursiveSamples' (Arr.Vector y) x y t
-                         -> RecursiveSamples x y t
-          calcDeviations = cdvs Nothing Nothing
-           where cdvs lPFits rPFits
-                         rPCM@( RecursivePCM pFit dtls _ sSpc@(PCMRange xl wsp) slLn pts )
-                    = RecursivePCM pFit dtls' (DevBoxes stdDev maxDev) sSpc slLn ()
-                   where stdDev = (^/ fromIntegral slLn) . sumV $ projector' <$> msqs
-                         maxDev =     sqrt           . maximum $ magnitudeSq <$> msqs
-                         msqs = [ (y .-. ff x)
-                                | (x,y) <- normlsdIdd $ SplitList pts ]
-                         ff = l₀splineRep (Pair lPFits rPFits) rPCM
-                         dtls' = case dtls of
-                             Left (Pair r₁ r₂)
-                               -> let r₁' = cdvs (rRoute=<<lPFits) (Just r₂) r₁
-                                      r₂' = cdvs (Just r₁) (lRoute=<<rPFits) r₂
-                                  in Left $ Pair r₁' r₂'
-                             Right pSpls -> Right pSpls
-                         (LinFitParams b a) = pFit
-lRoute, rRoute :: RecursiveSamples' n x y t -> Maybe (RecursiveSamples' n x y t)
-lRoute (RecursivePCM {details = Right _}) = Nothing
-lRoute (RecursivePCM {details = Left (Pair l _)}) = Just l
-rRoute (RecursivePCM {details = Right _}) = Nothing
-rRoute (RecursivePCM {details = Left (Pair _ r)}) = Just r
-                         
-
-recursiveSamples :: 
-          ( AffineSpace y, v~Diff y, InnerSpace v, HasMetric v, RealFloat (Scalar v) )
-                     => [(y,t)] -> RecursiveSamples Int y t
-recursiveSamples = recursiveSamples' (PCMRange 0 1)
-
-recursivePCM :: ( VectorSpace x, Real (Scalar x)
-                , AffineSpace y, v~Diff y, InnerSpace v, HasMetric v, RealFloat (Scalar v) )
-                     => PCMRange x -> [y] -> x-.^>y
-recursivePCM xrng_g = recursiveSamples' xrng_g . fmap (,())
-
-
-splineRep :: ( AffineSpace y, v~Diff y, InnerSpace v, Floating (Scalar v), Ord (Scalar v) )
-                     => Int         -- ^ Number of subdivisions to \"go down\".
-                        -> (R-.^>y) -> R -> y
-splineRep n₀ rPCM@(RecursivePCM _ _ _ (PCMRange xl wsp) slLn ())
-              = go n₀ Nothing Nothing rPCM . normaliseR
- where go n lPFits rPFits (RecursivePCM _ (Left (Pair r₁ r₂)) _ _ slLn ())
-         | n>0, f₁ <- go (n-1) (rRoute=<<lPFits) (Just r₂) r₁
-              , f₂ <- go (n-1) (Just r₁) (lRoute=<<rPFits) r₂
-                =  \x -> if x<0.5 then f₁ $ x*2
-                                  else f₂ $ x*2 - 1
-       go _ lPFits rPFits rPCM = l₀splineRep (Pair lPFits rPFits) rPCM
-       
-       normaliseR x = (x - xl)/(wsp * fromIntegral slLn)
-
-l₀splineRep ::
-          ( VectorSpace x, Num (Scalar x)
-          , AffineSpace y, v~Diff y, VectorSpace v, Floating (Scalar v), Ord (Scalar v) )
-                     => Pair (Maybe (RecursiveSamples' n x y t'))
-                           -> (RecursiveSamples' n x y t)
-                            -> R{-Sample position normalised to [0,1]-} -> y
-l₀splineRep (Pair lPFits rPFits)
-            (RecursivePCM{ rPCMlinFit=LinFitParams b a
-                         , samplingSpec=PCMRange x₀ wsp
-                         , splIdLen = n })
-               = f
- where f x | x < 0.5, t <- realToFrac $ 0.5 - x
-           , Just(RecursivePCM{rPCMlinFit=LinFitParams b'l a'l}) <- lPFits
-                        = b .+^ (b'l.-.b) ^* h₀₁ t
-                            .-^ a ^* h₁₀ t
-                            .-^ a'l ^* h₁₁ t
-           | x > 0.5, t <- realToFrac $ x - 0.5
-           , Just(RecursivePCM{rPCMlinFit=LinFitParams b'r a'r}) <- rPFits
-                        = b .+^ (b'r.-.b) ^* h₀₁ t
-                            .+^ a ^* h₁₀ t
-                            .+^ a'r ^* h₁₁ t
-           | t <- realToFrac $ x-0.5
-                        = b .+^ t*^a
-       h₀₀ t = (1 + 2*t) * (1 - t)^2  -- Cubic Hermite splines
-       h₀₁ t = t^2 * (3 - 2*t)
-       h₁₀ t = t * (1 - t)^2
-       h₁₁ t = t^2 * (t - 1)
-
-
-
-rPCMSample :: (AffineSpace y, v~Diff y, InnerSpace v, HasMetric v, RealFloat (Scalar v))
-       => Interval R -> R -> (R->y) -> R-.^>y
-rPCMSample (Interval l r) δx f = recursivePCM (PCMRange l δx) [f x | x<-[l, l+δx .. r]] 
-                   
 
 instance Plottable (R-.^>R) where
   plot rPCM@(RecursivePCM gPFit gDetails gFitDevs (PCMRange x₀ wsp) gSplN ())
@@ -468,7 +235,7 @@ instance Plottable (R-.^>R) where
               }
    where 
          xr = wsp * fromIntegral gSplN
-         plot (GraphWindowSpec{..}) = Plot [] . trace $ flattenPCM_resoCut bb δx rPCM
+         plot (GraphWindowSpecR2{..}) = Plot [] . trace $ flattenPCM_resoCut bb δx rPCM
           where 
                 trace dPath = fold [ trMBound [ p & _y +~ s*δ
                                              | (p, DevBoxes _ δ) <- dPath ]
@@ -506,7 +273,7 @@ instance Plottable (RecursiveSamples Int P2 (DevBoxes P2)) where
               , axesNecessity = 1
               , dynamicPlot = plot
               }
-   where plot (GraphWindowSpec{..}) = Plot []
+   where plot (GraphWindowSpecR2{..}) = Plot []
                         . foldMap trStRange
                         $ flattenPCM_P2_resoCut bbView [(1/δxl)^&0, 0^&(1/δyl)] rPCM
           where trStRange (Left appr) = trSR $ map calcNormDev appr
@@ -566,7 +333,7 @@ lineSegPlot ps = DynamicPlottable{
              , isTintableMonochromic = True
              , axesNecessity = 1
              , dynamicPlot = plot }
- where plot (GraphWindowSpec{..}) = Plot [] (trace ps)
+ where plot (GraphWindowSpecR2{..}) = Plot [] (trace ps)
         where trace (p:q:ps) = simpleLine (Dia.p2 p) (Dia.p2 q) <> trace (q:ps)
               trace _ = mempty
 
@@ -619,50 +386,12 @@ turnLeft :: R2 -> R2
 turnLeft (DiaTypes.R2 x y) = DiaTypes.R2 (-y) x
 
 
-rPCM_R2_boundingBox :: (RecursiveSamples x P2 t) -> BoundingBox R2
-rPCM_R2_boundingBox rPCM@(RecursivePCM pFit _ (DevBoxes dev _) _ _ ())
-          =    Interval (xl - ux*2) (xr + ux*2)
-           -*| Interval (yb - uy*2) (yt + uy*2)
- where pm = constCoeff pFit
-       p₀ = pm .-^ linCoeff pFit; pe = pm .+^ linCoeff pFit
-       ux = metric' dev $ 1^&0; uy = metric' dev $ 0^&1
-       [xl,xr] = sort[p₀^._x, pe^._x]; [yb,yt] = sort[p₀^._y, pe^._y]
-
-
-
-solveToLinFit :: (AffineSpace y, v~Diff y, VectorSpace v, Floating (Scalar v))
-                        => [y] -> LinFitParams y
-solveToLinFit [] = error
-        "LinFit solve under-specified (need at least one reference point)."
-solveToLinFit [y] = LinFitParams { constCoeff=y, linCoeff=zeroV }
-solveToLinFit [y₁,y₂]  -- @[x₁, x₂] ≡ [-½, ½]@, and @f(½) = (y₁+y₂)/2 + ½·(y₂-y₁) = y₂@.
-                       -- (Likewise for @f(-½) = y₁@).
-      = LinFitParams { constCoeff = alerp y₁ y₂ 0.5
-                     , linCoeff = y₂ .-. y₁ }
-solveToLinFit _ = error "LinFit solve over-specified (can't solve more than two points)."
-
-
-normlsdIdd :: Fractional x => SplitList y -> [(x, y)]
-normlsdIdd (SplitList l) = zip [ (k+1/2)/fromIntegral (Arr.length l)
-                               | k<-iterate(+1)0] $ Arr.toList l
-
-
-rPCMLinFitRange :: (R-.^>R) -> Interval R -> Interval R
-rPCMLinFitRange rPCM@(RecursivePCM _ _ (DevBoxes _ δ) _ _ ()) ix
-             = let (Interval b t) = rppm rPCM ix in Interval (b-δ) (t+δ)
- where rppm rPCM@(RecursivePCM (LinFitParams b a) _ _ _ _ ()) (Interval l r)
-         | r < (-1)   = spInterval $ b - a
-         | l > 1      = spInterval $ b + a
-         | l < (-1)   = rppm rPCM $ Interval (-1) r
-         | r > 1      = rppm rPCM $ Interval l 1
-         | otherwise  = (b + l*a) ... (b + r*a)
 
 
 
 rPCMPlot :: [R] -> DynamicPlottable
 rPCMPlot = plot . recursivePCM (PCMRange (0 :: Double) 1)
 
--- plotSamples :: [R2]
 
 
 instance Plottable (Shade P2) where
@@ -673,7 +402,7 @@ instance Plottable (Shade P2) where
               , axesNecessity = 1
               , dynamicPlot = plot
               }
-   where plot grWS@(GraphWindowSpec{..}) = Plot mempty $ foldMap axLine eigVs 
+   where plot grWS@(GraphWindowSpecR2{..}) = Plot mempty $ foldMap axLine eigVs 
           where (pixWdth, pixHght) = pixelDim grWS
                 axLine eigV = simpleLine (ctr .-~^ eigV) (ctr .+~^ eigV)
          (xRange,yRange) = shadeExtends shade
@@ -704,31 +433,19 @@ instance Plottable (SimpleTree P2) where
 instance Plottable (Trees P2) where
   plot (GenericTree ts) = plot $ (GenericTree . Just) <$> ts
 
-pixelDim :: GraphWindowSpec -> (R, R)
+pixelDim :: GraphWindowSpecR2 -> (R, R)
 pixelDim grWS = ( graphWindowWidth grWS / fromIntegral (xResolution grWS)
                 , graphWindowHeight grWS / fromIntegral (yResolution grWS) )
 
 
 
-data GraphWindowSpec = GraphWindowSpec {
-      lBound, rBound, bBound, tBound :: R
-    , xResolution, yResolution :: Int
-    , colourScheme :: ColourScheme
-  }
-instance Show GraphWindowSpec where
-  show (GraphWindowSpec{..}) = "GraphWindowSpec{\
-                               \lBound="++show lBound++", \
-                               \rBound="++show rBound++", \
-                               \bBound="++show bBound++", \
-                               \tBound="++show tBound++", \
-                               \xResolution="++show xResolution++", \
-                               \yResolution="++show yResolution++"}"
+type GraphWindowSpec = GraphWindowSpecR2
 
 moveStepRel :: (R, R)  -- ^ Relative translation @(Δx/w, Δy/h)@.
             -> (R, R)  -- ^ Relative zoom.
             -> GraphWindowSpec -> GraphWindowSpec
-moveStepRel (δx,δy) (ζx,ζy) (GraphWindowSpec l r b t xRes yRes clSchm)
-  = GraphWindowSpec l' r' b' t' xRes yRes clSchm
+moveStepRel (δx,δy) (ζx,ζy) (GraphWindowSpecR2 l r b t xRes yRes clSchm)
+  = GraphWindowSpecR2 l' r' b' t' xRes yRes clSchm
  where qx = (r-l)/2                  ; qy = (t-b)/2
        mx'= l + qx*(1+δx)            ; my'= b + qy*(1+δy) 
        qx'= zoomSafeGuard mx' $ qx/ζx; qy'= zoomSafeGuard my' $ qy/ζy
@@ -741,61 +458,6 @@ graphWindowWidth grWS = rBound grWS - lBound grWS
 graphWindowHeight grWS = tBound grWS - bBound grWS
 
 
-
-data Interval r = Interval !r !r deriving (Show)
-instance (Ord r) => Semigroup (Interval r) where  -- WRT closed hull of the union.
-  Interval l₁ u₁ <> Interval l₂ u₂ = Interval (min l₁ l₂) (max u₁ u₂)
-
-realInterval :: Real r => Interval r -> Interval R
-realInterval (Interval a b) = Interval (realToFrac a) (realToFrac b)
-
-onInterval :: ((R,R) -> (R,R)) -> Interval R -> Interval R
-onInterval f (Interval l r) = uncurry Interval $ f (l, r)
-
-infixl 6 ...
--- | Build an interval from specified boundary points. No matter which of these
---   points is higher, the result will always be the interval in between (i.e.,
---   @3 '...' 1@ will yield the interval [1,3], not an empty set or some \"oriented
---   interval\" [3,1]).
---   The fixity @infixl 6@ was chosen so you can write 2D bounding-boxes as e.g.
---   @-1...4 -*| -1...1@.
-(...) :: (Ord r) => r -> r -> Interval r
-x1...x2 | x1 < x2    = Interval x1 x2
-        | otherwise  = Interval x2 x1
-
-infixl ±
-(±) :: Real v => v -> v -> Interval v
-c ± δ | δ>0        = Interval (c-δ) (c+δ)
-      | otherwise  = Interval (c+δ) (c-δ)
-
-spInterval :: r -> Interval r
-spInterval x = Interval x x
-
-intersects :: Ord r => Interval r -> Interval r -> Bool
-intersects (Interval a b) (Interval c d) = a<=d && b>=c
-
-includes :: Ord r => Interval r -> r -> Bool
-Interval a b `includes` x = x>=a && x<=b
-
-infix 5 -*|
-
--- | Cartesian product of intervals.
-(-*|) :: Interval R -> Interval R -> BoundingBox R2
-Interval l r -*| Interval b t = DiaBB.fromCorners (l^&b) (r^&t)
-
--- | Inverse of @uncurry ('-*|')@. /This is a partial function/, since
---   'BoundingBox'es can be empty.
-xyRanges :: BoundingBox R2 -> (Interval R, Interval R)
-xyRanges bb = let Just (c₁, c₂) = DiaBB.getCorners bb
-              in (c₁^._x ... c₂^._x, c₁^._y ... c₂^._y)
-
-
-
-shadeExtends :: Shade P2 -> (Interval R, Interval R)
-shadeExtends shade
-      = ( (ctr^._x) ± sqrt (metric' expa $ 1^&0)
-        , (ctr^._y) ± sqrt (metric' expa $ 0^&1) )
- where ctr = shadeCtr shade; expa = shadeExpanse shade
 
 
 
@@ -936,7 +598,7 @@ plotWindow graphs' = do
                 scrollD <- Event.eventScrollDirection
                 case defaultScrollBehaviour scrollD of
                    ScrollZoomIn  -> liftIO $ do
-                     modifyIORef viewTgt $ \view@GraphWindowSpec{..}
+                     modifyIORef viewTgt $ \view@GraphWindowSpecR2{..}
                          -> let w = rBound - lBound
                                 h = tBound - bBound
                             in view{ lBound = lBound + w * (rcX + 1)^2 * scrollZoomStrength
@@ -945,7 +607,7 @@ plotWindow graphs' = do
                                    , bBound = bBound + h * (rcY + 1)^2 * scrollZoomStrength
                                    }
                    ScrollZoomOut -> liftIO $ do
-                     modifyIORef viewTgt $ \view@GraphWindowSpec{..}
+                     modifyIORef viewTgt $ \view@GraphWindowSpecR2{..}
                          -> let w = rBound - lBound
                                 h = tBound - bBound
                             in view{ lBound = lBound - w * (rcX - 1)^2 * scrollZoomStrength
@@ -1005,7 +667,7 @@ plotWindow graphs' = do
    
    
    let refreshScreen = do
-           currentView@(GraphWindowSpec{..}) <- readIORef viewState
+           currentView@(GraphWindowSpecR2{..}) <- readIORef viewState
            let normaliseView :: PlainGraphics -> PlainGraphics
                normaliseView = (Dia.scaleX xUnZ :: PlainGraphics->PlainGraphics) . Dia.scaleY yUnZ
                                 . Dia.translate (Dia.r2(-x₀,-y₀))
@@ -1051,10 +713,10 @@ plotWindow graphs' = do
            do vt <- readIORef viewTgt
               updateRTView $ \vo -> 
                    let a%b = let η = min 1 $ 2 * realToFrac δt in η*a + (1-η)*b 
-                   in GraphWindowSpec (lBound vt % lBound vo) (rBound vt % rBound vo)
-                                      (bBound vt % bBound vo) (tBound vt % tBound vo)
-                                      (xResolution vt) (yResolution vt)
-                                      defColourScheme
+                   in GraphWindowSpecR2 (lBound vt % lBound vo) (rBound vt % rBound vo)
+                                        (bBound vt % bBound vo) (tBound vt % tBound vo)
+                                        (xResolution vt) (yResolution vt)
+                                        defColourScheme
            -- GTK.sleep 0.01
            refreshScreen
            -- GTK.pollEvents
@@ -1069,33 +731,12 @@ plotWindow graphs' = do
                    ) key
            return impact
    
---    GLFW.keyCallback $= \key state -> do
---            let keyStepSize = 0.1
---            (state==GLFW.Press) `when` do
---               case defaultKeyMap key of
---                 Just QuitProgram -> writeIORef done True
---                 Just movement    -> do
---                    impact <- keyImpact movement
---                    updateTgtView $ case movement of
---                     MoveUp    -> moveStepRel (0,  impact) (1, 1)
---                     MoveDown  -> moveStepRel (0, -impact) (1, 1)
---                     MoveLeft  -> moveStepRel (-impact, 0) (1, 1)
---                     MoveRight -> moveStepRel (impact , 0) (1, 1)
---                     ZoomIn_x  -> moveStepRel (0, 0)   (1+impact, 1)
---                     ZoomOut_x -> moveStepRel (0, 0)   (1-impact/2, 1)
---                     ZoomIn_y  -> moveStepRel (0, 0)   (1, 1+impact/2)
---                     ZoomOut_y -> moveStepRel (0, 0)   (1, 1-impact/2)
---                 _ -> return ()
---            
    GTK.onDestroy window $ do
         (readIORef graphs >>=) . mapM_  -- cancel remaining threads
            $ \(_, GraphViewState{..}) -> cancel realtimeView >> cancel nextTgtView
         GTK.mainQuit
                  
    
-   -- putStrLn "Enter Main loop..."
-   
---    mainLoop
    GTK.timeoutAdd mainLoop 100
    
 
@@ -1103,13 +744,11 @@ plotWindow graphs' = do
    
    -- putStrLn "Done."
    
-   -- GTK.mainQuit
-   
    readIORef viewState
 
 
 autoDefaultView :: [DynamicPlottable] -> GraphWindowSpec
-autoDefaultView graphs = GraphWindowSpec l r b t defResX defResY defaultColourScheme
+autoDefaultView graphs = GraphWindowSpecR2 l r b t defResX defResY defaultColourScheme
   where (xRange, yRange) = foldMap (relevantRange_x &&& relevantRange_y) graphs
         ((l,r), (b,t)) = ( xRange `dependentOn` yRange
                          , yRange `dependentOn` xRange )
@@ -1169,7 +808,6 @@ defaultKeyMap :: GTK.KeyVal -> Maybe KeyAction
 -- defaultKeyMap (GLFW.SpecialKey GLFW.ESC) = Just QuitProgram
 defaultKeyMap _ = Nothing
 
--- instance NFData Draw.R
 
 
 -- | Plot an (assumed continuous) function in the usual way.
@@ -1196,7 +834,7 @@ continFnPlot f = DynamicPlottable{
              , dynamicPlot = plot }
  where yRangef = onInterval $ \(l, r) -> ((!10) &&& (!70)) . sort . pruneOutlyers
                                                $ map f [l, l + (r-l)/80 .. r]
-       plot (GraphWindowSpec{..}) = curve `deepseq` Plot [] (trace curve)
+       plot (GraphWindowSpecR2{..}) = curve `deepseq` Plot [] (trace curve)
         where δx = (rBound - lBound) * 2 / fromIntegral xResolution
               curve = [ (x ^& f x) | x<-[lBound, lBound+δx .. rBound] ]
               trace (p:q:ps) = simpleLine p q <> trace (q:ps)
@@ -1251,7 +889,7 @@ data AxisClass = AxisClass { visibleAxes :: [Axis], axisStrength :: Double, decP
 data Axis = Axis { axisPosition :: R }
 
 crtDynamicAxes :: GraphWindowSpec -> DynamicAxes
-crtDynamicAxes (GraphWindowSpec {..}) = DynamicAxes yAxCls xAxCls
+crtDynamicAxes (GraphWindowSpecR2 {..}) = DynamicAxes yAxCls xAxCls
  where [yAxCls, xAxCls] = zipWith3 directional 
                         [lBound, bBound] [rBound, tBound] [xResolution, yResolution]
        directional l u res = map lvl lvlSpecs
@@ -1284,7 +922,7 @@ dynamicAxes = DynamicPlottable {
              , isTintableMonochromic = False
              , axesNecessity = superfluent
              , dynamicPlot = plot }
- where plot gwSpec@(GraphWindowSpec{..}) = Plot labels lines
+ where plot gwSpec@(GraphWindowSpecR2{..}) = Plot labels lines
         where (DynamicAxes yAxCls xAxCls) = crtDynamicAxes gwSpec
               lines = zeroLine (lBound^&0) (rBound^&0)  `provided`(bBound<0 && tBound>0)
                    <> zeroLine (0^&bBound) (0^&tBound)  `provided`(lBound<0 && rBound>0)
@@ -1315,10 +953,6 @@ noDynamicAxes = DynamicPlottable {
              , isTintableMonochromic = False
              , axesNecessity = superfluent
              , dynamicPlot = const mempty }
-
-
-type Necessity = Double
-superfluent = -1e+32 :: Necessity
 
 
 
@@ -1371,87 +1005,6 @@ forceYRange (b,t) = DynamicPlottable {
  where plot _ = Plot mempty mempty
  
 
-prettyFloatShow :: Int -> Double -> String
-prettyFloatShow _ 0 = "0"
-prettyFloatShow preci x
-    | preci >= 0, preci < 4  = show $ round x
-    | preci < 0, preci > -2  = printf "%.1f" x
-    | otherwise   = case ceiling (0.01 + lg (abs x/10^^(preci+1))) + preci of
-                        0    | preci < 0  -> printf ("%."++show(-preci)++"f") x
-                        expn | expn>preci -> printf ("%."++show(expn-preci)++"f*10^%i")
-                                                      (x/10^^expn)                 expn
-                             | otherwise  -> printf ("%i*10^%i")
-                                                      (round $ x/10^^expn :: Int)  expn
-                                      
-
-
-
-
-maybeRead :: Read a => String -> Maybe a
-maybeRead = fmap fst . listToMaybe . reads
-
-data Annotation = Annotation {
-         getAnnotation :: AnnotationObj 
-       , placement     :: AnnotationPlace
-       , isOptional    :: Bool
-   }
-data AnnotationObj = TextAnnotation TextObj TextAlignment
-data AnnotationPlace = ExactPlace R2
-
-data TextObj = PlainText String
-data TextAlignment = TextAlignment { hAlign, vAlign :: Alignment } -- , blockSpread :: Bool }
-data Alignment = AlignBottom | AlignMid | AlignTop
-
-data DiagramTK = DiagramTK { textTools :: TextTK, viewScope :: GraphWindowSpec }
-data TextTK = TextTK { txtCairoStyle :: Dia.Style R2 -- Draw.Font
-                     , txtSize, xAspect, padding, extraTopPad :: R }
-
-defaultTxtStyle :: Dia.Style R2
-defaultTxtStyle = mempty & Dia.fontSizeO 9
-                         & Dia.fc Dia.grey
-                         & Dia.lc Dia.grey
-
-
-prerenderAnnotation :: DiagramTK -> Annotation -> PlainGraphics
-prerenderAnnotation (DiagramTK{ textTools = TextTK{..}, viewScope = GraphWindowSpec{..} }) 
-                    (Annotation{..})
-       | TextAnnotation (PlainText str) (TextAlignment{..}) <- getAnnotation
-       , ExactPlace p₀ <- placement
-            = let rnTextLines = map (CairoTxt.textVisualBounded txtCairoStyle) $ lines str
-                  lineWidths = map ((/4 {- Magic number ??? -})
-                                . Dia.width) rnTextLines
-                  nLines = length lineWidths
-                  lineHeight = 1 + extraTopPad + 2*padding
-                  ζx = ζy * xAspect
-                  ζy = txtSize -- / lineHeight
-                  width  = (maximum $ 0 : lineWidths) + 2*padding
-                  height = fromIntegral nLines * lineHeight
-                  y₀ = case vAlign of
-                              AlignBottom -> padding + height - lineHeight
-                              AlignMid    -> height/2 - lineHeight
-                              AlignTop    -> - (lineHeight + padding)
-                  fullText = mconcat $ zipWith3 ( \n w -> 
-                                 let y = n*lineHeight
-                                 in (Dia.translate $ Dia.r2 (case hAlign of 
-                                      AlignBottom -> (padding       , y₀-y)
-                                      AlignMid    -> (- w/2         , y₀-y)
-                                      AlignTop    -> (-(w + padding), y₀-y)
-                                     ) ) ) [0..] lineWidths rnTextLines
-                  p = px ^& py
-                   where px = max l' . min r' $ p₀^._x
-                         py = max b' . min t' $ p₀^._y
-                         (l', r') = case hAlign of
-                           AlignBottom -> (lBound      , rBound - w  )
-                           AlignMid    -> (lBound + w/2, rBound - w/2)
-                           AlignTop    -> (lBound + w  , rBound      )
-                         (b', t') = case vAlign of
-                           AlignBottom -> (bBound      , tBound - h  )
-                           AlignMid    -> (bBound + h/2, tBound - h/2)
-                           AlignTop    -> (bBound + h  , tBound      )
-                         w = ζx * width; h = ζy * height
-              in Dia.translate p . Dia.scaleX ζx . Dia.scaleY ζy 
-                     $ Dia.lc Dia.grey fullText
-        
 
 
 
@@ -1476,7 +1029,7 @@ instance (Plottable p) => Plottable (ViewXCenter -> p) where
              , isTintableMonochromic = isTintableMonochromic fcxVoid
              , axesNecessity = axesNecessity fcxVoid
              , dynamicPlot = \g -> dynamicPlot (plot . f $ cx g) g }
-    where cx (GraphWindowSpec{..}) = ViewXCenter $ (lBound+rBound)/2
+    where cx (GraphWindowSpecR2{..}) = ViewXCenter $ (lBound+rBound)/2
           cxI (Interval l r) = ViewXCenter $ (l+r)/2
           fcxVoid = plot . f $ ViewXCenter 0.23421  -- Yup, it's magic.
           deescalate rfind otherdim p = case rfind p of
@@ -1491,7 +1044,7 @@ instance (Plottable p) => Plottable (ViewYCenter -> p) where
              , isTintableMonochromic = isTintableMonochromic fcyVoid
              , axesNecessity = axesNecessity fcyVoid
              , dynamicPlot = \g -> dynamicPlot (plot . f $ cy g) g }
-    where cy (GraphWindowSpec{..}) = ViewYCenter $ (bBound+tBound)/2
+    where cy (GraphWindowSpecR2{..}) = ViewYCenter $ (bBound+tBound)/2
           cyI (Interval b t) = ViewYCenter $ (b+t)/2
           fcyVoid = plot . f $ ViewYCenter 0.319421  -- Alright, alright... the idea is to avoid exact equality with zero or any other number that might come up in some plot object, since such an equality can lead to div-by-zero problems.
           deescalate rfind otherdim p = case rfind p of
@@ -1506,7 +1059,7 @@ instance (Plottable p) => Plottable (ViewWidth -> p) where
              , isTintableMonochromic = isTintableMonochromic fwVoid
              , axesNecessity = axesNecessity fwVoid
              , dynamicPlot = \g -> dynamicPlot (plot . f $ w g) g }
-    where w (GraphWindowSpec{..}) = ViewWidth $ rBound - lBound
+    where w (GraphWindowSpecR2{..}) = ViewWidth $ rBound - lBound
           wI (Interval l r) = ViewWidth $ r - l
           fwVoid = plot . f $ ViewWidth 2.142349
           deescalate rfind otherdim p = case rfind p of
@@ -1521,7 +1074,7 @@ instance (Plottable p) => Plottable (ViewHeight -> p) where
              , isTintableMonochromic = isTintableMonochromic fhVoid
              , axesNecessity = axesNecessity fhVoid
              , dynamicPlot = \g -> dynamicPlot (plot . f $ h g) g }
-    where h (GraphWindowSpec{..}) = ViewHeight $ tBound - bBound
+    where h (GraphWindowSpecR2{..}) = ViewHeight $ tBound - bBound
           hI (Interval b t) = ViewHeight $ t - b
           fhVoid = plot . f $ ViewHeight 1.494213
           deescalate rfind otherdim p = case rfind p of
@@ -1532,30 +1085,4 @@ newtype ViewYResolution = ViewYResolution { getViewYResolution :: Int }
 
 
 
-
-infixl 7 `provided`
-provided :: Monoid m => m -> Bool -> m
-provided m True = m
-provided m False = mempty
-
-
-lg :: Floating a => a -> a
-lg x = log x / log 10
-
-
--- instance (Monoid v) => Semigroup (Draw.Image v) where
---   (<>) = mappend
--- instance Semigroup (Draw.Affine) where
---   (<>) = mappend
--- 
-ceil, flor :: R -> R
-ceil = fromInt . ceiling
-flor = fromInt . floor
-
-fromInt :: Num a => Int -> a
-fromInt = fromIntegral
-
-
-
-instance NFData Dia.P2
 
