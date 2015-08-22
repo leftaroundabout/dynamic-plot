@@ -31,7 +31,7 @@ module Graphics.Dynamic.Plot.Internal.Types where
 
 import qualified Prelude
 
-import Diagrams.Prelude (R2, P2, (^&), (&), _x, _y)
+import Diagrams.Prelude ((^&), (&), _x, _y)
 import qualified Diagrams.Prelude as Dia
 import qualified Diagrams.TwoD.Size as Dia
 import qualified Diagrams.TwoD.Types as DiaTypes
@@ -63,6 +63,27 @@ import Data.Tagged
 
 import Control.DeepSeq
 
+type R2 = Dia.V2 Double
+type P2 = Dia.P2 Double
+
+instance AffineSpace R2 where
+  type Diff R2 = R2
+  (.-.) = (Dia.^-^)
+  (.+^) = (Dia.^+^)
+instance AdditiveGroup R2 where
+  (^+^) = (Dia.^+^)
+instance VectorSpace R2 where
+  type Scalar R2 = Double
+  (*^) = (Dia.*^)
+instance HasBasis R2 where
+  type Basis R2 = Either () ()
+  basisValue (Left ()) = 1^&0
+  basisValue (Right ()) = 0^&1
+  decompose v = [(Left(), v^._x), (Right(), v^._y)]
+  decompose' v (Left ()) = v^._x
+  decompose' v (Right ()) = v^._y
+instance InnerSpace R2 where
+  (<.>) = Dia.dot
 instance FiniteDimensional R2 where
   dimension = Tagged 2
   basisIndex = Tagged bi where bi b = if (basisValue b::R2)^._x > 0.5 then 0 else 1
@@ -80,6 +101,11 @@ instance Semimanifold R2 where
   (.+~^) = (^+^)
 instance PseudoAffine R2 where
   p.-~.q = pure(p^-^q)
+
+instance AffineSpace P2 where
+  type Diff P2 = R2
+  (.-.) = (Dia..-.)
+  (.+^) = (Dia..+^)
 instance Semimanifold P2 where
   type Needle P2 = R2
   (.+~^) = (.+^)
@@ -101,7 +127,7 @@ type R = Double
 --   The exact type may change in the future: we'll probably stay with @diagrams@,
 --   but when document output is introduced the backend might become variable 
 --   or something else but 'Cairo.Cairo'.
-type PlainGraphicsR2 = Dia.Diagram Cairo.B R2
+type PlainGraphicsR2 = Dia.Diagram Cairo.B
 
 
 
@@ -306,7 +332,9 @@ rPCMSample :: (AffineSpace y, v~Diff y, InnerSpace v, HasMetric v, RealFloat (Sc
 rPCMSample (Interval l r) δx f = recursivePCM (PCMRange l δx) [f x | x<-[l, l+δx .. r]] 
                    
 
-rPCM_R2_boundingBox :: (RecursiveSamples x P2 t) -> BoundingBox R2
+type R2Box = Dia.BoundingBox Dia.V2 Double
+
+rPCM_R2_boundingBox :: (RecursiveSamples x P2 t) -> R2Box
 rPCM_R2_boundingBox rPCM@(RecursivePCM pFit _ (DevBoxes dev _) _ _ ())
           =    Interval (xl - ux*2) (xr + ux*2)
            -*| Interval (yb - uy*2) (yt + uy*2)
@@ -421,12 +449,12 @@ Interval a b `includes` x = x>=a && x<=b
 infix 5 -*|
 
 -- | Cartesian product of intervals.
-(-*|) :: Interval R -> Interval R -> BoundingBox R2
+(-*|) :: Interval R -> Interval R -> R2Box
 Interval l r -*| Interval b t = DiaBB.fromCorners (l^&b) (r^&t)
 
 -- | Inverse of @uncurry ('-*|')@. /This is a partial function/, since
 --   'BoundingBox'es can be empty.
-xyRanges :: BoundingBox R2 -> (Interval R, Interval R)
+xyRanges :: R2Box -> (Interval R, Interval R)
 xyRanges bb = let Just (c₁, c₂) = DiaBB.getCorners bb
               in (c₁^._x ... c₂^._x, c₁^._y ... c₂^._y)
 
@@ -467,5 +495,4 @@ fromInt = fromIntegral
 
 
 
-instance NFData Dia.P2
 
