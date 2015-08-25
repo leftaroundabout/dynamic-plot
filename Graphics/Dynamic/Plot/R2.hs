@@ -408,8 +408,8 @@ instance Plottable (Shade P2) where
           where (pixWdth, pixHght) = pixelDim grWS
                 axLine eigV = simpleLine (ctr .-~^ eigV) (ctr .+~^ eigV)
          (xRange,yRange) = shadeExtends shade
-         ctr = shadeCtr shade
-         eigVs = eigenSpan $ shadeExpanse shade
+         ctr = shade^.shadeCtr
+         eigVs = eigenSpan $ shade^.shadeExpanse
 
 instance Plottable (SimpleTree P2) where
   plot (GenericTree Nothing) = plot ([] :: [SimpleTree P2])
@@ -584,7 +584,7 @@ plotWindow graphs' = do
                 modifyIORef viewTgt $ \view -> view{ xResolution = fromIntegral canvasX
                                                    , yResolution = fromIntegral canvasY }
                 dia <- readIORef dgStore
-                let oldSize = Dia.size dia -- used to be Dia.size2D
+                let oldSize = Dia.size dia
                     scaledDia = Dia.bg Dia.black
                                 . Dia.scaleX (fromInt canvasX / 2)
                                 . Dia.scaleY (-fromInt canvasY / 2)
@@ -592,10 +592,7 @@ plotWindow graphs' = do
                                 . Dia.withEnvelope (Dia.rect 2 2 :: PlainGraphicsR2)
                                   $ dia
                 drawWindow <- GTK.widgetGetDrawWindow drawA
-                -- putStrLn $ "redrawing"++show(canvasX,canvasY)
-                -- putStrLn . ("with state now:\n"++) . show =<< readIORef viewState
                 BGTK.renderToGtk drawWindow $ scaledDia
-                -- putStrLn $ "redrawn."
                 return True
        
        GTK.on drawA GTK.scrollEvent . Event.tryEvent $ do
@@ -752,8 +749,6 @@ plotWindow graphs' = do
 
    GTK.mainGUI
    
-   -- putStrLn "Done."
-   
    readIORef viewState
 
 
@@ -772,9 +767,6 @@ autoDefaultView graphs = GraphWindowSpecR2 l r b t defResX defResY defaultColour
             where q = (b - a) / 6
   
 
-
--- render :: PlainGraphics -> IO()
--- render = Dia.clearRender
 
 defResX, defResY :: Integral i => i
 defResX = 640
@@ -913,8 +905,7 @@ crtDynamicAxes (GraphWindowSpecR2 {..}) = DynamicAxes yAxCls xAxCls
                             strength
                             (floor $ lg laSpc)
                where laSpc = upDecaSpan / luDSdiv
-                     luDSdiv = ll -- maybe 1 id . listToMaybe 
-                                . takeWhile (\d -> pixelScale * minSpc < 1/d )
+                     luDSdiv = ll . takeWhile (\d -> pixelScale * minSpc < 1/d )
                                       . join $ iterate (map(*10)) [1, 2, 5]
                      ll [] = error $ "pixelScale = "++show pixelScale
                                    ++"; minSpc = "++show minSpc

@@ -53,14 +53,14 @@ Library
                      , process
                      , constrained-categories >= 0.2
                      , diagrams-core
-                     , diagrams-lib >= 1 && < 1.4
-                     , diagrams-cairo
+                     , diagrams-lib >= 1.3 && < 1.4
+                     , diagrams-cairo > 1.3.0.3 && < 1.4
                      , diagrams-gtk
                      , gtk > 0.10 && < 0.15
                      , glib
                      , colour >= 2 && < 3
-                     , manifolds >= 0.1.3 && < 0.2
-                     , lens
+                     , manifolds >= 0.1.4 && < 0.2
+                     , lens < 4.12.3
   Other-Extensions:  FlexibleInstances
                      , TypeFamilies
                      , FlexibleContexts

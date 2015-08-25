@@ -464,7 +464,7 @@ shadeExtends :: Shade P2 -> (Interval R, Interval R)
 shadeExtends shade
       = ( (ctr^._x) ± sqrt (metric' expa $ 1^&0)
         , (ctr^._y) ± sqrt (metric' expa $ 0^&1) )
- where ctr = shadeCtr shade; expa = shadeExpanse shade
+ where ctr = shade^.shadeCtr; expa = shade^.shadeExpanse
 
 
 
