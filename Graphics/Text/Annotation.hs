@@ -34,10 +34,11 @@ import Graphics.Dynamic.Plot.Internal.Types
 
 import qualified Prelude
 
-import Diagrams.Prelude (R2, P2, (^&), (&), _x, _y)
+import Diagrams.Prelude ((^&), (&), _x, _y)
 import qualified Diagrams.Prelude as Dia
 import qualified Diagrams.TwoD.Size as Dia
 import qualified Diagrams.TwoD.Types as DiaTypes
+import qualified Diagrams.TwoD.Text as DiaTxt
 import Diagrams.BoundingBox (BoundingBox)
 import qualified Diagrams.BoundingBox as DiaBB
 import qualified Diagrams.Backend.Cairo as Cairo
@@ -103,23 +104,27 @@ data TextObj = PlainText String
 data TextAlignment = TextAlignment { hAlign, vAlign :: Alignment } -- , blockSpread :: Bool }
 data Alignment = AlignBottom | AlignMid | AlignTop
 
+type TxtStyle = Dia.Style Dia.V2 R
+
 data DiagramTK = DiagramTK { textTools :: TextTK, viewScope :: GraphWindowSpecR2 }
-data TextTK = TextTK { txtCairoStyle :: Dia.Style R2 -- Draw.Font
+data TextTK = TextTK { txtCairoStyle :: TxtStyle
                      , txtSize, xAspect, padding, extraTopPad :: R }
 
-defaultTxtStyle :: Dia.Style R2
+defaultTxtStyle :: TxtStyle
 defaultTxtStyle = mempty & Dia.fontSizeO 9
                          & Dia.fc Dia.grey
                          & Dia.lc Dia.grey
 
 
-prerenderAnnotation :: DiagramTK -> Annotation -> PlainGraphicsR2
+prerenderAnnotation :: DiagramTK -> Annotation -> IO PlainGraphicsR2
 prerenderAnnotation (DiagramTK{ textTools = TextTK{..}, viewScope = GraphWindowSpecR2{..} }) 
                     (Annotation{..})
        | TextAnnotation (PlainText str) (TextAlignment{..}) <- getAnnotation
-       , ExactPlace p₀ <- placement
-            = let rnTextLines = map (CairoTxt.textVisualBounded txtCairoStyle) $ lines str
-                  lineWidths = map ((/4 {- Magic number ??? -})
+       , ExactPlace p₀ <- placement = do 
+              rnTextLines <- mapM (CairoTxt.textVisualBoundedIO txtCairoStyle
+                                   . DiaTxt.Text mempty DiaTxt.BaselineText )
+                               $ lines str
+              let lineWidths = map ((/4 {- Magic number ??? -})
                                 . Dia.width) rnTextLines
                   nLines = length lineWidths
                   lineHeight = 1 + extraTopPad + 2*padding
@@ -150,7 +155,7 @@ prerenderAnnotation (DiagramTK{ textTools = TextTK{..}, viewScope = GraphWindowS
                            AlignMid    -> (bBound + h/2, tBound - h/2)
                            AlignTop    -> (bBound + h  , tBound      )
                          w = ζx * width; h = ζy * height
-              in Dia.translate p . Dia.scaleX ζx . Dia.scaleY ζy 
+              return . Dia.translate p . Dia.scaleX ζx . Dia.scaleY ζy 
                      $ Dia.lc Dia.grey fullText
         
 
