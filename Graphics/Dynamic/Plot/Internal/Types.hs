@@ -72,6 +72,8 @@ instance AffineSpace R2 where
   (.+^) = (Dia.^+^)
 instance AdditiveGroup R2 where
   (^+^) = (Dia.^+^)
+  zeroV = Dia.zero
+  negateV = Dia.negated
 instance VectorSpace R2 where
   type Scalar R2 = Double
   (*^) = (Dia.*^)
