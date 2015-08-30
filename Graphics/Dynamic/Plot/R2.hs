@@ -40,6 +40,7 @@ module Graphics.Dynamic.Plot.R2 (
         , lineSegPlot
         , PlainGraphicsR2
         , shapePlot
+        , diagramPlot
         -- ** View selection
         , xInterval, yInterval, forceXRange, forceYRange
         -- ** View dependance
@@ -218,9 +219,13 @@ instance Plottable PlainGraphics where
 -- 
 --   Like with the various specialised function plotters, this will get automatically
 --   tinted to be distinguishable from other plot objects in the same window.
---   Simply use 'plot' instead, if you want to view the diagram as-is.
-shapePlot :: PlainGraphics -> DynamicPlottable
-shapePlot d = (plot d) { isTintableMonochromic = True, axesNecessity = 0 }
+--   Use 'diagramPlot' instead, if you want to view the diagram as-is.
+shapePlot :: PlainGraphicsR2 -> DynamicPlottable
+shapePlot d = (diagramPlot d) { isTintableMonochromic = True, axesNecessity = 0 }
+
+-- | Plot a generic 'Dia.Diagram'.
+diagramPlot :: PlainGraphicsR2 -> DynamicPlottable
+diagramPlot d = plot $ PlainGraphics d
 
 
   
