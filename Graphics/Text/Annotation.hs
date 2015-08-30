@@ -121,11 +121,15 @@ prerenderAnnotation (DiagramTK{ textTools = TextTK{..}, viewScope = GraphWindowS
                     (Annotation{..})
        | TextAnnotation (PlainText str) (TextAlignment{..}) <- getAnnotation
        , ExactPlace p₀ <- placement = do 
+              let dtxAlign = DiaTxt.BoxAlignedText
+                     (case hAlign of {AlignBottom -> 0; AlignMid -> 0.5; AlignTop -> 1})
+                     (case vAlign of {AlignBottom -> 0; AlignMid -> 0.5; AlignTop -> 1})
+
               rnTextLines <- mapM (CairoTxt.textVisualBoundedIO txtCairoStyle
-                                   . DiaTxt.Text mempty DiaTxt.BaselineText )
+                                   . DiaTxt.Text mempty dtxAlign )
                                $ lines str
-              let lineWidths = map ((/4 {- Magic number ??? -})
-                                . Dia.width) rnTextLines
+              let lineWidths = map ((/6 {- Magic number ??? -}) .
+                                Dia.width) rnTextLines
                   nLines = length lineWidths
                   lineHeight = 1 + extraTopPad + 2*padding
                   ζx = ζy * xAspect
@@ -133,15 +137,19 @@ prerenderAnnotation (DiagramTK{ textTools = TextTK{..}, viewScope = GraphWindowS
                   width  = (maximum $ 0 : lineWidths) + 2*padding
                   height = fromIntegral nLines * lineHeight
                   y₀ = case vAlign of
-                              AlignBottom -> padding + height - lineHeight
-                              AlignMid    -> height/2 - lineHeight
-                              AlignTop    -> - (lineHeight + padding)
+                              AlignBottom -> padding
+                              AlignMid    -> 0
+                              AlignTop    -> - padding
                   fullText = mconcat $ zipWith3 ( \n w -> 
-                                 let y = n*lineHeight
+                                 let y = n' * lineHeight
+                                     n' = n - case vAlign of
+                                      AlignTop    -> 0
+                                      AlignMid    -> fromIntegral nLines / 2
+                                      AlignBottom -> fromIntegral nLines
                                  in (Dia.translate $ Dia.r2 (case hAlign of 
-                                      AlignBottom -> (padding       , y₀-y)
-                                      AlignMid    -> (- w/2         , y₀-y)
-                                      AlignTop    -> (-(w + padding), y₀-y)
+                                      AlignBottom -> ( padding, y₀-y )
+                                      AlignMid    -> ( 0      , y₀-y )
+                                      AlignTop    -> (-padding, y₀-y )
                                      ) ) ) [0..] lineWidths rnTextLines
                   p = px ^& py
                    where px = max l' . min r' $ p₀^._x
@@ -151,10 +159,11 @@ prerenderAnnotation (DiagramTK{ textTools = TextTK{..}, viewScope = GraphWindowS
                            AlignMid    -> (lBound + w/2, rBound - w/2)
                            AlignTop    -> (lBound + w  , rBound      )
                          (b', t') = case vAlign of
-                           AlignBottom -> (bBound      , tBound - h  )
-                           AlignMid    -> (bBound + h/2, tBound - h/2)
-                           AlignTop    -> (bBound + h  , tBound      )
+                           AlignBottom -> (bBound'      , tBound - h  )
+                           AlignMid    -> (bBound' + h/2, tBound - h/2)
+                           AlignTop    -> (bBound' + h  , tBound      )
                          w = ζx * width; h = ζy * height
+                         bBound' = bBound + lineHeight*ζy
               return . Dia.translate p . Dia.scaleX ζx . Dia.scaleY ζy 
                      $ Dia.lc Dia.grey fullText
         
