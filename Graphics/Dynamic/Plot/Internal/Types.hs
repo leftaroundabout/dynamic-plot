@@ -100,6 +100,9 @@ instance HasMetric' R2 where
   doubleDual = id; doubleDual' = id
 instance Semimanifold R2 where
   type Needle R2 = R2
+  fromInterior = id
+  toInterior = pure
+  translateP = Tagged (^+^)
   (.+~^) = (^+^)
 instance PseudoAffine R2 where
   p.-~.q = pure(p^-^q)
@@ -110,6 +113,9 @@ instance AffineSpace P2 where
   (.+^) = (Dia..+^)
 instance Semimanifold P2 where
   type Needle P2 = R2
+  fromInterior = id
+  toInterior = pure
+  translateP = Tagged (.+^)
   (.+~^) = (.+^)
 instance PseudoAffine P2 where
   p.-~.q = pure(p.-.q)

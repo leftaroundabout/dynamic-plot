@@ -888,7 +888,23 @@ paramPlot f = plot fc
        fc = alg1to2 f
 
 
-
+continColourSurfaceFnPlot :: ((Double,Double) -> DCol.Colour Double) -> DynamicPlottable
+continColourSurfaceFnPlot f = DynamicPlottable {
+               relevantRange_x = mempty
+             , relevantRange_y = mempty
+             , isTintableMonochromic = False
+             , axesNecessity = 1
+             , dynamicPlot = plot }
+ where plot (GraphWindowSpecR2{..}) = mkPlot
+              $ Dia.place
+                ( Dia.rasterDia cf (xResolution`div`4) (yResolution`div`4)
+                  & Dia.scaleX wPix & Dia.scaleY hPix
+                ) ( ((lBound+rBound-wPix)/2) ^& ((tBound+bBound+hPix)/2) )
+        where cf i j = f ( lBound + wPix * fromIntegral i, tBound - hPix * fromIntegral j )
+                        `Dia.withOpacity` 0.2
+              w = rBound - lBound; h = tBound - bBound
+              wPix = w*4 / fromIntegral xResolution
+              hPix = h*4 / fromIntegral yResolution
 
 data AxesStyle = DynamicAxesStyle
 data DynamicAxes = DynamicAxes { yAxisClasses, xAxisClasses :: [AxisClass] }
