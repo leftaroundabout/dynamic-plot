@@ -93,13 +93,14 @@ import Control.Concurrent.Async
 import Control.DeepSeq
 
 
-import Data.List (foldl', sort, intercalate, isPrefixOf, isInfixOf, find, zip4)
+import Data.List (foldl', sort, sortBy, intercalate, isPrefixOf, isInfixOf, find, zip4)
 import qualified Data.Vector as Arr
 import Data.Maybe
 import Data.Semigroup
 import Data.Default
 import Data.Foldable (fold, foldMap)
 import Data.Function (on)
+import Data.Ord (comparing)
 
 import Data.VectorSpace
 import Data.Basis
@@ -477,15 +478,20 @@ mkAnnotatedPlot ans = Plot ans
 data DynamicPlottable = DynamicPlottable { 
         relevantRange_x, relevantRange_y :: RangeRequest R
       , isTintableMonochromic :: Bool
+      , occlusiveness :: Double
+         -- ^ How surface-occupying the plot is.
+         --   Use positive values for opaque 2D plots that would tend to obscure
+         --   other objects, negative values for sparse/small point plots.
+         --   The z-order will be chosen accordingly.
       , axesNecessity :: Necessity
       , dynamicPlot :: GraphWindowSpec -> Plot
   }
 
 instance Semigroup DynamicPlottable where
-  DynamicPlottable rx₁ ry₁ tm₁ ax₁ dp₁ <> DynamicPlottable rx₂ ry₂ tm₂ ax₂ dp₂
-        = DynamicPlottable (rx₁<>rx₂) (ry₁<>ry₂) (tm₁||tm₂) (ax₁+ax₂) (dp₁<>dp₂) 
+  DynamicPlottable rx₁ ry₁ tm₁ oc₁ ax₁ dp₁ <> DynamicPlottable rx₂ ry₂ tm₂ oc₂ ax₂ dp₂
+        = DynamicPlottable (rx₁<>rx₂) (ry₁<>ry₂) (tm₁||tm₂) (oc₁+oc₂) (ax₁+ax₂) (dp₁<>dp₂) 
 instance Monoid DynamicPlottable where
-  mempty = DynamicPlottable mempty mempty False 0 mempty
+  mempty = DynamicPlottable mempty mempty False 0 0 mempty
   mappend = (<>)
 instance Default DynamicPlottable where def = mempty
 
@@ -570,8 +576,9 @@ plotWindow graphs' = do
                assignGrViews [] _ axesNeed 
                  | axesNeed > 0  = assignGrViews [dynamicAxes] [grey] (-1)
                  | otherwise     = return []
+               graphs'' = sortBy (comparing occlusiveness) graphs'
            w <- mapM newIORef $ replicate 2 window₀
-           gs <- newIORef =<< assignGrViews graphs' defaultColourSeq 0
+           gs <- newIORef =<< assignGrViews graphs'' defaultColourSeq 0
            return (w,gs)
    
    
@@ -886,6 +893,7 @@ paramPlot f = plot fc
 continColourSurfaceFnPlot :: ((Double,Double) -> DCol.Colour Double) -> DynamicPlottable
 continColourSurfaceFnPlot f = def {
                axesNecessity = 1
+             , occlusiveness = 4
              , dynamicPlot = plot }
  where plot (GraphWindowSpecR2{..}) = mkPlot
               $ Dia.place
@@ -932,6 +940,7 @@ crtDynamicAxes (GraphWindowSpecR2 {..}) = DynamicAxes yAxCls xAxCls
 dynamicAxes :: DynamicPlottable
 dynamicAxes = def { 
                axesNecessity = superfluent
+             , occlusiveness = 1
              , dynamicPlot = plot }
  where plot gwSpec@(GraphWindowSpecR2{..}) = Plot labels lines
         where (DynamicAxes yAxCls xAxCls) = crtDynamicAxes gwSpec
