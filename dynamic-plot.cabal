@@ -45,6 +45,7 @@ Library
                      , tagged
                      , containers
                      , semigroups
+                     , data-default
                      , random
                      , MonadRandom
                      , time

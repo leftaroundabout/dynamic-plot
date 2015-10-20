@@ -97,6 +97,7 @@ import Data.List (foldl', sort, intercalate, isPrefixOf, isInfixOf, find, zip4)
 import qualified Data.Vector as Arr
 import Data.Maybe
 import Data.Semigroup
+import Data.Default
 import Data.Foldable (fold, foldMap)
 import Data.Function (on)
 
@@ -147,12 +148,10 @@ instance Plottable (R -> R) where
 -- {-# RULES "plot/R->R" plot = fnPlot #-}
 
 instance Plottable (Double :--> Double) where
-  plot f = DynamicPlottable{
-             relevantRange_x = mempty
-           , relevantRange_y = otherDimDependence yRangef
-           , isTintableMonochromic = True
-           , axesNecessity = 1
-           , dynamicPlot = plot }
+  plot f = def { relevantRange_y = otherDimDependence yRangef
+               , isTintableMonochromic = True
+               , axesNecessity = 1
+               , dynamicPlot = plot }
    where yRangef (Interval l r) = uncurry Interval . (minimum &&& maximum) 
                             . map snd $ 𝓒⁰.finiteGraphContinℝtoℝ
                                          (𝓒⁰.GraphWindowSpec l r fgb fgt 9 9) f
@@ -171,12 +170,9 @@ instance Plottable (Double :--> Double) where
          c = realToFrac
 
 instance Plottable (Double :--> (Double, Double)) where
-  plot f = DynamicPlottable{
-             relevantRange_x = mempty
-           , relevantRange_y = mempty
-           , isTintableMonochromic = True
-           , axesNecessity = 1
-           , dynamicPlot = plot }
+  plot f = def { isTintableMonochromic = True
+               , axesNecessity = 1
+               , dynamicPlot = plot }
    where plot (GraphWindowSpecR2{..}) = curves `deepseq` mkPlot (foldMap trace curves)
           where curves :: [[P2]]
                 curves = map (map convℝ²) $ 𝓒⁰.finiteGraphContinℝtoℝ² mWindow f
@@ -190,20 +186,12 @@ instance Plottable (Double :--> (Double, Double)) where
 
 
 instance (Plottable p) => Plottable [p] where
-  plot l0 = DynamicPlottable{
-              relevantRange_x = foldMap relevantRange_x l
-            , relevantRange_y = foldMap relevantRange_y l
-            , isTintableMonochromic = or $ isTintableMonochromic <$> l
-            , axesNecessity = sum $ axesNecessity <$> l
-            , dynamicPlot = foldMap dynamicPlot l
-            }
-   where l = map plot l0
+  plot = foldMap plot
 
 instance Plottable PlainGraphics where
-  plot (PlainGraphics d) = DynamicPlottable{
+  plot (PlainGraphics d) = def {
              relevantRange_x = atLeastInterval rlx
            , relevantRange_y = atLeastInterval rly
-           , isTintableMonochromic = False
            , axesNecessity = -1
            , dynamicPlot = plot
            }
@@ -233,7 +221,7 @@ diagramPlot d = plot $ PlainGraphics d
 
 instance Plottable (R-.^>R) where
   plot rPCM@(RecursivePCM gPFit gDetails gFitDevs (PCMRange x₀ wsp) gSplN ())
-            = DynamicPlottable{
+            = def {
                 relevantRange_x = atLeastInterval $ Interval x₀ xr
               , relevantRange_y = otherDimDependence $ rPCMLinFitRange rPCM
               , isTintableMonochromic = True
@@ -273,7 +261,7 @@ instance Plottable (R-.^>R) where
 
 instance Plottable (RecursiveSamples Int P2 (DevBoxes P2)) where
   plot rPCM@(RecursivePCM gPFit gDetails gFitDevs (PCMRange t₀ τsp) gSplN ())
-            = DynamicPlottable{
+            = def {
                 relevantRange_x = atLeastInterval xRange
               , relevantRange_y = atLeastInterval yRange
               , isTintableMonochromic = True
@@ -334,7 +322,7 @@ tracePlot = plot . recursiveSamples . map ((,()) . Dia.p2)
 --   Beware that this will always slow down the performance when the list is large;
 --   there is no &#201c;statistic optimisation&#201d; as in 'tracePlot'.
 lineSegPlot :: [(Double, Double)] -> DynamicPlottable
-lineSegPlot ps = DynamicPlottable{
+lineSegPlot ps = def {
                relevantRange_x = atLeastInterval' $ foldMap (pure . spInterval . fst) ps
              , relevantRange_y = atLeastInterval' $ foldMap (pure . spInterval . snd) ps
              , isTintableMonochromic = True
@@ -402,7 +390,7 @@ rPCMPlot = plot . recursivePCM (PCMRange (0 :: Double) 1)
 
 
 instance Plottable (Shade P2) where
-  plot shade = DynamicPlottable{
+  plot shade = def {
                 relevantRange_x = atLeastInterval xRange
               , relevantRange_y = atLeastInterval yRange
               , isTintableMonochromic = True
@@ -419,7 +407,7 @@ instance Plottable (Shade P2) where
 instance Plottable (SimpleTree P2) where
   plot (GenericTree Nothing) = plot ([] :: [SimpleTree P2])
   plot (GenericTree (Just (ctr, root)))
-           = DynamicPlottable{
+           = def{
                 relevantRange_x = atLeastInterval xRange
               , relevantRange_y = atLeastInterval yRange
               , isTintableMonochromic = True
@@ -492,6 +480,14 @@ data DynamicPlottable = DynamicPlottable {
       , axesNecessity :: Necessity
       , dynamicPlot :: GraphWindowSpec -> Plot
   }
+
+instance Semigroup DynamicPlottable where
+  DynamicPlottable rx₁ ry₁ tm₁ ax₁ dp₁ <> DynamicPlottable rx₂ ry₂ tm₂ ax₂ dp₂
+        = DynamicPlottable (rx₁<>rx₂) (ry₁<>ry₂) (tm₁||tm₂) (ax₁+ax₂) (dp₁<>dp₂) 
+instance Monoid DynamicPlottable where
+  mempty = DynamicPlottable mempty mempty False 0 mempty
+  mappend = (<>)
+instance Default DynamicPlottable where def = mempty
 
 data GraphViewState = GraphViewState {
         lastStableView :: Maybe (GraphWindowSpec, Plot)
@@ -833,9 +829,8 @@ defaultKeyMap _ = Nothing
 --   the resolution so the plot is guaranteed accurate (but it's not usable yet for
 --   a lot of real applications).
 continFnPlot :: (Double -> Double) -> DynamicPlottable
-continFnPlot f = DynamicPlottable{
-               relevantRange_x = mempty
-             , relevantRange_y = otherDimDependence yRangef
+continFnPlot f = def{
+               relevantRange_y = otherDimDependence yRangef
              , isTintableMonochromic = True
              , axesNecessity = 1
              , dynamicPlot = plot }
@@ -889,11 +884,8 @@ paramPlot f = plot fc
 
 
 continColourSurfaceFnPlot :: ((Double,Double) -> DCol.Colour Double) -> DynamicPlottable
-continColourSurfaceFnPlot f = DynamicPlottable {
-               relevantRange_x = mempty
-             , relevantRange_y = mempty
-             , isTintableMonochromic = False
-             , axesNecessity = 1
+continColourSurfaceFnPlot f = def {
+               axesNecessity = 1
              , dynamicPlot = plot }
  where plot (GraphWindowSpecR2{..}) = mkPlot
               $ Dia.place
@@ -938,11 +930,8 @@ crtDynamicAxes (GraphWindowSpecR2 {..}) = DynamicAxes yAxCls xAxCls
 -- | Coordinate axes with labels. For many plottable objects, these will be added
 --   automatically, by default (unless inhibited with 'noDynamicAxes').
 dynamicAxes :: DynamicPlottable
-dynamicAxes = DynamicPlottable { 
-               relevantRange_x = mempty
-             , relevantRange_y = mempty   
-             , isTintableMonochromic = False
-             , axesNecessity = superfluent
+dynamicAxes = def { 
+               axesNecessity = superfluent
              , dynamicPlot = plot }
  where plot gwSpec@(GraphWindowSpecR2{..}) = Plot labels lines
         where (DynamicAxes yAxCls xAxCls) = crtDynamicAxes gwSpec
@@ -969,12 +958,7 @@ dynamicAxes = DynamicPlottable {
 
 
 noDynamicAxes :: DynamicPlottable
-noDynamicAxes = DynamicPlottable { 
-               relevantRange_x = mempty
-             , relevantRange_y = mempty   
-             , isTintableMonochromic = False
-             , axesNecessity = superfluent
-             , dynamicPlot = const mempty }
+noDynamicAxes = def { axesNecessity = superfluent }
 
 
 
@@ -1005,26 +989,10 @@ forceXRange :: (Double, Double) -> DynamicPlottable
 
 yInterval, forceYRange :: (Double, Double) -> DynamicPlottable
 
-xInterval (l,r) = DynamicPlottable { 
-               relevantRange_x = atLeastInterval $ Interval l r
-             , relevantRange_y = mempty
-             , isTintableMonochromic = False, axesNecessity = 0, dynamicPlot = plot }
- where plot _ = Plot mempty mempty
-forceXRange (l,r) = DynamicPlottable { 
-               relevantRange_x = MustBeThisRange $ Interval l r
-             , relevantRange_y = mempty
-             , isTintableMonochromic = False, axesNecessity = 0, dynamicPlot = plot }
- where plot _ = Plot mempty mempty
-yInterval (b,t) = DynamicPlottable { 
-               relevantRange_x = mempty
-             , relevantRange_y = atLeastInterval $ Interval b t
-             , isTintableMonochromic = False, axesNecessity = 0, dynamicPlot = plot }
- where plot _ = Plot mempty mempty
-forceYRange (b,t) = DynamicPlottable { 
-               relevantRange_x = mempty
-             , relevantRange_y = MustBeThisRange $ Interval b t
-             , isTintableMonochromic = False, axesNecessity = 0, dynamicPlot = plot }
- where plot _ = Plot mempty mempty
+xInterval (l,r) = mempty { relevantRange_x = atLeastInterval $ Interval l r }
+forceXRange (l,r) = mempty { relevantRange_x = MustBeThisRange $ Interval l r }
+yInterval (b,t) = mempty { relevantRange_y = atLeastInterval $ Interval b t }
+forceYRange (b,t) = mempty { relevantRange_y = MustBeThisRange $ Interval b t }
  
 
 
@@ -1044,13 +1012,11 @@ forceYRange (b,t) = DynamicPlottable {
 --   <<images/examples/sin-ctrd-tangents.gif>>
 newtype ViewXCenter = ViewXCenter { getViewXCenter :: Double }
 instance (Plottable p) => Plottable (ViewXCenter -> p) where
-  plot f = DynamicPlottable {
-               relevantRange_x = mempty
-             , relevantRange_y = OtherDimDependantRange $
-                                  \g -> deescalate relevantRange_y g . plot . f . cxI =<< g
-             , isTintableMonochromic = isTintableMonochromic fcxVoid
-             , axesNecessity = axesNecessity fcxVoid
-             , dynamicPlot = \g -> dynamicPlot (plot . f $ cx g) g }
+  plot f = def { relevantRange_y = OtherDimDependantRange $
+                     \g -> deescalate relevantRange_y g . plot . f . cxI =<< g
+               , isTintableMonochromic = isTintableMonochromic fcxVoid
+               , axesNecessity = axesNecessity fcxVoid
+               , dynamicPlot = \g -> dynamicPlot (plot . f $ cx g) g }
     where cx (GraphWindowSpecR2{..}) = ViewXCenter $ (lBound+rBound)/2
           cxI (Interval l r) = ViewXCenter $ (l+r)/2
           fcxVoid = plot . f $ ViewXCenter 0.23421  -- Yup, it's magic.
@@ -1059,13 +1025,11 @@ instance (Plottable p) => Plottable (ViewXCenter -> p) where
              OtherDimDependantRange ifr -> ifr otherdim
 newtype ViewYCenter = ViewYCenter { getViewYCenter :: Double }
 instance (Plottable p) => Plottable (ViewYCenter -> p) where
-  plot f = DynamicPlottable {
-               relevantRange_x = OtherDimDependantRange $
-                                  \g -> deescalate relevantRange_x g . plot . f . cyI =<< g
-             , relevantRange_y = mempty
-             , isTintableMonochromic = isTintableMonochromic fcyVoid
-             , axesNecessity = axesNecessity fcyVoid
-             , dynamicPlot = \g -> dynamicPlot (plot . f $ cy g) g }
+  plot f = def { relevantRange_x = OtherDimDependantRange $
+                     \g -> deescalate relevantRange_x g . plot . f . cyI =<< g
+               , isTintableMonochromic = isTintableMonochromic fcyVoid
+               , axesNecessity = axesNecessity fcyVoid
+               , dynamicPlot = \g -> dynamicPlot (plot . f $ cy g) g }
     where cy (GraphWindowSpecR2{..}) = ViewYCenter $ (bBound+tBound)/2
           cyI (Interval b t) = ViewYCenter $ (b+t)/2
           fcyVoid = plot . f $ ViewYCenter 0.319421  -- Alright, alright... the idea is to avoid exact equality with zero or any other number that might come up in some plot object, since such an equality can lead to div-by-zero problems.
@@ -1074,13 +1038,11 @@ instance (Plottable p) => Plottable (ViewYCenter -> p) where
              OtherDimDependantRange ifr -> ifr otherdim
 newtype ViewWidth = ViewWidth { getViewWidth :: Double }
 instance (Plottable p) => Plottable (ViewWidth -> p) where
-  plot f = DynamicPlottable {
-               relevantRange_x = mempty
-             , relevantRange_y = OtherDimDependantRange $
-                                  \g -> deescalate relevantRange_y g . plot . f . wI =<< g
-             , isTintableMonochromic = isTintableMonochromic fwVoid
-             , axesNecessity = axesNecessity fwVoid
-             , dynamicPlot = \g -> dynamicPlot (plot . f $ w g) g }
+  plot f = def { relevantRange_y = OtherDimDependantRange $
+                     \g -> deescalate relevantRange_y g . plot . f . wI =<< g
+               , isTintableMonochromic = isTintableMonochromic fwVoid
+               , axesNecessity = axesNecessity fwVoid
+               , dynamicPlot = \g -> dynamicPlot (plot . f $ w g) g }
     where w (GraphWindowSpecR2{..}) = ViewWidth $ rBound - lBound
           wI (Interval l r) = ViewWidth $ r - l
           fwVoid = plot . f $ ViewWidth 2.142349
@@ -1089,13 +1051,11 @@ instance (Plottable p) => Plottable (ViewWidth -> p) where
              OtherDimDependantRange ifr -> ifr otherdim
 newtype ViewHeight = ViewHeight { getViewHeight :: Double }
 instance (Plottable p) => Plottable (ViewHeight -> p) where
-  plot f = DynamicPlottable {
-               relevantRange_x = OtherDimDependantRange $
-                                  \g -> deescalate relevantRange_x g . plot . f . hI =<< g
-             , relevantRange_y = mempty
-             , isTintableMonochromic = isTintableMonochromic fhVoid
-             , axesNecessity = axesNecessity fhVoid
-             , dynamicPlot = \g -> dynamicPlot (plot . f $ h g) g }
+  plot f = def { relevantRange_x = OtherDimDependantRange $
+                     \g -> deescalate relevantRange_x g . plot . f . hI =<< g
+               , isTintableMonochromic = isTintableMonochromic fhVoid
+               , axesNecessity = axesNecessity fhVoid
+               , dynamicPlot = \g -> dynamicPlot (plot . f $ h g) g }
     where h (GraphWindowSpecR2{..}) = ViewHeight $ tBound - bBound
           hI (Interval b t) = ViewHeight $ t - b
           fhVoid = plot . f $ ViewHeight 1.494213
