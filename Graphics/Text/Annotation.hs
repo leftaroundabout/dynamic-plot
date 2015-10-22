@@ -34,7 +34,7 @@ import Graphics.Dynamic.Plot.Internal.Types
 
 import qualified Prelude
 
-import Diagrams.Prelude ((^&), (&), _x, _y)
+import Diagrams.Prelude ((^&), (&), _x, _y, (|||), (===))
 import qualified Diagrams.Prelude as Dia
 import qualified Diagrams.TwoD.Size as Dia
 import qualified Diagrams.TwoD.Types as DiaTypes
@@ -48,7 +48,7 @@ import Control.Monad.Trans (liftIO)
 
 import qualified Control.Category.Hask as Hask
 import Control.Category.Constrained.Prelude hiding ((^))
-import Control.Arrow.Constrained
+import Control.Arrow.Constrained hiding ((|||))
 import Control.Monad.Constrained
 
 import Control.Lens hiding ((...), (<.>))
@@ -173,3 +173,27 @@ prerenderAnnotation (DiagramTK{ textTools = TextTK{..}, viewScope = GraphWindowS
 
 lg :: Floating a => a -> a
 lg = logBase 10
+
+
+
+
+data LegendEntry = LegendEntry {
+        plotObjectTitle :: TextObj
+      , customLegendObject :: Option ()
+      }
+
+
+prerenderLegend :: TextTK -> ColourScheme -> [(LegendEntry, Colour)] -> IO PlainGraphicsR2
+prerenderLegend _ _ [] = return mempty
+prerenderLegend TextTK{..} cscm l = do
+   let bgColour = cscm neutral
+   lRends <- forM l $ \( LegendEntry{ plotObjectTitle = PlainText str
+                                    , customLegendObject = Option Nothing }
+                       , c ) -> do
+          txtR <- CairoTxt.textVisualBoundedIO txtCairoStyle
+                       $ DiaTxt.Text mempty (DiaTxt.BoxAlignedText 0 0) str
+          let h = Dia.height txtR
+          return $ Dia.rect h h ||| txtR
+   let entryL = Dia.vsep 0.2 lRends
+   return entryL
+

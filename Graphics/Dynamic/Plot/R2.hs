@@ -484,14 +484,17 @@ data DynamicPlottable = DynamicPlottable {
          --   other objects, negative values for sparse/small point plots.
          --   The z-order will be chosen accordingly.
       , axesNecessity :: Necessity
+      , legendEntries :: [LegendEntry]
       , dynamicPlot :: GraphWindowSpec -> Plot
   }
 
 instance Semigroup DynamicPlottable where
-  DynamicPlottable rx₁ ry₁ tm₁ oc₁ ax₁ dp₁ <> DynamicPlottable rx₂ ry₂ tm₂ oc₂ ax₂ dp₂
-        = DynamicPlottable (rx₁<>rx₂) (ry₁<>ry₂) (tm₁||tm₂) (oc₁+oc₂) (ax₁+ax₂) (dp₁<>dp₂) 
+  DynamicPlottable rx₁ ry₁ tm₁ oc₁ ax₁ le₁ dp₁
+    <> DynamicPlottable rx₂ ry₂ tm₂ oc₂ ax₂ le₂ dp₂
+        = DynamicPlottable
+   (rx₁<>rx₂) (ry₁<>ry₂) (tm₁||tm₂) (oc₁+oc₂) (ax₁+ax₂) (le₁++le₂) (dp₁<>dp₂) 
 instance Monoid DynamicPlottable where
-  mempty = DynamicPlottable mempty mempty False 0 0 mempty
+  mempty = DynamicPlottable mempty mempty False 0 0 [] mempty
   mappend = (<>)
 instance Default DynamicPlottable where def = mempty
 
@@ -523,6 +526,9 @@ atLeastInterval = atLeastInterval' . pure
 
 atLeastInterval' :: Option (Interval r) -> RangeRequest r
 atLeastInterval' = OtherDimDependantRange . const
+
+
+
 
                 
 
