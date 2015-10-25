@@ -41,6 +41,8 @@ module Graphics.Dynamic.Plot.R2 (
         , PlainGraphicsR2
         , shapePlot
         , diagramPlot
+        -- ** Legend captions
+        , legendName
         -- ** View selection
         , xInterval, yInterval, forceXRange, forceYRange
         -- ** View dependance
@@ -506,6 +508,10 @@ data GraphViewState = GraphViewState {
 
 
 
+legendName :: String -> DynamicPlottable -> DynamicPlottable
+legendName n d = d { legendEntries = LegendEntry (PlainText n) mempty : legendEntries d }
+
+
 data RangeRequest r 
        = OtherDimDependantRange (Option (Interval r) -> Option (Interval r))
        | MustBeThisRange (Interval r)
@@ -694,6 +700,7 @@ plotWindow graphs' = do
                   where xUnZ = 1/w; yUnZ = 1/h
                w = (rBound - lBound)/2; h = (tBound - bBound)/2
                x₀ = lBound + w; y₀ = bBound + h
+               textTK txSiz asp = TextTK defaultTxtStyle txSiz asp 0.2 0.2
                renderComp (DynamicPlottable{..}, GraphViewState{..}) = do
                    plt <- poll realtimeView >>= \case
                                   Just (Right pl) -> return $ Just pl
@@ -704,8 +711,7 @@ plotWindow graphs' = do
                     Nothing -> return mempty
                     Just Plot{..} -> let 
                        antTK = DiagramTK { viewScope = currentView 
-                                         , textTools = TextTK defaultTxtStyle
-                                                                  txtSize aspect 0.2 0.2 }
+                                         , textTools = textTK txtSize aspect }
                        txtSize = h * fontPts / fromIntegral yResolution
                        aspect  = w * fromIntegral yResolution
                                                          / (h * fromIntegral xResolution)
@@ -720,9 +726,12 @@ plotWindow graphs' = do
 
            gvStates <- readIORef graphs
            waitAny $ map (realtimeView . snd) gvStates
+           
+           thePlot <- (mconcat . reverse) <$> mapM renderComp (reverse gvStates)
+           theLegend <- prerenderLegend (textTK 10 1) colourScheme
+                $ (\(p,g) -> (,) <$> legendEntries p <*> [graphColor g]) =<< gvStates
                    
-           writeIORef dgStore
-                . mconcat . reverse =<< mapM renderComp (reverse gvStates)
+           writeIORef dgStore $ atExtendOf' thePlot 0.1 theLegend 
                                                     
            refreshDraw
            
@@ -1081,5 +1090,17 @@ newtype ViewXResolution = ViewXResolution { getViewXResolution :: Int }
 newtype ViewYResolution = ViewYResolution { getViewYResolution :: Int }
 
 
+
+
+atExtendOf :: PlainGraphicsR2 -> PlainGraphicsR2 -> PlainGraphicsR2
+atExtendOf d₁ = atExtendOf' d₁ 1
+
+atExtendOf' :: PlainGraphicsR2 -> Double -> PlainGraphicsR2 -> PlainGraphicsR2
+atExtendOf' d₁ q d₂ = d₂
+                      & Dia.translate ((pux+plx-lux-llx)/2 ^& (puy+ply-luy-lly)/2)
+                      & Dia.scaleX (q*(pux-plx)/(lux-llx))
+                      & Dia.scaleY (q*(puy-ply)/(luy-lly))
+ where (Just (plx,pux)) = Dia.extentX d₁; (Just (ply,puy)) = Dia.extentY d₁
+       (Just (llx,lux)) = Dia.extentX d₂; (Just (lly,luy)) = Dia.extentY d₂
 
 

@@ -183,17 +183,19 @@ data LegendEntry = LegendEntry {
       }
 
 
-prerenderLegend :: TextTK -> ColourScheme -> [(LegendEntry, Colour)] -> IO PlainGraphicsR2
+prerenderLegend :: TextTK -> ColourScheme
+                     -> [(LegendEntry, Maybe AColour)] -> IO PlainGraphicsR2
 prerenderLegend _ _ [] = return mempty
 prerenderLegend TextTK{..} cscm l = do
    let bgColour = cscm neutral
+       defColour = cscm (paler contrast)
    lRends <- forM l $ \( LegendEntry{ plotObjectTitle = PlainText str
                                     , customLegendObject = Option Nothing }
                        , c ) -> do
           txtR <- CairoTxt.textVisualBoundedIO txtCairoStyle
-                       $ DiaTxt.Text mempty (DiaTxt.BoxAlignedText 0 0) str
+                       $ DiaTxt.Text mempty (DiaTxt.BoxAlignedText 0 0.5) str
           let h = Dia.height txtR
-          return $ Dia.rect h h ||| txtR
+          return $ Dia.hsep 5 [Dia.rect h h & Dia.fcA defColour, txtR] -- & Dia.lc Dia.red)
    let entryL = Dia.vsep 0.2 lRends
    return entryL
 
