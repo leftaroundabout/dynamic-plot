@@ -731,7 +731,10 @@ plotWindow graphs' = do
            theLegend <- prerenderLegend (textTK 10 1) colourScheme
                 $ (\(p,g) -> (,) <$> legendEntries p <*> [graphColor g]) =<< gvStates
                    
-           writeIORef dgStore $ atExtendOf' thePlot 0.1 theLegend 
+           writeIORef dgStore $ ( theLegend & Dia.scaleX (0.1 / sqrt (fromIntegral xResolution))
+                                            & Dia.scaleY (0.1 / sqrt (fromIntegral yResolution)) 
+                                            & (`Dia.place`(0.75^&0.75)) )
+                                <> thePlot
                                                     
            refreshDraw
            
