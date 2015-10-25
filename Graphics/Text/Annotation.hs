@@ -196,10 +196,12 @@ prerenderLegend TextTK{..} cscm l = do
                        $ DiaTxt.Text mempty (DiaTxt.BoxAlignedText 0 0.5) str
           let h = Dia.height txtR
           return $ Dia.hsep 5 [ Dia.rect h h & Dia.fcA (maybe defColour id c)
-                              , txtR & Dia.lc Dia.white
+                              , txtR
                               ] & Dia.centerXY
                                 & Dia.frame 2
+                                & Dia.alignL
    let w = Dia.width lRends
        h = Dia.height lRends
-   return $ lRends <> ( Dia.rect w h & Dia.fcA (cscm $ paler grey) )
+   return $ ( lRends & Dia.centerXY & Dia.translate (3^&3) )
+         <> ( Dia.rect (w+1) (h+1) & Dia.fcA (cscm $ paler grey) )
 
