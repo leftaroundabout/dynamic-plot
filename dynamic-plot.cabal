@@ -61,7 +61,7 @@ Library
                      , glib
                      , colour >= 2 && < 3
                      , manifolds >= 0.1.5 && < 0.1.6
-                     , lens < 4.12.3
+                     , lens < 4.12.4
   Other-Extensions:  FlexibleInstances
                      , TypeFamilies
                      , FlexibleContexts
