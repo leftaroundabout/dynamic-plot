@@ -15,6 +15,7 @@
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE TupleSections              #-}
 {-# LANGUAGE TypeOperators              #-}
+{-# LANGUAGE UnicodeSyntax              #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE LiberalTypeSynonyms        #-}
 {-# LANGUAGE FlexibleContexts           #-}
@@ -109,6 +110,7 @@ import Data.Basis
 import Data.AffineSpace
 import Data.LinearMap.HerMetric
 import Data.Manifold.PseudoAffine
+import Data.Manifold.Types
 import Data.Manifold.TreeCover
 import qualified Data.Map.Lazy as Map
 
@@ -220,6 +222,29 @@ diagramPlot d = plot $ PlainGraphics d
 
 
   
+instance Plottable (R-->R) where
+  plot f = def { relevantRange_y = mempty -- otherDimDependence yRangef
+               , isTintableMonochromic = True
+               , axesNecessity = 1
+               , dynamicPlot = plot }
+   where yRangef (Interval l r) = undefined
+         plot (GraphWindowSpecR2{..}) = curve `deepseq` mkPlot (trace curve)
+          where curve :: [P2]
+                curve = map (convℝ² . snd) $ discretisePath resFun
+                           (id&&&f <<< alg(+point x₀))
+                resFun (x,y)
+                  | x > rBound || y > tBound || x < lBound || y < bBound
+                               = 0
+                  | otherwise  = ε
+                x₀ = (lBound + rBound)/2
+                ε = projector (δx,0) + projector (0,δy)
+                δx = (rBound - lBound) / fromIntegral xResolution
+                δy = (tBound - bBound) / fromIntegral yResolution
+                trace (p:q:ps) = simpleLine p q <> trace (q:ps)
+                trace _ = mempty
+         
+         convℝ² = Dia.p2
+         c = realToFrac
 
 
 instance Plottable (R-.^>R) where
@@ -870,6 +895,14 @@ continFnPlot f = def{
        l!n | (x:_)<-drop n l  = x
            | otherwise         = error "Function appears to yield NaN most of the time. Cannot be plotted."
 
+type (-->) = Differentiable ℝ
+
+-- diffableFnPlot :: (∀ m . WithField ℝ PseudoAffine m
+--                          => AgentVal (-->) m ℝ -> AgentVal (-->) m ℝ )
+--                      -> DynamicPlottable
+-- diffableFnPlot f = plot fd
+--  where fd :: ℝ --> ℝ
+--        fd = alg f
                                  
 -- | Plot a continuous function in the usual way, taking arguments from the
 --   x-Coordinate and results to the y one.
