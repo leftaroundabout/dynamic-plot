@@ -1,0 +1,62 @@
+;; -*- mode: emacs-lisp; coding: emacs-mule; -*-
+;; --------------------------------------------------------------------------
+;; Desktop File for Emacs
+;; --------------------------------------------------------------------------
+;; Created Sun Nov  1 12:46:56 2015
+;; Desktop file format version 206
+;; Emacs version 24.3.1
+
+;; Global section:
+(setq desktop-missing-file-warning nil)
+(setq tags-file-name nil)
+(setq tags-table-list nil)
+(setq search-ring nil)
+(setq regexp-search-ring nil)
+(setq register-alist nil)
+(setq file-name-history '("~/progwrit/haskell/dynamic-plot/"))
+
+;; Buffer section -- buffers listed in same order as in buffer list:
+(desktop-create-buffer 206
+  "Graphics/Dynamic/Plot/R2.hs"
+  "R2.hs"
+  'haskell-mode
+  '(haskell-indent-mode vim-local-mode linum-mode auto-complete-mode)
+  1
+  '(nil nil)
+  nil
+  nil
+  '((tab-width . 8) (indent-tabs-mode) (buffer-file-coding-system . utf-8-unix)))
+
+(desktop-create-buffer 206
+  "Graphics/Dynamic/Plot/Internal/Types.hs"
+  "Types.hs"
+  'haskell-mode
+  '(haskell-indent-mode vim-local-mode linum-mode auto-complete-mode)
+  1
+  '(nil nil)
+  nil
+  nil
+  '((tab-width . 8) (indent-tabs-mode) (buffer-file-coding-system . utf-8-unix)))
+
+(desktop-create-buffer 206
+  "Graphics/Text/Annotation.hs"
+  "Annotation.hs"
+  'haskell-mode
+  '(haskell-indent-mode vim-local-mode linum-mode auto-complete-mode)
+  1
+  '(nil nil)
+  nil
+  nil
+  '((tab-width . 8) (indent-tabs-mode) (buffer-file-coding-system . utf-8-unix)))
+
+(desktop-create-buffer 206
+  "Graphics/Dynamic/Plot/Colour.hs"
+  "Colour.hs"
+  'haskell-mode
+  '(haskell-indent-mode vim-local-mode linum-mode auto-complete-mode)
+  1
+  '(nil nil)
+  nil
+  nil
+  '((tab-width . 8) (indent-tabs-mode) (buffer-file-coding-system . utf-8-unix)))
+
