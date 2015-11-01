@@ -228,23 +228,34 @@ instance Plottable (R-->R) where
                , axesNecessity = 1
                , dynamicPlot = plot }
    where yRangef (Interval l r) = undefined
-         plot (GraphWindowSpecR2{..}) = curve `deepseq` mkPlot (trace curve)
+         plot gs@(GraphWindowSpecR2{..}) = curve `deepseq` mkPlot (trace curve)
           where curve :: [P2]
-                curve = map (convℝ² . snd) $ discretisePath resFun
+                curve = map (convℝ² . snd)
+                        $ discretisePath xResolution (resolutionFunction gs)
                            (id&&&f <<< alg(+point x₀))
-                resFun (x,y)
-                  | x > rBound || y > tBound || x < lBound || y < bBound
-                               = 0
-                  | otherwise  = ε
                 x₀ = (lBound + rBound)/2
-                ε = projector (δx,0) + projector (0,δy)
-                δx = (rBound - lBound) / fromIntegral xResolution
-                δy = (tBound - bBound) / fromIntegral yResolution
                 trace (p:q:ps) = simpleLine p q <> trace (q:ps)
                 trace _ = mempty
          
          convℝ² = Dia.p2
          c = realToFrac
+
+resolutionFunction :: GraphWindowSpecR2 -> RieMetric ℝ²
+resolutionFunction GraphWindowSpecR2{..} = resoFunc
+ where x₀ = (lBound + rBound)/2
+       w = rBound - lBound; h = tBound - bBound
+       ε = projector (δx,0) + projector (0,δy)
+       δx = w / fromIntegral xResolution
+       δy = h / fromIntegral yResolution
+       resoFunc (x,y)
+         | x > lBound, x < rBound, y > bBound, y < tBound  = ε
+         | otherwise = projector (qx,0) + projector (0,qy)
+        where qx | x < lBound  = lBound - x
+                 | x > rBound  = x - rBound
+                 | otherwise   = δx * qy/δy
+              qy | y < bBound  = bBound - y
+                 | y > tBound  = y - tBound
+                 | otherwise   = δy * qx/δx
 
 
 instance Plottable (R-.^>R) where
