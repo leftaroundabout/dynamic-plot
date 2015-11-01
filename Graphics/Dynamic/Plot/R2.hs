@@ -244,7 +244,7 @@ resolutionFunction :: GraphWindowSpecR2 -> RieMetric ℝ²
 resolutionFunction GraphWindowSpecR2{..} = resoFunc
  where x₀ = (lBound + rBound)/2
        w = rBound - lBound; h = tBound - bBound
-       ε = projector (δx,0) + projector (0,δy)
+       ε = projector (recip δx, 0) + projector (0, recip δy)
        δx = w / fromIntegral xResolution
        δy = h / fromIntegral yResolution
        resoFunc (x,y)

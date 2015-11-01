@@ -2,7 +2,7 @@
 ;; --------------------------------------------------------------------------
 ;; Desktop File for Emacs
 ;; --------------------------------------------------------------------------
-;; Created Sun Nov  1 12:46:56 2015
+;; Created Sun Nov  1 23:34:28 2015
 ;; Desktop file format version 206
 ;; Emacs version 24.3.1
 
@@ -17,18 +17,29 @@
 
 ;; Buffer section -- buffers listed in same order as in buffer list:
 (desktop-create-buffer 206
-  "Graphics/Dynamic/Plot/R2.hs"
+  "/home/sagemuej/progwrit/haskell/dynamic-plot/Graphics/Dynamic/Plot/R2.hs"
   "R2.hs"
   'haskell-mode
   '(haskell-indent-mode vim-local-mode linum-mode auto-complete-mode)
-  1
+  7620
+  '(8521 nil)
+  nil
+  nil
+  '((tab-width . 8) (indent-tabs-mode) (buffer-file-coding-system . utf-8-unix) (overwrite-mode)))
+
+(desktop-create-buffer 206
+  "/home/sagemuej/progwrit/haskell/dynamic-plot/dynamic-plot.cabal"
+  "dynamic-plot.cabal"
+  'haskell-cabal-mode
+  '(vim-local-mode linum-mode)
+  3237
   '(nil nil)
   nil
   nil
-  '((tab-width . 8) (indent-tabs-mode) (buffer-file-coding-system . utf-8-unix)))
+  '((indent-tabs-mode) (buffer-file-coding-system . utf-8-unix) (overwrite-mode)))
 
 (desktop-create-buffer 206
-  "Graphics/Dynamic/Plot/Internal/Types.hs"
+  "/home/sagemuej/progwrit/haskell/dynamic-plot/Graphics/Dynamic/Plot/Internal/Types.hs"
   "Types.hs"
   'haskell-mode
   '(haskell-indent-mode vim-local-mode linum-mode auto-complete-mode)
@@ -39,7 +50,7 @@
   '((tab-width . 8) (indent-tabs-mode) (buffer-file-coding-system . utf-8-unix)))
 
 (desktop-create-buffer 206
-  "Graphics/Text/Annotation.hs"
+  "/home/sagemuej/progwrit/haskell/dynamic-plot/Graphics/Text/Annotation.hs"
   "Annotation.hs"
   'haskell-mode
   '(haskell-indent-mode vim-local-mode linum-mode auto-complete-mode)
@@ -50,7 +61,7 @@
   '((tab-width . 8) (indent-tabs-mode) (buffer-file-coding-system . utf-8-unix)))
 
 (desktop-create-buffer 206
-  "Graphics/Dynamic/Plot/Colour.hs"
+  "/home/sagemuej/progwrit/haskell/dynamic-plot/Graphics/Dynamic/Plot/Colour.hs"
   "Colour.hs"
   'haskell-mode
   '(haskell-indent-mode vim-local-mode linum-mode auto-complete-mode)
