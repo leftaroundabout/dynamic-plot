@@ -228,10 +228,11 @@ instance Plottable (R-->R) where
                , axesNecessity = 1
                , dynamicPlot = plot }
    where yRangef (Interval l r) = undefined
-         plot gs@(GraphWindowSpecR2{..}) = curve `deepseq` mkPlot (trace curve)
-          where curve :: [P2]
-                curve = map (convℝ² . snd)
-                        $ discretisePath xResolution (resolutionFunction gs)
+         plot gs@(GraphWindowSpecR2{..}) = curves `deepseq`
+                                          mkPlot (foldMap trace curves)
+          where curves :: [[P2]]
+                curves = map (map $ convℝ² . snd)
+                        $ discretisePathSegs xResolution (resolutionFunction gs)
                            (id&&&f <<< alg(+point x₀))
                 x₀ = (lBound + rBound)/2
                 trace (p:q:ps) = simpleLine p q <> trace (q:ps)
@@ -906,14 +907,15 @@ continFnPlot f = def{
        l!n | (x:_)<-drop n l  = x
            | otherwise         = error "Function appears to yield NaN most of the time. Cannot be plotted."
 
-type (-->) = Differentiable ℝ
+type (-->) = RWDiffable ℝ
 
--- diffableFnPlot :: (∀ m . WithField ℝ PseudoAffine m
---                          => AgentVal (-->) m ℝ -> AgentVal (-->) m ℝ )
---                      -> DynamicPlottable
--- diffableFnPlot f = plot fd
---  where fd :: ℝ --> ℝ
---        fd = alg f
+diffableFnPlot :: (∀ m . ( WithField ℝ PseudoAffine m
+                              , HasMetric (Needle (Interior m)) )
+                         => AgentVal (-->) m ℝ -> AgentVal (-->) m ℝ )
+                     -> DynamicPlottable
+diffableFnPlot f = plot fd
+ where fd :: ℝ --> ℝ
+       fd = alg f
                                  
 -- | Plot a continuous function in the usual way, taking arguments from the
 --   x-Coordinate and results to the y one.
