@@ -921,7 +921,7 @@ scrutiniseDiffability :: (∀ m . ( WithField ℝ PseudoAffine m
                                 , HasMetric (Needle (Interior m)) )
                          => AgentVal (-->) m ℝ -> AgentVal (-->) m ℝ )
                      -> DynamicPlottable
-scrutiniseDiffability f = plot [plot fd, dframe 0.2, dframe 0.02]
+scrutiniseDiffability f = plot [{-plot fd, -}dframe 0.2, dframe 0.02]
  where fd :: ℝ --> ℝ
        fd = alg f
        fscrut = analyseLocalBehaviour fd
