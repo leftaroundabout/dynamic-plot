@@ -924,16 +924,26 @@ scrutiniseDiffability :: (∀ m . ( WithField ℝ PseudoAffine m
 scrutiniseDiffability f = plot [plot fd, dframe 0.2, dframe 0.02]
  where fd :: ℝ --> ℝ
        fd = alg f
-       fscrut = analyseDiffability fd
+       fscrut = analyseLocalBehaviour fd
        dframe rfh = def{
                    isTintableMonochromic = True
                  , dynamicPlot = mkFrame
                  }
-        where mkFrame (GraphWindowSpecR2{..}) = δx `deepseq` mkPlot (mempty)
+        where mkFrame (GraphWindowSpecR2{..}) = case fscrut xm of
+                      Option (Just ((ym,y'm), δOδx²))
+                        | Option (Just δx) <- δOδx² δy
+                          -> δx `seq` let frame = mconcat
+                                            [ simpleLine ((xm-δx)^&(ym+yo-δx*y'm))
+                                                         ((xm+δx)^&(ym+yo+δx*y'm))
+                                            | yo <- [-δy, δy] ]
+                                      in mkPlot frame
+                        | otherwise
+                          -> y'm `seq` mkPlot
+                             ( simpleLine ((xm-δxdef)^&(ym-δxdef*y'm))
+                                          ((xm+δxdef)^&(ym+δxdef*y'm)) )
                where xm = (rBound + lBound) / 2
+                     δxdef = (rBound - lBound) / 10
                      δy = rfh * (tBound - bBound)
-                     Option (Just ((ym,y'm), δOδx²)) = fscrut xm
-                     δx = δOδx² δy
               
                                  
 -- | Plot a continuous function in the usual way, taking arguments from the
@@ -943,7 +953,7 @@ scrutiniseDiffability f = plot [plot fd, dframe 0.2, dframe 0.02]
 --   @'fnPlot' (\\x -> sin x / exp (x^2))@ will work (but the view must not contain
 --   singularities).
 --   
---   Under the hood this uses the category of continuous functions, ':-->', to proove
+--   Under the hood this uses the category of continuous functions, ':-->', to prove
 --   that no details are omitted (like small high-frequency bumps). The flip side is that
 --   this does not always work very efficiently, in fact it can easily become exponentially
 --   slow for some parameters.
