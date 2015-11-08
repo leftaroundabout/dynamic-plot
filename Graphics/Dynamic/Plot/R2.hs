@@ -910,12 +910,31 @@ continFnPlot f = def{
 type (-->) = RWDiffable ℝ
 
 diffableFnPlot :: (∀ m . ( WithField ℝ PseudoAffine m
-                              , HasMetric (Needle (Interior m)) )
+                         , HasMetric (Needle (Interior m)) )
                          => AgentVal (-->) m ℝ -> AgentVal (-->) m ℝ )
                      -> DynamicPlottable
 diffableFnPlot f = plot fd
  where fd :: ℝ --> ℝ
        fd = alg f
+
+scrutiniseDiffability :: (∀ m . ( WithField ℝ PseudoAffine m
+                                , HasMetric (Needle (Interior m)) )
+                         => AgentVal (-->) m ℝ -> AgentVal (-->) m ℝ )
+                     -> DynamicPlottable
+scrutiniseDiffability f = plot [plot fd, dframe 0.2, dframe 0.02]
+ where fd :: ℝ --> ℝ
+       fd = alg f
+       fscrut = analyseDiffability fd
+       dframe rfh = def{
+                   isTintableMonochromic = True
+                 , dynamicPlot = mkFrame
+                 }
+        where mkFrame (GraphWindowSpecR2{..}) = δx `deepseq` mkPlot (mempty)
+               where xm = (rBound + lBound) / 2
+                     δy = rfh * (tBound - bBound)
+                     Option (Just ((ym,y'm), δOδx²)) = fscrut xm
+                     δx = δOδx² δy
+              
                                  
 -- | Plot a continuous function in the usual way, taking arguments from the
 --   x-Coordinate and results to the y one.
