@@ -82,12 +82,22 @@ prettyFloatShow preci x
     | preci >= 0, preci < 4  = show $ round x
     | preci < 0, preci > -2  = printf "%.1f" x
     | otherwise   = case ceiling (0.01 + lg (abs x/10^^(preci+1))) + preci of
-                        0    | preci < 0  -> printf ("%."++show(-preci)++"f") x
-                        expn | expn>preci -> printf ("%."++show(expn-preci)++"f*10^%i")
-                                                      (x/10^^expn)                 expn
-                             | otherwise  -> printf ("%i*10^%i")
-                                                      (round $ x/10^^expn :: Int)  expn
+                      0    | preci < 0  -> printf "%.*f"
+                                                     (-preci)
+                                                      x
+                      expn | expn>preci -> printf "%.*f×₁₀%s"
+                                                     (expn-preci)
+                                                      (x/10^^expn)
+                                                          (showExponentAsSuperscript expn)
+                           | otherwise  -> printf "%i×₁₀%s"
+                                                   (round $ x/10^^expn :: Int)
+                                                        (showExponentAsSuperscript expn)
                                       
+showExponentAsSuperscript :: Int -> String
+showExponentAsSuperscript = map sup . show
+ where sup ch = case lookup ch $ zip "0123456789-"
+                                     "⁰¹²³⁴⁵⁶⁷⁸⁹⁻" of
+                  Just ch -> ch
 
 maybeRead :: Read a => String -> Maybe a
 maybeRead = fmap fst . listToMaybe . reads
