@@ -110,6 +110,7 @@ import Data.Basis
 import Data.AffineSpace
 import Data.LinearMap.HerMetric
 import Data.Manifold.PseudoAffine
+import Data.Function.Differentiable
 import Data.Manifold.Types
 import Data.Manifold.TreeCover
 import qualified Data.Map.Lazy as Map
@@ -231,12 +232,18 @@ instance Plottable (R-->R) where
          plot gs@(GraphWindowSpecR2{..}) = curves `deepseq`
                                           mkPlot (foldMap trace curves)
           where curves :: [[P2]]
-                curves = map (map $ convℝ² . snd)
-                        $ discretisePathSegs xResolution (resolutionFunction gs)
-                           (id&&&f <<< alg(+point x₀))
+                curves = map (map $ convℝ² . snd) . gatherSides
+                        $ discretisePathSegs
+                              1000
+                              ( const . metricFromLength
+                                               $ (rBound-lBound)/fromIntegral xResolution
+                              , resolutionFunction gs )
+                              (lBound, rBound)
+                              (id&&&f)
                 x₀ = (lBound + rBound)/2
                 trace (p:q:ps) = simpleLine p q <> trace (q:ps)
                 trace _ = mempty
+                gatherSides = uncurry (++) . (take 50 *** take 50)
          
          convℝ² = Dia.p2
          c = realToFrac
@@ -245,12 +252,12 @@ resolutionFunction :: GraphWindowSpecR2 -> RieMetric ℝ²
 resolutionFunction GraphWindowSpecR2{..} = resoFunc
  where x₀ = (lBound + rBound)/2
        w = rBound - lBound; h = tBound - bBound
-       ε = projector (recip δx, 0) + projector (0, recip δy)
+       ε = projector (recip δx, 0) ^+^ projector (0, recip δy)
        δx = w / fromIntegral xResolution
        δy = h / fromIntegral yResolution
        resoFunc (x,y)
          | x > lBound, x < rBound, y > bBound, y < tBound  = ε
-         | otherwise = projector (qx,0) + projector (0,qy)
+         | otherwise = projector (recip qx,0) ^+^ projector (0,recip qy)
         where qx | x < lBound  = lBound - x
                  | x > rBound  = x - rBound
                  | otherwise   = δx * qy/δy
