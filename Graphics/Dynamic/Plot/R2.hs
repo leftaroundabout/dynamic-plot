@@ -256,7 +256,7 @@ resolutionFunction GraphWindowSpecR2{..} = resoFunc
        δx = w / fromIntegral xResolution
        δy = h / fromIntegral yResolution
        resoFunc (x,y)
-         | x > lBound, x < rBound, y > bBound, y < tBound  = ε
+         | x >= lBound, x <= rBound, y >= bBound, y <= tBound  = ε
          | otherwise = projector (recip qx,0) ^+^ projector (0,recip qy)
         where qx | x < lBound  = lBound - x
                  | x > rBound  = x - rBound
