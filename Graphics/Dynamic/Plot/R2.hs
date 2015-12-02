@@ -948,6 +948,7 @@ scrutiniseDiffability f = plot [{-plot fd, -}dframe 0.2, dframe 0.02]
                           -> y'm `seq` mkPlot
                              ( autoDashLine 0.5 ((xm-δxdef)^&(ym-δxdef*y'm))
                                                 ((xm+δxdef)^&(ym+δxdef*y'm))  )
+                      _ -> mempty
                where xm = (rBound + lBound) / 2
                      δxdef = (rBound - lBound) / 10
                      δy = rfh * (tBound - bBound)
