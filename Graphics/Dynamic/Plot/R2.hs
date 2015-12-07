@@ -224,11 +224,22 @@ diagramPlot d = plot $ PlainGraphics d
 
   
 instance Plottable (R-->R) where
-  plot f = def { relevantRange_y = mempty -- otherDimDependence yRangef
+  plot f = def { relevantRange_y = OtherDimDependantRange yRangef
                , isTintableMonochromic = True
                , axesNecessity = 1
                , dynamicPlot = plot }
-   where yRangef (Interval l r) = undefined
+   where yRangef (Option Nothing) = Option Nothing
+         yRangef (Option (Just (Interval l r)))
+             = case continuityRanges
+                      100
+                      ( const . metricFromLength $ (r-l)/16 )
+                      ((id&&&f) . alg (\x -> ( point l?<x?<point r ?-> x ))) of 
+                 ([],[]) -> empty
+                 (liv,riv) -> return . uncurry Interval . (minimum &&& maximum)
+                                 . map snd . concat $ take 4 liv  ++ take 4 riv
+          where (fgb, fgt) = (minimum &&& maximum) [f $ l, f $ m, f $ r]
+                m = l + (r-l) * 0.352479608143
+         
          plot gs@(GraphWindowSpecR2{..}) = curves `deepseq`
                                           mkPlot (foldMap trace curves)
           where curves :: [[P2]]
