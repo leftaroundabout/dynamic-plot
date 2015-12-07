@@ -238,8 +238,8 @@ instance Plottable (R-->R) where
                               ( const . metricFromLength
                                                $ (rBound-lBound)/fromIntegral xResolution
                               , resolutionFunction gs )
-                              (lBound, rBound)
-                              (id&&&f)
+                              ((id&&&f)
+                               . alg (\x -> ( point lBound?<x?<point rBound ?-> x )))
                 x₀ = (lBound + rBound)/2
                 trace (p:q:ps) = simpleLine p q <> trace (q:ps)
                 trace _ = mempty
