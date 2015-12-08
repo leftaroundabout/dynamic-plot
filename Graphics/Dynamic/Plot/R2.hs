@@ -230,15 +230,13 @@ instance Plottable (R-->R) where
                , dynamicPlot = plot }
    where yRangef (Option Nothing) = Option Nothing
          yRangef (Option (Just (Interval l r)))
-             = case continuityRanges
+             = case intervalImages
                       100
-                      ( const . metricFromLength $ (r-l)/16 )
-                      ((id&&&f) . alg (\x -> ( point l?<x?<point r ?-> x ))) of 
-                 ([],[]) -> empty
-                 (liv,riv) -> return . uncurry Interval . (minimum &&& maximum)
-                                 . map snd . concat $ take 4 liv  ++ take 4 riv
-          where (fgb, fgt) = (minimum &&& maximum) [f $ l, f $ m, f $ r]
-                m = l + (r-l) * 0.352479608143
+                      ( const . metricFromLength $ (r-l)/16 , const $ metricFromLength 0.0001 )
+                      ( alg (\x -> ( point l?<x?<point r ?-> (f$~x) ))) of 
+                 ([],[]) -> Option Nothing
+                 (liv,riv) -> pure . foldr1 (<>) . map (uncurry Interval . snd)
+                               $ take 4 liv ++ take 4 riv
          
          plot gs@(GraphWindowSpecR2{..}) = curves `deepseq`
                                           mkPlot (foldMap trace curves)
