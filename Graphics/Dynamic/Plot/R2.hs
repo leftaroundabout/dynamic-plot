@@ -249,7 +249,6 @@ instance Plottable (R-->R) where
                               , resolutionFunction gs )
                               ((id&&&f)
                                . alg (\x -> ( point lBound?<x?<point rBound ?-> x )))
-                x₀ = (lBound + rBound)/2
                 trace (p:q:ps) = simpleLine p q <> trace (q:ps)
                 trace _ = mempty
                 gatherSides = uncurry (++) . (take 50 *** take 50)
@@ -257,10 +256,31 @@ instance Plottable (R-->R) where
          convℝ² = Dia.p2
          c = realToFrac
 
+instance Plottable (R-->(R,R)) where
+  plot f = def { relevantRange_y = mempty
+               , isTintableMonochromic = True
+               , axesNecessity = 1
+               , dynamicPlot = plot }
+   where plot gs@(GraphWindowSpecR2{..}) = curves `deepseq`
+                                          mkPlot (foldMap trace curves)
+          where curves :: [[P2]]
+                curves = map (map $ convℝ² . snd) . gatherSides
+                        $ discretisePathSegs
+                              1000
+                              ( const . metricFromLength $ 1/100
+                              , resolutionFunction gs )
+                              f
+                trace (p:q:ps) = simpleLine p q <> trace (q:ps)
+                trace _ = mempty
+                gatherSides = uncurry (++) . (take 50 *** take 50)
+         
+         convℝ² = Dia.p2
+         c = realToFrac
+
+
 resolutionFunction :: GraphWindowSpecR2 -> RieMetric ℝ²
 resolutionFunction GraphWindowSpecR2{..} = resoFunc
- where x₀ = (lBound + rBound)/2
-       w = rBound - lBound; h = tBound - bBound
+ where w = rBound - lBound; h = tBound - bBound
        ε = projector (recip δx, 0) ^+^ projector (0, recip δy)
        δx = w / fromIntegral xResolution
        δy = h / fromIntegral yResolution
@@ -932,6 +952,14 @@ diffableFnPlot :: (∀ m . ( WithField ℝ PseudoAffine m
 diffableFnPlot f = plot fd
  where fd :: ℝ --> ℝ
        fd = alg f
+
+diffablePathPlot :: (∀ m . ( WithField ℝ PseudoAffine m
+                         , HasMetric (Needle (Interior m)) )
+                       => AgentVal (-->) m ℝ -> (AgentVal (-->) m ℝ, AgentVal (-->) m ℝ) )
+                     -> DynamicPlottable
+diffablePathPlot f = plot fd
+ where fd :: ℝ --> (ℝ,ℝ)
+       fd = alg1to2 f
 
 scrutiniseDiffability :: (∀ m . ( WithField ℝ PseudoAffine m
                                 , HasMetric (Needle (Interior m)) )
