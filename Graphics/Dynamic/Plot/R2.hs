@@ -35,6 +35,7 @@ module Graphics.Dynamic.Plot.R2 (
         -- ** Class  
         , Plottable(..)
         -- ** Simple function plots 
+        , diffableFnPlot, diffablePathPlot
         , fnPlot, paramPlot
         , continFnPlot
         , tracePlot
