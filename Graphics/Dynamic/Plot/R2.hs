@@ -636,6 +636,14 @@ atLeastInterval' = OtherDimDependantRange . const
 --   The individual objects you want to plot can be evaluated in multiple threads, so
 --   a single hard calculatation won't freeze the responsitivity of the whole window.
 --   Invoke e.g. from @ghci +RTS -N4@ to benefit from this.
+--   
+--   ATTENTION: the window may sometimes freeze, especially when displaying 
+--   complicated functions with 'diffableFnPlot` from ghci. This is apparently
+--   a kind of deadlock problem with one of the C libraries that are invoked,
+--   in particular, 'diffableFnPlot' makes heavy use of <http://hackage.haskell.org/package/hmatrix hmatrix>
+--   and thus <http://www.gnu.org/software/gsl/ GSL>.
+--   At the moment, we can recommend no better solution than to abort and restart ghci,
+--   if this occurs.
 plotWindow :: [DynamicPlottable] -> IO GraphWindowSpec
 plotWindow [] = plotWindow [dynamicAxes]
 plotWindow graphs' = do
