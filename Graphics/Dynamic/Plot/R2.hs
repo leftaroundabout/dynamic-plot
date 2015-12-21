@@ -117,9 +117,6 @@ import qualified Data.Map.Lazy as Map
 
 import Data.Tagged
 
-import Data.Manifold ((:-->))
-import qualified Data.Manifold as 𝓒⁰
-  
 import Text.Printf
 
 import Data.IORef
@@ -153,42 +150,6 @@ instance Plottable (R -> R) where
 
 -- {-# RULES "plot/R->R" plot = fnPlot #-}
 
-instance Plottable (Double :--> Double) where
-  plot f = def { relevantRange_y = otherDimDependence yRangef
-               , isTintableMonochromic = True
-               , axesNecessity = 1
-               , dynamicPlot = plot }
-   where yRangef (Interval l r) = uncurry Interval . (minimum &&& maximum) 
-                            . map snd $ 𝓒⁰.finiteGraphContinℝtoℝ
-                                         (𝓒⁰.GraphWindowSpec l r fgb fgt 9 9) f
-          where (fgb, fgt) = (minimum &&& maximum) [f $ l, f $ m, f $ r]
-                m = l + (r-l) * 0.352479608143
-         
-         plot (GraphWindowSpecR2{..}) = curve `deepseq` mkPlot (trace curve)
-          where curve :: [P2]
-                curve = map convℝ² $ 𝓒⁰.finiteGraphContinℝtoℝ mWindow f
-                mWindow = 𝓒⁰.GraphWindowSpec (c lBound) (c rBound) (c bBound) (c tBound) 
-                                                 xResolution yResolution
-                trace (p:q:ps) = simpleLine p q <> trace (q:ps)
-                trace _ = mempty
-         
-         convℝ² = Dia.p2
-         c = realToFrac
-
-instance Plottable (Double :--> (Double, Double)) where
-  plot f = def { isTintableMonochromic = True
-               , axesNecessity = 1
-               , dynamicPlot = plot }
-   where plot (GraphWindowSpecR2{..}) = curves `deepseq` mkPlot (foldMap trace curves)
-          where curves :: [[P2]]
-                curves = map (map convℝ²) $ 𝓒⁰.finiteGraphContinℝtoℝ² mWindow f
-                mWindow = 𝓒⁰.GraphWindowSpec (c lBound) (c rBound) (c bBound) (c tBound) 
-                                                 xResolution yResolution
-                trace (p:q:ps) = simpleLine p q <> trace (q:ps)
-                trace _ = mempty
-         
-         convℝ² = Dia.p2
-         c = realToFrac
 
 
 instance (Plottable p) => Plottable [p] where
