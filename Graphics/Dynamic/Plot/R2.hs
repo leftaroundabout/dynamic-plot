@@ -35,7 +35,6 @@ module Graphics.Dynamic.Plot.R2 (
         -- ** Class  
         , Plottable(..)
         -- ** Simple function plots 
-        , diffableFnPlot, diffablePathPlot
         , fnPlot, paramPlot
         , continFnPlot
         , tracePlot
@@ -925,7 +924,7 @@ defaultKeyMap _ = Nothing
 --   of defining functions with range-pattern-matching etc., which is at the moment
 --   not possible in the ':-->' category.
 -- 
---   However, because 'Double' can't really proove properties of a mathematical
+--   However, because 'Double' can't really prove properties of a mathematical
 --   function, aliasing and similar problems are not taken into account. So it only works
 --   accurately when the function is locally linear on pixel scales (what most
 --   other plot programs just assume silently). In case of singularities, the
@@ -952,21 +951,39 @@ continFnPlot f = def{
        l!n | (x:_)<-drop n l  = x
            | otherwise         = error "Function appears to yield NaN most of the time. Cannot be plotted."
 
+
 type (-->) = RWDiffable ℝ
 
-diffableFnPlot :: (∀ m . ( WithField ℝ PseudoAffine m
+-- | Plot a continuous function in the usual way, taking arguments from the
+--   x-Coordinate and results to the y one.
+--   The signature looks more complicated than it is; think about it as requiring
+--   a polymorphic 'Floating' function. Any simple expression like
+--   @'fnPlot' (\\x -> sin x / cos (sqrt x))@ will work.
+--   
+--   Under the hood this uses the category of region-wise differentiable functions,
+--   'RWDiffable', to prove that no details are omitted (like small high-frequency
+--   bumps). Note that this can become difficult for contrived cases like @cos(1/sin x)@
+--   – while such functions will never come out with aliasing artifacts, they also
+--   may not come out quickly at all. (But for well-behaved functions, using the
+--   differentiable category actually tends to be more effective, because the algorithm
+--   immediately sees when it can describe an almost-linear region with only a few line
+--   segments.)
+-- 
+--   This function is equivalent to using 'plot' on an 'RWDiffable' arrow.
+fnPlot :: (∀ m . ( WithField ℝ PseudoAffine m
                          , HasMetric (Needle (Interior m)) )
                          => AgentVal (-->) m ℝ -> AgentVal (-->) m ℝ )
                      -> DynamicPlottable
-diffableFnPlot f = plot fd
+fnPlot f = plot fd
  where fd :: ℝ --> ℝ
        fd = alg f
 
-diffablePathPlot :: (∀ m . ( WithField ℝ PseudoAffine m
+-- | Plot a continuous, “parametric function”, i.e. mapping the real line to a path in ℝ².
+paramPlot :: (∀ m . ( WithField ℝ PseudoAffine m
                          , HasMetric (Needle (Interior m)) )
                        => AgentVal (-->) m ℝ -> (AgentVal (-->) m ℝ, AgentVal (-->) m ℝ) )
                      -> DynamicPlottable
-diffablePathPlot f = plot fd
+paramPlot f = plot fd
  where fd :: ℝ --> (ℝ,ℝ)
        fd = alg1to2 f
 
@@ -1000,42 +1017,6 @@ scrutiniseDiffability f = plot [{-plot fd, -}dframe 0.2, dframe 0.02]
                      δy = rfh * (tBound - bBound)
               
                                  
--- | Plot a continuous function in the usual way, taking arguments from the
---   x-Coordinate and results to the y one.
---   The signature looks more complicated than it is; think about it as requiring
---   a polymorphic 'Floating' function. Any simple expression like
---   @'fnPlot' (\\x -> sin x / exp (x^2))@ will work (but the view must not contain
---   singularities).
---   
---   Under the hood this uses the category of continuous functions, ':-->', to prove
---   that no details are omitted (like small high-frequency bumps). The flip side is that
---   this does not always work very efficiently, in fact it can easily become exponentially
---   slow for some parameters.
---   Make sure to run multithreaded, to prevent hanging your program this way. Also consider
---   limiting the memory: if you try to plot across singularities, the program may well
---   eat up all available resorces before failing. (But it will never &#x201c;succeed&#x201d; and
---   plot something wrong!)
---   
---   In the future, we would like to switch to the category of piecewise continuously-differentiable
---   functions. That wouldn't suffer from said problems, and should
---   also generally be more efficient. (That category is not yet implemented in Haskell.)
-fnPlot :: (forall m . 𝓒⁰.Manifold m 
-                   => AgentVal (:-->) m Double -> AgentVal (:-->) m Double) 
-                      -> DynamicPlottable
-fnPlot f = plot fc
- where fc :: Double :--> Double
-       fc = alg f
-       
--- | Plot a continuous, &#x201c;parametric function&#x201d;, i.e. mapping the real
---   line to a path in &#x211d;&#xb2;.
-paramPlot :: (forall m . 𝓒⁰.Manifold m 
-                    => AgentVal (:-->) m Double 
-                        -> (AgentVal (:-->) m Double, AgentVal (:-->) m Double)) 
-                     -> DynamicPlottable
-paramPlot f = plot fc
- where fc :: Double :--> (Double, Double)
-       fc = alg1to2 f
-
 
 continColourSurfaceFnPlot :: ((Double,Double) -> DCol.Colour Double) -> DynamicPlottable
 continColourSurfaceFnPlot f = def {
