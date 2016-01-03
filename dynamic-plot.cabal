@@ -1,5 +1,5 @@
 Name:                dynamic-plot
-Version:             0.1.1.2
+Version:             0.1.2.0
 Category:            graphics
 Synopsis:            Interactive diagram windows
 Description:         Haskell excels at handling data like continuous functions
@@ -60,7 +60,7 @@ Library
                      , gtk > 0.10 && < 0.15
                      , glib
                      , colour >= 2 && < 3
-                     , manifolds == 0.1.6.2
+                     , manifolds >= 0.1.6.3 && < 0.1.7
                      , lens < 4.12.4
   Other-Extensions:  FlexibleInstances
                      , TypeFamilies
