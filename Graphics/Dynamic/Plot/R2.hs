@@ -359,15 +359,22 @@ tracePlot = plot . recursiveSamples . map ((,()) . Dia.p2)
 --   Beware that this will always slow down the performance when the list is large;
 --   there is no &#201c;statistic optimisation&#201d; as in 'tracePlot'.
 lineSegPlot :: [(Double, Double)] -> DynamicPlottable
-lineSegPlot ps = def {
-               relevantRange_x = atLeastInterval' $ foldMap (pure . spInterval . fst) ps
-             , relevantRange_y = atLeastInterval' $ foldMap (pure . spInterval . snd) ps
+lineSegPlot ps'
+    | null ps        = mempty { isTintableMonochromic = True }
+    | otherwise      = def {
+               relevantRange_x = atLeastInterval' $ foldMap (pure . spInterval . fst) (concat ps)
+             , relevantRange_y = atLeastInterval' $ foldMap (pure . spInterval . snd) (concat ps)
              , isTintableMonochromic = True
              , axesNecessity = 1
              , dynamicPlot = plot }
- where plot (GraphWindowSpecR2{..}) = mkPlot (trace ps)
+ where plot (GraphWindowSpecR2{..}) = mkPlot (foldMap trace ps)
         where trace (p:q:ps) = simpleLine (Dia.p2 p) (Dia.p2 q) <> trace (q:ps)
               trace _ = mempty
+       ps = filter ((>1) . length) $ safeSeg ps'
+       safeSeg [] = [[]]
+       safeSeg ((x,y):l) | x==x && not (isInfinite x) && y==y && not (isInfinite y)
+                           = case safeSeg l of { h:r -> ((x,y):h):r }
+                         | otherwise  = [] : safeSeg l
 
 
   
