@@ -97,6 +97,7 @@ import Control.DeepSeq
 
 
 import Data.List (foldl', sort, sortBy, intercalate, isPrefixOf, isInfixOf, find, zip4)
+import qualified Data.List.NonEmpty as NE
 import qualified Data.Vector as Arr
 import Data.Maybe
 import Data.Semigroup
@@ -441,12 +442,34 @@ instance Plottable (Shade P2) where
               , axesNecessity = 1
               , dynamicPlot = plot
               }
-   where plot grWS@(GraphWindowSpecR2{..}) = mkPlot $ foldMap axLine eigVs 
-          where (pixWdth, pixHght) = pixelDim grWS
-                axLine eigV = simpleLine (ctr .-~^ eigV) (ctr .+~^ eigV)
+   where plot _ = mkPlot $ foldMap axLine eigVs 
+          where axLine eigV = simpleLine (ctr .-~^ eigV) (ctr .+~^ eigV)
          (xRange,yRange) = shadeExtends shade
          ctr = shade^.shadeCtr
          eigVs = eigenSpan $ shade^.shadeExpanse
+
+instance Plottable (Shaded ℝ ℝ) where
+  plot tr | not $ null trivs'
+          = def { relevantRange_x = atLeastInterval xRange
+                , relevantRange_y = atLeastInterval yRange
+                , isTintableMonochromic = True
+                , axesNecessity = 1
+                , dynamicPlot = plot
+                }
+   where plot grWS@(GraphWindowSpecR2{..}) = mkPlot $ foldMap parallelogram trivs
+          where parallelogram (x, ((y,δy), j))
+                    = lLoop [ (x+δx)^&(y+δy+jδx), (x-δx)^&(y+δy-jδx)
+                            , (x-δx)^&(y-δy-jδx), (x+δx)^&(y-δy+jδx) ]
+                         & Dia.strokeLocLoop
+                         & Dia.opacity 0.3
+                 where jδx = j $ δx
+         trivs' = {-sortBy (comparing fst) $ -}stiAsIntervalMapping tr
+         trivs = NE.fromList trivs'
+         xRange@(Interval xl xr) = sconcat $ fmap (\(x,_) -> Interval x x) trivs
+         δx = (xr - xl) / fromIntegral (length trivs)
+         yRange = sconcat $ fmap (\(_,((y,_),_)) -> Interval y y) trivs
+         lLoop ps@(p:_) = Dia.fromVertices $ ps++[p]
+  plot _ = def
 
 instance Plottable (SimpleTree P2) where
   plot (GenericTree Nothing) = plot ([] :: [SimpleTree P2])
