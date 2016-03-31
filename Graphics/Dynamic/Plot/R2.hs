@@ -448,27 +448,57 @@ instance Plottable (Shade P2) where
          ctr = shade^.shadeCtr
          eigVs = eigenSpan $ shade^.shadeExpanse
 
+instance Plottable (Shade' (R,R)) where
+  plot shade = def {
+                isTintableMonochromic = True
+              , axesNecessity = 1
+              , dynamicPlot = plot
+              }
+   where plot _ = mkPlot $ Dia.circle 1
+                            & Dia.scaleX w₁ & Dia.scaleY w₂
+                            & Dia.rotate ϑ
+                            & Dia.opacity 0.2
+                            & Dia.moveTo ctr
+         ctr = Dia.p2 $ shade^.shadeCtr
+         [ev₁@(e₁x,e₁y),ev₂] = eigenSpan' $ shade^.shadeNarrowness
+         ϑ = atan2 e₁y e₁x  Dia.@@ Dia.rad
+         w₁ = recip $ magnitude ev₁; w₂ = recip $ magnitude ev₂
+         
+
 instance Plottable (Shaded ℝ ℝ) where
-  plot tr | not $ null trivs'
+  plot tr | length trivs' >= 2
           = def { relevantRange_x = atLeastInterval xRange
                 , relevantRange_y = atLeastInterval yRange
                 , isTintableMonochromic = True
                 , axesNecessity = 1
                 , dynamicPlot = plot
                 }
-   where plot grWS@(GraphWindowSpecR2{..}) = mkPlot $ foldMap parallelogram trivs
-          where parallelogram (x, ((y,δy), j))
+   where plot grWS@(GraphWindowSpecR2{..}) = mkPlot $
+                            foldMap parallelogram trivs
+                         <> (foldMap (singlePointFor grWS) allLeaves
+                               -- & Dia.dashingO [2,3] 0
+                               & Dia.opacity 0.4 )
+          where parallelogram ((x,δx), ((y,δy), j))
                     = lLoop [ (x+δx)^&(y+δy+jδx), (x-δx)^&(y+δy-jδx)
                             , (x-δx)^&(y-δy-jδx), (x+δx)^&(y-δy+jδx) ]
                          & Dia.strokeLocLoop
                          & Dia.opacity 0.3
                  where jδx = j $ δx
-         trivs' = {-sortBy (comparing fst) $ -}stiAsIntervalMapping tr
-         trivs = NE.fromList trivs'
-         xRange@(Interval xl xr) = sconcat $ fmap (\(x,_) -> Interval x x) trivs
-         δx = (xr - xl) / fromIntegral (length trivs)
+         trivs' = sortBy (comparing fst) $ stiAsIntervalMapping tr
+         trivs = NE.fromList $ ccδs trivs'
+          where ccδs [(x, yq), (x', yq')] = [((x,δx),yq), ((x',δx),yq')]
+                 where δx = (x' - x)/2
+                ccδs [(x, yq), (x', yq'), (x'', yq'')]
+                         = [((x,δx),yq), ((x',δx),yq'), ((x'',δx),yq'')]
+                 where δx = (x'' - x)/4
+                ccδs ((x, yq) : xyqs@((x', yq') : (x'', _) : _))
+                         = ((x,δx),yq) : ((x',δx),yq') : tail (ccδs xyqs)
+                 where δx = (x'' - x)/4
+         xRange@(Interval xl xr) = sconcat $ fmap (\((x,_),_) -> Interval x x) trivs
          yRange = sconcat $ fmap (\(_,((y,_),_)) -> Interval y y) trivs
          lLoop ps@(p:_) = Dia.fromVertices $ ps++[p]
+         allLeaves = sortBy (comparing (^._x))
+                         $ (\(x`WithAny`y) -> y^&x) <$> onlyLeaves tr
   plot _ = def
 
 instance Plottable (SimpleTree P2) where
@@ -499,6 +529,10 @@ pixelDim :: GraphWindowSpecR2 -> (R, R)
 pixelDim grWS = ( graphWindowWidth grWS / fromIntegral (xResolution grWS)
                 , graphWindowHeight grWS / fromIntegral (yResolution grWS) )
 
+singlePointFor :: GraphWindowSpecR2 -> P2 -> PlainGraphicsR2
+singlePointFor spec = Dia.place circ
+ where (pxw,pxh) = pixelDim spec
+       circ = Dia.circle 1 & Dia.scaleX pxw & Dia.scaleY pxh
 
 
 type GraphWindowSpec = GraphWindowSpecR2
