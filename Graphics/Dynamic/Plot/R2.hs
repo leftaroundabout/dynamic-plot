@@ -467,15 +467,15 @@ instance Plottable (Shade' (R,R)) where
 
 instance Plottable (Shaded ℝ ℝ) where
   plot tr | length trivs' >= 2
-          = def { relevantRange_x = atLeastInterval xRange
-                , relevantRange_y = atLeastInterval yRange
+          = def { relevantRange_x = atLeastInterval $ Interval xmin xmax
+                , relevantRange_y = atLeastInterval $ Interval ymin ymax
                 , isTintableMonochromic = True
                 , axesNecessity = 1
                 , dynamicPlot = plot
                 }
    where plot grWS@(GraphWindowSpecR2{..}) = mkPlot $
                             foldMap parallelogram trivs
-                         <> (foldMap (singlePointFor grWS) allLeaves
+                         <> (foldMap (singlePointFor grWS) leafPoints
                                -- & Dia.dashingO [2,3] 0
                                & Dia.opacity 0.4 )
           where parallelogram ((x,δx), ((y,δy), j))
@@ -494,11 +494,12 @@ instance Plottable (Shaded ℝ ℝ) where
                 ccδs ((x, yq) : xyqs@((x', yq') : (x'', _) : _))
                          = ((x,δx),yq) : ((x',δx),yq') : tail (ccδs xyqs)
                  where δx = (x'' - x)/4
-         xRange@(Interval xl xr) = sconcat $ fmap (\((x,_),_) -> Interval x x) trivs
-         yRange = sconcat $ fmap (\(_,((y,_),_)) -> Interval y y) trivs
+         [xmin, ymin, xmax, ymax]
+            = [minimum, maximum]<*>[_topological<$>allLeaves, _untopological<$>allLeaves]
          lLoop ps@(p:_) = Dia.fromVertices $ ps++[p]
-         allLeaves = sortBy (comparing (^._x))
-                         $ (\(x`WithAny`y) -> y^&x) <$> onlyLeaves tr
+         leafPoints = sortBy (comparing (^._x))
+                         $ (\(x`WithAny`y) -> y^&x) <$> allLeaves
+         allLeaves = onlyLeaves tr
   plot _ = def
 
 instance Plottable (SimpleTree P2) where
