@@ -521,8 +521,17 @@ instance Plottable (SimpleTree P2) where
                             in (xmin ... xmax, ymin ... ymax)
           where gPts (GenericTree brchs) = foldr (\(c,b) r -> c : gPts b ++ r) [] brchs
          tree = GenericTree [(ctr,root)]
-
 instance Plottable (Trees P2) where
+  plot (GenericTree ts) = plot $ (GenericTree . Just) <$> ts
+
+instance Plottable (SimpleTree (R,R)) where
+  plot = plot . fmap (\(x,y) -> DiaTypes.p2 (x,y))
+instance Plottable (Trees (R,R)) where
+  plot (GenericTree ts) = plot $ (GenericTree . Just) <$> ts
+
+instance Plottable (SimpleTree (R`WithAny`R)) where
+  plot = plot . fmap (\(WithAny y x) -> DiaTypes.p2 (x,y))
+instance Plottable (Trees (R`WithAny`R)) where
   plot (GenericTree ts) = plot $ (GenericTree . Just) <$> ts
 
 pixelDim :: GraphWindowSpecR2 -> (R, R)
