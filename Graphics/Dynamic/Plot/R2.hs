@@ -898,12 +898,17 @@ autoDefaultView graphs = GraphWindowSpecR2 l r b t defResX defResY defaultColour
   where (xRange, yRange) = foldMap (relevantRange_x &&& relevantRange_y) graphs
         ((l,r), (b,t)) = ( xRange `dependentOn` yRange
                          , yRange `dependentOn` xRange )
+        
+        dependentOn :: RangeRequest R -> RangeRequest R -> (R,R)
         MustBeThisRange (Interval a b) `dependentOn` _ = (a,b)
         OtherDimDependantRange ξ `dependentOn` MustBeThisRange i
            = addMargin . defRng . ξ $ pure i
         OtherDimDependantRange ξ `dependentOn` OtherDimDependantRange υ
            = addMargin . defRng . ξ . pure . defRng $ υ mempty
-        defRng = Interval (-1) 1 `option` id
+        
+        defRng (Option (Just (Interval a b))) | b>a     
+                  = Interval a b
+        defRng _  = Interval (-1) 1   -- ad-hoc hack to catch NaNs etc..
         addMargin (Interval a b) = (a - q, b + q)
             where q = (b - a) / 6
   
