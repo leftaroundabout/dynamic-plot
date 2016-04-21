@@ -60,7 +60,7 @@ Library
                      , gtk > 0.10 && < 0.15
                      , glib
                      , colour >= 2 && < 3
-                     , manifolds >= 0.2 && < 0.2.1
+                     , manifolds >= 0.2.1 && < 0.2.2
                      , lens < 4.12.4
   Other-Extensions:  FlexibleInstances
                      , TypeFamilies

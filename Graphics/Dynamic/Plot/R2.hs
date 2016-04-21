@@ -103,6 +103,7 @@ import Data.Maybe
 import Data.Semigroup
 import Data.Default
 import Data.Foldable (fold, foldMap)
+import qualified Data.Foldable as Hask
 import Data.Function (on)
 import Data.Ord (comparing)
 
@@ -114,6 +115,7 @@ import Data.Manifold.PseudoAffine
 import Data.Function.Differentiable
 import Data.Manifold.Types
 import Data.Manifold.TreeCover
+import Data.Manifold.Web
 import qualified Data.Map.Lazy as Map
 
 import Data.Tagged
@@ -500,6 +502,48 @@ instance Plottable (Shaded ℝ ℝ) where
          leafPoints = sortBy (comparing (^._x))
                          $ (\(x`WithAny`y) -> y^&x) <$> allLeaves
          allLeaves = onlyLeaves tr
+  plot _ = def
+
+instance Plottable (PointsWeb ℝ (Shade' ℝ)) where
+  plot web | length locals >= 2
+          = def { relevantRange_x = atLeastInterval $ Interval xmin xmax
+                , relevantRange_y = atLeastInterval $ Interval ymin ymax
+                , isTintableMonochromic = True
+                , axesNecessity = 1
+                , dynamicPlot = plot
+                }
+   where plot grWS@(GraphWindowSpecR2{..}) = mkPlot $
+                            foldMap parallelogram trivs
+          where parallelogram ((x,δx), ((y,δy), j))
+                    = lLoop [ (x+δx)^&(y+δy+jδx), (x-δx)^&(y+δy-jδx)
+                            , (x-δx)^&(y-δy-jδx), (x+δx)^&(y-δy+jδx) ]
+                         & Dia.strokeLocLoop
+                         & Dia.opacity 0.3
+                 where jδx = j $ δx
+         
+         trivs :: [((ℝ, Diff ℝ), ((ℝ, Diff ℝ), LocalLinear ℝ ℝ))]
+         trivs = map mkTriv locals
+          where mkTriv ((xc,Shade' yc yce), [(xo, Shade' yo _)])
+                       = ( (xc, xo-xc)
+                         , ( (yc, metricAsLength yce)
+                           , denseLinear $ \δx -> δx * (yo-yc)/(xo-xc) ) )
+                mkTriv ((xc,Shade' yc yce), [(xl, Shade' yl _), (xr, Shade' yr _)])
+                       = ( (xc, δxg)
+                         , ( (yc, metricAsLength yce)
+                           , denseLinear $ \δx -> δx * η ) )
+                 where δxg = (xr - xl)/2
+                       η = (yr - yl)/(2*δxg)
+                mkTriv (_,l) = error $ "Encountered point in web with "
+                                ++show(length l)++" neighbours. Any point in 1D "
+                                ++"should have either one or two neighbours!"
+         
+         lLoop ps@(p:_) = Dia.fromVertices $ ps++[p]
+         
+         [xmin, ymin, xmax, ymax]
+            = [minimum, maximum]<*>[fst.fst<$>locals, (^.shadeCtr).snd.fst<$>locals]
+         
+         locals :: [((ℝ, Shade' ℝ), [(ℝ, Shade' ℝ)])]
+         locals = Hask.toList $ localFocusWeb web
   plot _ = def
 
 instance Plottable (SimpleTree P2) where
