@@ -847,10 +847,6 @@ plotWindow graphs' = do
    t₀ <- getCurrentTime
    lastFrameTime <- newIORef t₀
    
-   let minKeyImpact = 0.05
-   
-   keyImpactState <- newIORef $ Map.fromList [ (ka, (t₀, minKeyImpact)) | ka<-[MoveLeft .. ZoomOut_y] ]
-   
    
    let refreshScreen = do
            currentView@(GraphWindowSpecR2{..}) <- readIORef viewState
@@ -916,15 +912,6 @@ plotWindow graphs' = do
            -- GTK.pollEvents
            return True
    
-   let keyImpact key = do
-           t <- getCurrentTime
-           Just (_, impact) <- fmap (Map.lookup key) $ readIORef keyImpactState
-           modifyIORef keyImpactState $ Map.adjust ( \(t₁, p)
-                       -> (t, min 1 $ ( (p - minKeyImpact) * (exp . (*3) . realToFrac $ diffUTCTime t₁ t)
-                                       + minKeyImpact ) * 2 )
-                   ) key
-           return impact
-   
    GTK.onDestroy window $ do
         (readIORef graphs >>=) . mapM_  -- cancel remaining threads
            $ \(_, GraphViewState{..}) -> cancel realtimeView >> cancel nextTgtView
@@ -975,32 +962,6 @@ scrollZoomStrength :: Double
 scrollZoomStrength = 1/20
 
 
-data KeyAction = MoveLeft
-               | MoveRight
-               | MoveUp
-               | MoveDown
-               | ZoomIn_x
-               | ZoomOut_x
-               | ZoomIn_y
-               | ZoomOut_y
-               | QuitProgram
-   deriving (Eq, Ord, Enum)
-
-defaultKeyMap :: GTK.KeyVal -> Maybe KeyAction
--- defaultKeyMap (GLFW.SpecialKey GLFW.UP   ) = Just MoveUp
--- defaultKeyMap (GLFW.SpecialKey GLFW.DOWN ) = Just MoveDown
--- defaultKeyMap (GLFW.SpecialKey GLFW.LEFT ) = Just MoveLeft
--- defaultKeyMap (GLFW.SpecialKey GLFW.RIGHT) = Just MoveRight
--- defaultKeyMap (GLFW.CharKey 'K') = Just MoveUp
--- defaultKeyMap (GLFW.CharKey 'J') = Just MoveDown
--- defaultKeyMap (GLFW.CharKey 'H') = Just MoveLeft
--- defaultKeyMap (GLFW.CharKey 'L') = Just MoveRight
--- defaultKeyMap (GLFW.CharKey 'B') = Just ZoomIn_x
--- defaultKeyMap (GLFW.CharKey 'N') = Just ZoomOut_x
--- defaultKeyMap (GLFW.CharKey 'I') = Just ZoomIn_y
--- defaultKeyMap (GLFW.CharKey 'O') = Just ZoomOut_y
--- defaultKeyMap (GLFW.SpecialKey GLFW.ESC) = Just QuitProgram
-defaultKeyMap _ = Nothing
 
 
 
