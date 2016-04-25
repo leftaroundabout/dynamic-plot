@@ -756,6 +756,8 @@ plotWindow graphs' = do
    
    GTK.initGUI
    window <- GTK.windowNew
+   
+   mouseAnchor <- newIORef Nothing
                  
    refreshDraw <- do
        drawA <- GTK.drawingAreaNew
@@ -774,6 +776,33 @@ plotWindow graphs' = do
                 drawWindow <- GTK.widgetGetDrawWindow drawA
                 BGTK.renderToGtk drawWindow $ scaledDia
                 return True
+       
+       GTK.on drawA GTK.buttonPressEvent . Event.tryEvent $ do
+            Event.eventButton >>= guard.(==defaultDragButton)
+            anchXY <- Event.eventCoordinates
+            liftIO . writeIORef mouseAnchor $ Just anchXY
+       GTK.on drawA GTK.buttonReleaseEvent . Event.tryEvent $ do
+            Event.eventButton >>= guard.(==defaultDragButton)
+            liftIO . writeIORef mouseAnchor $ Nothing
+       
+       GTK.on drawA GTK.motionNotifyEvent . Event.tryEvent $ do
+          liftIO (readIORef mouseAnchor) >>= \case
+             Just (oldX,oldY) -> do
+                (mvX,mvY) <- Event.eventCoordinates
+                (canvasX,canvasY) <- liftIO $ GTK.widgetGetSize drawA
+                let ηX = (oldX-mvX) / fromIntegral canvasX
+                    ηY = (mvY-oldY) / fromIntegral canvasY
+                liftIO . modifyIORef viewTgt $ \view@GraphWindowSpecR2{..} ->
+                    let w = rBound - lBound
+                        h = tBound - bBound
+                    in view{ lBound = lBound + w * ηX
+                           , rBound = rBound + w * ηX
+                           , tBound = tBound + h * ηY
+                           , bBound = bBound + h * ηY
+                           }
+                liftIO . modifyIORef mouseAnchor . fmap $ const (mvX,mvY)
+             Nothing -> mzero
+       GTK.widgetAddEvents drawA [GTK.ButtonMotionMask]
        
        GTK.on drawA GTK.scrollEvent . Event.tryEvent $ do
                 (canvasX,canvasY) <- liftIO $ GTK.widgetGetSize drawA
@@ -957,6 +986,9 @@ data ScrollAction = ScrollZoomIn | ScrollZoomOut
 defaultScrollBehaviour :: Event.ScrollDirection -> ScrollAction
 defaultScrollBehaviour Event.ScrollUp = ScrollZoomIn
 defaultScrollBehaviour Event.ScrollDown = ScrollZoomOut
+
+defaultDragButton :: Event.MouseButton
+defaultDragButton = Event.MiddleButton
 
 scrollZoomStrength :: Double
 scrollZoomStrength = 1/20
