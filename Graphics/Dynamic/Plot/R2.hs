@@ -781,25 +781,24 @@ plotWindow graphs' = do
                 let (rcX,rcY) = ( scrollX*2 / fromIntegral canvasX - 1
                                 , 1 - scrollY*2 / fromIntegral canvasY )
                 scrollD <- Event.eventScrollDirection
-                case defaultScrollBehaviour scrollD of
-                   ScrollZoomIn  -> liftIO $ do
-                     modifyIORef viewTgt $ \view@GraphWindowSpecR2{..}
-                         -> let w = rBound - lBound
-                                h = tBound - bBound
-                            in view{ lBound = lBound + w * (rcX + 1)^2 * scrollZoomStrength
-                                   , rBound = rBound - w * (rcX - 1)^2 * scrollZoomStrength
-                                   , tBound = tBound - h * (rcY - 1)^2 * scrollZoomStrength
-                                   , bBound = bBound + h * (rcY + 1)^2 * scrollZoomStrength
-                                   }
-                   ScrollZoomOut -> liftIO $ do
-                     modifyIORef viewTgt $ \view@GraphWindowSpecR2{..}
-                         -> let w = rBound - lBound
-                                h = tBound - bBound
-                            in view{ lBound = lBound - w * (rcX - 1)^2 * scrollZoomStrength
-                                   , rBound = rBound + w * (rcX + 1)^2 * scrollZoomStrength
-                                   , tBound = tBound + h * (rcY + 1)^2 * scrollZoomStrength
-                                   , bBound = bBound - h * (rcY - 1)^2 * scrollZoomStrength
-                                   }
+                liftIO . modifyIORef viewTgt $ \view@GraphWindowSpecR2{..} ->
+                  let w = rBound - lBound
+                      h = tBound - bBound
+                      ηl = (rcX + 1)^2; ηr = (rcX - 1)^2
+                      ηb = (rcY + 1)^2; ηt = (rcY - 1)^2
+                   in case defaultScrollBehaviour scrollD of
+                        ScrollZoomIn -> view{
+                            lBound = lBound + w * ηl * scrollZoomStrength
+                          , rBound = rBound - w * ηr * scrollZoomStrength
+                          , tBound = tBound - h * ηt * scrollZoomStrength
+                          , bBound = bBound + h * ηb * scrollZoomStrength
+                          }
+                        ScrollZoomOut -> view{
+                            lBound = lBound - w * ηr * scrollZoomStrength
+                          , rBound = rBound + w * ηl * scrollZoomStrength
+                          , tBound = tBound + h * ηb * scrollZoomStrength
+                          , bBound = bBound - h * ηt * scrollZoomStrength
+                          }
                        
                        
        
