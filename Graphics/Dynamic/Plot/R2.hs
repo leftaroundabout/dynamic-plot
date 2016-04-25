@@ -716,12 +716,12 @@ atLeastInterval' = OtherDimDependantRange . const
 --   Invoke e.g. from @ghci +RTS -N4@ to benefit from this.
 --   
 --   ATTENTION: the window may sometimes freeze, especially when displaying 
---   complicated functions with 'diffableFnPlot` from ghci. This is apparently
+--   complicated functions with 'fnPlot` from ghci. This is apparently
 --   a kind of deadlock problem with one of the C libraries that are invoked,
---   in particular, 'diffableFnPlot' makes heavy use of <http://hackage.haskell.org/package/hmatrix hmatrix>
+--   in particular, 'fnPlot' makes heavy use of <http://hackage.haskell.org/package/hmatrix hmatrix>
 --   and thus <http://www.gnu.org/software/gsl/ GSL>.
---   At the moment, we can recommend no better solution than to abort and restart ghci,
---   if this occurs.
+--   At the moment, we can recommend no better solution than to abort and restart ghci
+--   (or what else you use – iHaskell kernel, process, ...) if this occurs.
 plotWindow :: [DynamicPlottable] -> IO GraphWindowSpec
 plotWindow [] = plotWindow [dynamicAxes]
 plotWindow graphs' = do
