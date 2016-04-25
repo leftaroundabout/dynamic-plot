@@ -784,20 +784,22 @@ plotWindow graphs' = do
                 liftIO . modifyIORef viewTgt $ \view@GraphWindowSpecR2{..} ->
                   let w = rBound - lBound
                       h = tBound - bBound
-                      ηl = (rcX + 1)^2; ηr = (rcX - 1)^2
-                      ηb = (rcY + 1)^2; ηt = (rcY - 1)^2
+                      ηl = (rcX + 1)^2/4; ηr = (rcX - 1)^2/4
+                      ηb = (rcY + 1)^2/4; ηt = (rcY - 1)^2/4
+                      ηh = (1-ηt) * (1-ηb) + ηl + ηr
+                      ηv = (1-ηl) * (1-ηr) + ηt + ηb
                    in case defaultScrollBehaviour scrollD of
                         ScrollZoomIn -> view{
-                            lBound = lBound + w * ηl * scrollZoomStrength
-                          , rBound = rBound - w * ηr * scrollZoomStrength
-                          , tBound = tBound - h * ηt * scrollZoomStrength
-                          , bBound = bBound + h * ηb * scrollZoomStrength
+                            lBound = lBound + w * ηl * ηh * scrollZoomStrength
+                          , rBound = rBound - w * ηr * ηh * scrollZoomStrength
+                          , tBound = tBound - h * ηt * ηv * scrollZoomStrength
+                          , bBound = bBound + h * ηb * ηv * scrollZoomStrength
                           }
                         ScrollZoomOut -> view{
-                            lBound = lBound - w * ηr * scrollZoomStrength
-                          , rBound = rBound + w * ηl * scrollZoomStrength
-                          , tBound = tBound + h * ηb * scrollZoomStrength
-                          , bBound = bBound - h * ηt * scrollZoomStrength
+                            lBound = lBound - w * ηr * ηh * scrollZoomStrength
+                          , rBound = rBound + w * ηl * ηh * scrollZoomStrength
+                          , tBound = tBound + h * ηb * ηv * scrollZoomStrength
+                          , bBound = bBound - h * ηt * ηv * scrollZoomStrength
                           }
                        
                        
