@@ -11,6 +11,7 @@
 {-# LANGUAGE NoMonomorphismRestriction  #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE TupleSections              #-}
@@ -106,6 +107,10 @@ instance Semimanifold R2 where
   (.+~^) = (^+^)
 instance PseudoAffine R2 where
   p.-~.q = pure(p^-^q)
+instance LocallyCoercible R2 (R,R) where
+  locallyTrivialDiffeomorphism v = (v^._x, v^._y)
+instance LocallyCoercible (R,R) R2 where
+  locallyTrivialDiffeomorphism = DiaTypes.r2
 
 instance AffineSpace P2 where
   type Diff P2 = R2
@@ -119,6 +124,10 @@ instance Semimanifold P2 where
   (.+~^) = (.+^)
 instance PseudoAffine P2 where
   p.-~.q = pure(p.-.q)
+instance LocallyCoercible P2 (R,R) where
+  locallyTrivialDiffeomorphism v = (v^._x, v^._y)
+instance LocallyCoercible (R,R) P2 where
+  locallyTrivialDiffeomorphism = DiaTypes.p2
 
 
 

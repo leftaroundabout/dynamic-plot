@@ -435,7 +435,6 @@ rPCMPlot :: [R] -> DynamicPlottable
 rPCMPlot = plot . recursivePCM (PCMRange (0 :: Double) 1)
 
 
-
 instance Plottable (Shade P2) where
   plot shade = def {
                 relevantRange_x = atLeastInterval xRange
@@ -449,6 +448,9 @@ instance Plottable (Shade P2) where
          (xRange,yRange) = shadeExtends shade
          ctr = shade^.shadeCtr
          eigVs = eigenSpan $ shade^.shadeExpanse
+
+instance Plottable (Shade (R,R)) where
+  plot sh = plot (coerceShade sh :: Shade P2)
 
 instance Plottable (Shade' (R,R)) where
   plot shade = def {
@@ -466,6 +468,9 @@ instance Plottable (Shade' (R,R)) where
          ϑ = atan2 e₁y e₁x  Dia.@@ Dia.rad
          w₁ = recip $ magnitude ev₁; w₂ = recip $ magnitude ev₂
          
+instance Plottable (Shade' P2) where
+  plot sh = plot (coerceShade sh :: Shade' (R,R))
+
 
 instance Plottable (Shaded ℝ ℝ) where
   plot tr | length trivs' >= 2
