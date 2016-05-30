@@ -467,6 +467,17 @@ instance Plottable (Shade' (R,R)) where
          [ev₁@(e₁x,e₁y),ev₂] = eigenSpan' $ shade^.shadeNarrowness
          ϑ = atan2 e₁y e₁x  Dia.@@ Dia.rad
          w₁ = recip $ magnitude ev₁; w₂ = recip $ magnitude ev₂
+
+instance Plottable (ConvexSet (R,R)) where
+  plot (ConvexSet hull intersects)
+      = plot [ tweakDiagram (Dia.lcA $ Dia.withOpacity
+                                       Dia.grey
+                                       (1 / fromIntegral (length intersects))
+                            ) $ plot intersects
+             , tweakDiagram (Dia.fcA $ Dia.withOpacity
+                                        Dia.grey
+                                        0.01
+                            ) $ plot hull ]
          
 instance Plottable (Shade' P2) where
   plot sh = plot (coerceShade sh :: Shade' (R,R))
@@ -1192,6 +1203,13 @@ autoDashLine :: Double -> P2 -> P2 -> PlainGraphicsR2
 autoDashLine w p q = simpleLine' (max 1 w) p q
        & if w < 1 then Dia.dashingO [w*6, 3] 0 else id
 
+
+tweakDiagram :: (PlainGraphicsR2->PlainGraphicsR2) -> DynamicPlottable->DynamicPlottable
+tweakDiagram f fig = fig { dynamicPlot = tweak . dynamicPlot fig }
+ where tweak pl = pl { getPlot = f $ getPlot pl }
+
+opacityFactor :: Double -> DynamicPlottable -> DynamicPlottable
+opacityFactor = tweakDiagram . Dia.opacity
 
 
 -- | When you &#x201c;plot&#x201d; 'xInterval' / 'yInterval', it is ensured that the (initial) view encompasses 
