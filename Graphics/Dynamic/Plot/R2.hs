@@ -469,15 +469,15 @@ instance Plottable (Shade' (R,R)) where
          w₁ = recip $ magnitude ev₁; w₂ = recip $ magnitude ev₂
 
 instance Plottable (ConvexSet (R,R)) where
+  plot EmptyConvex = mempty
   plot (ConvexSet hull intersects)
-      = plot [ tweakDiagram (Dia.lcA $ Dia.withOpacity
-                                       Dia.grey
-                                       (1 / fromIntegral (length intersects))
-                            ) $ plot intersects
-             , tweakDiagram (Dia.fcA $ Dia.withOpacity
-                                        Dia.grey
-                                        0.01
-                            ) $ plot hull ]
+      = plot [ plot intersects
+                 & tweakDiagram (Dia.opacity
+                                     (1 / fromIntegral (length intersects)) )
+             , plot hull
+                 & tweakDiagram ( Dia.lwO 3
+                              >>> Dia.opacity 1
+                              >>> Dia.fcA (Dia.withOpacity Dia.grey 0.01) ) ]
          
 instance Plottable (Shade' P2) where
   plot sh = plot (coerceShade sh :: Shade' (R,R))
