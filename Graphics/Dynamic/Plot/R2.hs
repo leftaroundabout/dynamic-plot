@@ -539,15 +539,15 @@ instance Plottable (PointsWeb ℝ (Shade' ℝ)) where
          
          trivs :: [((ℝ, Diff ℝ), ((ℝ, Diff ℝ), LocalLinear ℝ ℝ))]
          trivs = map mkTriv locals
-          where mkTriv ((xc,Shade' yc yce), [(xo, Shade' yo _)])
-                       = ( (xc, xo-xc)
+          where mkTriv ((xc,Shade' yc yce), [(δxo, Shade' yo _)])
+                       = ( (xc, δxo)
                          , ( (yc, metricAsLength yce)
-                           , denseLinear $ \δx -> δx * (yo-yc)/(xo-xc) ) )
-                mkTriv ((xc,Shade' yc yce), [(xl, Shade' yl _), (xr, Shade' yr _)])
+                           , denseLinear $ \δx -> δx * (yo-yc)/δxo ) )
+                mkTriv ((xc,Shade' yc yce), [(δxl, Shade' yl _), (δxr, Shade' yr _)])
                        = ( (xc, δxg)
                          , ( (yc, metricAsLength yce)
                            , denseLinear $ \δx -> δx * η ) )
-                 where δxg = (xr - xl)/2
+                 where δxg = (δxr - δxl)/2
                        η = (yr - yl)/(2*δxg)
                 mkTriv (_,l) = error $ "Encountered point in web with "
                                 ++show(length l)++" neighbours. Any point in 1D "
