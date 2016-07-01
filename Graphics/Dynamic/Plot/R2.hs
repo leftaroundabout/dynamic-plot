@@ -96,7 +96,7 @@ import Control.Concurrent.Async
 import Control.DeepSeq
 
 
-import Data.List (foldl', sort, sortBy, intercalate, isPrefixOf, isInfixOf, find, zip4)
+import Data.List (foldl', sort, sortBy, partition, zip4)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Vector as Arr
 import Data.Maybe
@@ -530,28 +530,40 @@ instance Plottable (PointsWeb ℝ (Shade' ℝ)) where
                 }
    where plot grWS@(GraphWindowSpecR2{..}) = mkPlot $
                             foldMap parallelogram trivs
+                         <> foldMap vbar divis
           where parallelogram ((x,δx), ((y,δy), j))
                     = lLoop [ (x+δx)^&(y+δy+jδx), (x-δx)^&(y+δy-jδx)
                             , (x-δx)^&(y-δy-jδx), (x+δx)^&(y-δy+jδx) ]
                          & Dia.strokeLocLoop
                          & Dia.opacity 0.3
                  where jδx = j $ δx
+                vbar (x,δx) = Dia.fromVertices
+                            [ (x-δx)^&tBound, (x-δx)^&bBound
+                            , (x+δx)^&bBound, (x+δx)^&tBound ]
          
          trivs :: [((ℝ, Diff ℝ), ((ℝ, Diff ℝ), LocalLinear ℝ ℝ))]
-         trivs = map mkTriv locals
+         divis :: [(ℝ, Diff ℝ)]
+         (trivs,divis) = concat***concat $ unzip (map mkTriv locals)
           where mkTriv ((xc,Shade' yc yce), [(δxo, Shade' yo _)])
-                       = ( (xc, δxo)
-                         , ( (yc, metricAsLength yce)
-                           , denseLinear $ \δx -> δx * (yo-yc)/δxo ) )
+                       = case tryMetricAsLength yce of
+                           Option (Just ry) ->
+                              ( [ ( (xc, δxo)
+                                  , ( (yc, ry)
+                                    , denseLinear $ \δx -> δx * (yo-yc)/δxo ) ) ], [] )
+                           Option Nothing ->
+                              ( [], [(xc, δxo)] )
                 mkTriv ((xc,Shade' yc yce), [(δxl, Shade' yl _), (δxr, Shade' yr _)])
-                       = ( (xc, δxg)
-                         , ( (yc, metricAsLength yce)
-                           , denseLinear $ \δx -> δx * η ) )
+                       = case tryMetricAsLength yce of
+                           Option (Just ry) ->
+                              ( [ ( (xc, δxg)
+                                  , ( (yc, ry)
+                                    , denseLinear $ \δx -> δx * η ) ) ], [] )
+                           Option Nothing ->
+                              ( [], [(xc, δxg)] )
                  where δxg = (δxr - δxl)/2
                        η = (yr - yl)/(2*δxg)
-                mkTriv (_,l) = error $ "Encountered point in web with "
-                                ++show(length l)++" neighbours. Any point in 1D "
-                                ++"should have either one or two neighbours!"
+                mkTriv (p,lrs) = concat***concat $ unzip [mkTriv (p,[l,r]) | l<-ls, r<-rs]
+                 where (ls,rs) = partition ((<0) . fst) lrs
          
          lLoop ps@(p:_) = Dia.fromVertices $ ps++[p]
          
