@@ -531,39 +531,43 @@ instance Plottable (PointsWeb ℝ (Shade' ℝ)) where
    where plot grWS@(GraphWindowSpecR2{..}) = mkPlot $
                             foldMap parallelogram trivs
                          <> foldMap vbar divis
-          where parallelogram ((x,δx), ((y,δy), j))
-                    = lLoop [ (x+δx)^&(y+δy+jδx), (x-δx)^&(y+δy-jδx)
-                            , (x-δx)^&(y-δy-jδx), (x+δx)^&(y-δy+jδx) ]
+          where parallelogram ((x,(δxl,δxr)), ((y,δy), j))
+                    = lLoop [ (x+δxr)^&(y+δy+jδxr), (x-δxl)^&(y+δy-jδxl)
+                            , (x-δxl)^&(y-δy-jδxl), (x+δxr)^&(y-δy+jδxr) ]
                          & Dia.strokeLocLoop
                          & Dia.opacity 0.3
-                 where jδx = j $ δx
-                vbar (x,δx) = Dia.fromVertices
-                            [ (x-δx)^&tBound, (x-δx)^&bBound
-                            , (x+δx)^&bBound, (x+δx)^&tBound ]
+                 where jδxl = j $ δxl
+                       jδxr = j $ δxr
+                vbar (x,(δxl,δxr)) = Dia.fromVertices
+                            [ (x-δxl)^&tBound, (x-δxl)^&bBound
+                            , (x+δxr)^&bBound, (x+δxr)^&tBound ]
          
-         trivs :: [((ℝ, Diff ℝ), ((ℝ, Diff ℝ), LocalLinear ℝ ℝ))]
-         divis :: [(ℝ, Diff ℝ)]
+         trivs :: [((ℝ, (Diff ℝ,Diff ℝ)), ((ℝ, Diff ℝ), LocalLinear ℝ ℝ))]
+         divis :: [(ℝ, (Diff ℝ,Diff ℝ))]
          (trivs,divis) = concat***concat $ unzip (map mkTriv locals)
           where mkTriv ((xc,Shade' yc yce), [(δxo, Shade' yo _)])
                        = case tryMetricAsLength yce of
                            Option (Just ry) ->
-                              ( [ ( (xc, δxo)
+                              ( [ ( (xc, dirSort 0 δxo)
                                   , ( (yc, ry)
                                     , denseLinear $ \δx -> δx * (yo-yc)/δxo ) ) ], [] )
                            Option Nothing ->
-                              ( [], [(xc, δxo)] )
+                              ( [], [(xc, dirSort 0 δxo)] )
                 mkTriv ((xc,Shade' yc yce), [(δxl, Shade' yl _), (δxr, Shade' yr _)])
                        = case tryMetricAsLength yce of
                            Option (Just ry) ->
-                              ( [ ( (xc, δxg)
+                              ( [ ( (xc, dirSort δxl δxr)
                                   , ( (yc, ry)
                                     , denseLinear $ \δx -> δx * η ) ) ], [] )
                            Option Nothing ->
-                              ( [], [(xc, δxg)] )
+                              ( [], [(xc, dirSort δxl δxr)] )
                  where δxg = (δxr - δxl)/2
                        η = (yr - yl)/(2*δxg)
                 mkTriv (p,lrs) = concat***concat $ unzip [mkTriv (p,[l,r]) | l<-ls, r<-rs]
                  where (ls,rs) = partition ((<0) . fst) lrs
+                
+                dirSort δ₁ δ₂ | δ₁ < δ₂    = (-δ₁, δ₂)
+                              | otherwise  = (-δ₂, δ₁)
          
          lLoop ps@(p:_) = Dia.fromVertices $ ps++[p]
          
