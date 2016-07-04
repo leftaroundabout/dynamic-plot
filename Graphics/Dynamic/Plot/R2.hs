@@ -1050,7 +1050,7 @@ continFnPlot f = def{
              , isTintableMonochromic = True
              , axesNecessity = 1
              , dynamicPlot = plot }
- where yRangef = onInterval $ \(l, r) -> ((!10) &&& (!70)) . sort . pruneOutlyers
+ where yRangef = onInterval $ \(l, r) -> ((!%0.1) &&& (!%0.9)) . sort . pruneOutlyers
                                                $ map f [l, l + (r-l)/80 .. r]
        plot (GraphWindowSpecR2{..}) = curve `deepseq` mkPlot (trace curve)
         where δx = (rBound - lBound) * 2 / fromIntegral xResolution
@@ -1058,8 +1058,10 @@ continFnPlot f = def{
               trace (p:q:ps) = simpleLine p q <> trace (q:ps)
               trace _ = mempty
        pruneOutlyers = filter (not . isNaN) 
-       l!n | (x:_)<-drop n l  = x
-           | otherwise         = error "Function appears to yield NaN most of the time. Cannot be plotted."
+       l!%η = case length l of
+         ll | ll<2      -> error
+                 "Function appears to yield NaN most of the time. Cannot be plotted."
+            | otherwise -> l !! floor (fromIntegral ll * η)
 
 
 type (-->) = RWDiffable ℝ
