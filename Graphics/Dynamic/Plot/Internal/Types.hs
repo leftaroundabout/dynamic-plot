@@ -52,6 +52,7 @@ import Control.Lens hiding ((...), (<.>))
 
 import qualified Data.Vector as Arr
 import Data.List (sort)
+import Data.List.NonEmpty (NonEmpty(..))
 
 import Data.VectorSpace
 import Data.Basis
@@ -450,5 +451,10 @@ fromInt :: Num a => Int -> a
 fromInt = fromIntegral
 
 
+
+
+
+newtype Latest a = Latest { getLatestOf :: NonEmpty a }
+ deriving (Hask.Functor)
 
 

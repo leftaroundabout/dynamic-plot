@@ -43,6 +43,8 @@ module Graphics.Dynamic.Plot.R2 (
         , PlainGraphicsR2
         , shapePlot
         , diagramPlot
+        -- ** Computation in progress
+        , plotLatest
         -- * Plot-object attributes
         -- ** Colour
         , tint, autoTint
@@ -105,6 +107,7 @@ import Control.Exception (evaluate)
 
 import Data.List (foldl', sort, sortBy, partition, zip4)
 import qualified Data.List.NonEmpty as NE
+import Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.Vector as Arr
 import Data.Maybe
 import Data.Semigroup
@@ -163,6 +166,7 @@ data DynamicPlottable = DynamicPlottable {
          --   The z-order will be chosen accordingly.
       , _axesNecessity :: Necessity
       , _legendEntries :: [LegendEntry]
+      , _futurePlots :: Maybe DynamicPlottable
       , _dynamicPlot :: GraphWindowSpec -> Plot
   }
 makeLenses ''DynamicPlottable
@@ -630,6 +634,18 @@ instance Plottable (PointsWeb ℝ (Shade' ℝ)) where
 
 instance Plottable (PointsWeb ℝ² (CSp.Colour ℝ)) where
 
+
+instance (Plottable x) => Plottable (Latest x) where
+  plot (Latest (ev₀ :| [])) = plot ev₀
+  plot (Latest (ev₀ :| ev₁:evs))
+     = plot ev₀ & futurePlots .~ (Just . plot . Latest $ ev₁:|evs)
+
+
+plotLatest :: Plottable x => [x] -> DynamicPlottable
+plotLatest (x:xs) = plot $ Latest (x:|xs)
+plotLatest l = plot l
+
+
 instance Plottable (SimpleTree P2) where
   plot (GenericTree Nothing) = plot ([] :: [SimpleTree P2])
   plot (GenericTree (Just (ctr, root)))
@@ -709,12 +725,13 @@ mkAnnotatedPlot :: [Annotation] -> PlainGraphicsR2 -> Plot
 mkAnnotatedPlot ans = Plot ans
 
 instance Semigroup DynamicPlottable where
-  DynamicPlottable rx₁ ry₁ tm₁ oc₁ ax₁ le₁ dp₁
-    <> DynamicPlottable rx₂ ry₂ tm₂ oc₂ ax₂ le₂ dp₂
+  DynamicPlottable rx₁ ry₁ tm₁ oc₁ ax₁ le₁ fu₁ dp₁
+    <> DynamicPlottable rx₂ ry₂ tm₂ oc₂ ax₂ le₂ fu₂ dp₂
         = DynamicPlottable
-   (rx₁<>rx₂) (ry₁<>ry₂) (tm₁++tm₂) (oc₁+oc₂) (ax₁+ax₂) (le₁++le₂) (dp₁<>dp₂) 
+   (rx₁<>rx₂) (ry₁<>ry₂) (tm₁++tm₂) (oc₁+oc₂) (ax₁+ax₂)
+                             (le₁++le₂) ((<>)<$>fu₁<*>fu₂) (dp₁<>dp₂) 
 instance Monoid DynamicPlottable where
-  mempty = DynamicPlottable mempty mempty [] 0 0 [] mempty
+  mempty = DynamicPlottable mempty mempty [] 0 0 [] mempty mempty
   mappend = (<>)
 instance Default DynamicPlottable where def = mempty
 
@@ -1000,13 +1017,15 @@ objectPlotterThread :: DynamicPlottable
                        -> MVar GraphWindowSpec
                        -> MVar (GraphWindowSpec, Plot)
                        -> IO ()
-objectPlotterThread pl viewVar diaVar = loop where
- loop = do
+objectPlotterThread pl₀ viewVar diaVar = loop pl₀ where
+ loop pl = do
     threadDelay $ 50 * milliseconds
     view <- readMVar viewVar
     diagram <- evaluate $ pl^.dynamicPlot $ view
     putMVar diaVar (view, diagram)
-    loop
+    case pl^.futurePlots of
+       Just pl' -> loop pl'
+       Nothing  -> loop pl
     
 
 
