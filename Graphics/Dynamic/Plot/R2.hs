@@ -118,6 +118,8 @@ import Data.Manifold.TreeCover
 import Data.Manifold.Web
 import qualified Data.Map.Lazy as Map
 
+import Data.Colour.Manifold
+
 import Data.Tagged
 
 import Text.Printf
