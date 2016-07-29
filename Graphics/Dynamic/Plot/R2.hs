@@ -118,6 +118,8 @@ import Data.Manifold.TreeCover
 import Data.Manifold.Web
 import qualified Data.Map.Lazy as Map
 
+import qualified Data.Colour.Manifold as CSp
+
 import Data.Tagged
 
 import Text.Printf
@@ -577,6 +579,8 @@ instance Plottable (PointsWeb ℝ (Shade' ℝ)) where
          locals :: [((ℝ, Shade' ℝ), [(ℝ, Shade' ℝ)])]
          locals = Hask.toList $ localFocusWeb web
   plot _ = def
+
+instance Plottable (PointsWeb ℝ² (CSp.Colour ℝ)) where
 
 instance Plottable (SimpleTree P2) where
   plot (GenericTree Nothing) = plot ([] :: [SimpleTree P2])

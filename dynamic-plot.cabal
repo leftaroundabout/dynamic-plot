@@ -61,6 +61,7 @@ Library
                      , glib
                      , colour >= 2 && < 3
                      , manifolds >= 0.2.3 && < 0.2.4
+                     , colour-space
                      , lens < 4.15
   Other-Extensions:  FlexibleInstances
                      , TypeFamilies
