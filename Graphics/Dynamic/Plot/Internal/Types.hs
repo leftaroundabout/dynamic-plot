@@ -56,6 +56,7 @@ import Data.List (sort)
 import Data.VectorSpace
 import Data.Basis
 import Data.AffineSpace
+import Data.VectorSpace.Free ()
 import Data.LinearMap.HerMetric
 import Data.Manifold.PseudoAffine
 import Data.Manifold.TreeCover
@@ -67,26 +68,6 @@ import Control.DeepSeq
 type R2 = Dia.V2 Double
 type P2 = Dia.P2 Double
 
-instance AffineSpace R2 where
-  type Diff R2 = R2
-  (.-.) = (Dia.^-^)
-  (.+^) = (Dia.^+^)
-instance AdditiveGroup R2 where
-  (^+^) = (Dia.^+^)
-  zeroV = Dia.zero
-  negateV = Dia.negated
-instance VectorSpace R2 where
-  type Scalar R2 = Double
-  (*^) = (Dia.*^)
-instance HasBasis R2 where
-  type Basis R2 = Either () ()
-  basisValue (Left ()) = 1^&0
-  basisValue (Right ()) = 0^&1
-  decompose v = [(Left(), v^._x), (Right(), v^._y)]
-  decompose' v (Left ()) = v^._x
-  decompose' v (Right ()) = v^._y
-instance InnerSpace R2 where
-  (<.>) = Dia.dot
 instance FiniteDimensional R2 where
   dimension = Tagged 2
   basisIndex = Tagged bi where bi b = if (basisValue b::R2)^._x > 0.5 then 0 else 1
@@ -112,10 +93,6 @@ instance LocallyCoercible R2 (R,R) where
 instance LocallyCoercible (R,R) R2 where
   locallyTrivialDiffeomorphism = DiaTypes.r2
 
-instance AffineSpace P2 where
-  type Diff P2 = R2
-  (.-.) = (Dia..-.)
-  (.+^) = (Dia..+^)
 instance Semimanifold P2 where
   type Needle P2 = R2
   fromInterior = id
