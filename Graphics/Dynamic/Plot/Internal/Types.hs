@@ -55,9 +55,9 @@ import Data.List (sort)
 
 import Data.VectorSpace
 import Data.Basis
+import Math.LinearMap.Category
 import Data.AffineSpace
 import Data.VectorSpace.Free ()
-import Data.LinearMap.HerMetric
 import Data.Manifold.PseudoAffine
 import Data.Manifold.TreeCover
 import Data.Semigroup
@@ -68,18 +68,6 @@ import Control.DeepSeq
 type R2 = Dia.V2 Double
 type P2 = Dia.P2 Double
 
-instance FiniteDimensional R2 where
-  dimension = Tagged 2
-  basisIndex = Tagged bi where bi b = if (basisValue b::R2)^._x > 0.5 then 0 else 1
-  indexBasis = Tagged ib
-   where ib 0 = bx; ib 1 = by
-         [(bx,_), (by,_)] = decompose (1^&1 :: R2)
-  completeBasis = Tagged . fmap fst $ decompose (1^&1 :: R2)
-instance HasMetric' R2 where
-  type DualSpace R2 = R2
-  (<.>^) = (<.>)
-  functional f = f(1^&0) ^& f(0^&1)
-  doubleDual = id; doubleDual' = id
 instance Semimanifold R2 where
   type Needle R2 = R2
   fromInterior = id
@@ -181,7 +169,7 @@ linFitMeanInCtrdUnitIntv (LinFitParams{..}) = constCoeff
 
 
 
-data DevBoxes y = DevBoxes { deviations :: HerMetric' (Diff y)
+data DevBoxes y = DevBoxes { deviations :: Metric' y
                            , maxDeviation :: Scalar (Diff y)   }
                 
 
@@ -215,7 +203,7 @@ type (x-.^>y) = RecursivePCM () x y
 
 recursiveSamples' :: forall x y v t .
           ( VectorSpace x, Real (Scalar x)
-          , AffineSpace y, v~Diff y, InnerSpace v, HasMetric v, RealFloat (Scalar v) )
+          , AffineManifold y, v~Needle y, HilbertSpace v, RealFloat (Scalar v) )
                      => PCMRange x -> [(y,t)] -> RecursiveSamples x y t
 recursiveSamples' xrng_g ys = calcDeviations . go xrng_g $ presplitList ys
     where go :: PCMRange x -> SplitList (y,t) -> RecursiveSamples' (Arr.Vector y) x y t
@@ -247,8 +235,8 @@ recursiveSamples' xrng_g ys = calcDeviations . go xrng_g $ presplitList ys
            where cdvs lPFits rPFits
                          rPCM@( RecursivePCM pFit dtls _ sSpc@(PCMRange xl wsp) slLn pts )
                     = RecursivePCM pFit dtls' (DevBoxes stdDev maxDev) sSpc slLn ()
-                   where stdDev = (^/ fromIntegral slLn) . sumV $ projector' <$> msqs
-                         maxDev =     sqrt           . maximum $ magnitudeSq <$> msqs
+                   where stdDev = scaleNorm (1/ fromIntegral slLn) $ spanNorm msqs
+                         maxDev =     sqrt        . maximum $ magnitudeSq <$> msqs
                          msqs = [ (y .-. ff x)
                                 | (x,y) <- normlsdIdd $ SplitList pts ]
                          ff = l₀splineRep (Pair lPFits rPFits) rPCM
@@ -267,12 +255,12 @@ rRoute (RecursivePCM {details = Left (Pair _ r)}) = Just r
                          
 
 recursiveSamples :: 
-          ( AffineSpace y, v~Diff y, InnerSpace v, HasMetric v, RealFloat (Scalar v) )
+          ( AffineManifold y, v~Needle y, HilbertSpace v, RealFloat (Scalar v) )
                      => [(y,t)] -> RecursiveSamples Int y t
 recursiveSamples = recursiveSamples' (PCMRange 0 1)
 
 recursivePCM :: ( VectorSpace x, Real (Scalar x)
-                , AffineSpace y, v~Diff y, InnerSpace v, HasMetric v, RealFloat (Scalar v) )
+                , AffineManifold y, v~Needle y, HilbertSpace v, RealFloat (Scalar v) )
                      => PCMRange x -> [y] -> x-.^>y
 recursivePCM xrng_g = recursiveSamples' xrng_g . fmap (,())
 
@@ -321,7 +309,7 @@ l₀splineRep (Pair lPFits rPFits)
 
 
 
-rPCMSample :: (AffineSpace y, v~Diff y, InnerSpace v, HasMetric v, RealFloat (Scalar v))
+rPCMSample :: (AffineManifold y, v~Needle y, HilbertSpace v, RealFloat (Scalar v))
        => Interval R -> R -> (R->y) -> R-.^>y
 rPCMSample (Interval l r) δx f = recursivePCM (PCMRange l δx) [f x | x<-[l, l+δx .. r]] 
                    
@@ -334,7 +322,7 @@ rPCM_R2_boundingBox rPCM@(RecursivePCM pFit _ (DevBoxes dev _) _ _ ())
            -*| Interval (yb - uy*2) (yt + uy*2)
  where pm = constCoeff pFit
        p₀ = pm .-^ linCoeff pFit; pe = pm .+^ linCoeff pFit
-       ux = metric' dev $ 1^&0; uy = metric' dev $ 0^&1
+       ux = dev |$| 1^&0; uy = dev |$| 0^&1
        [xl,xr] = sort[p₀^._x, pe^._x]; [yb,yt] = sort[p₀^._y, pe^._y]
 
 
@@ -456,8 +444,8 @@ xyRanges bb = let Just (c₁, c₂) = DiaBB.getCorners bb
 
 shadeExtends :: Shade P2 -> (Interval R, Interval R)
 shadeExtends shade
-      = ( (ctr^._x) ± sqrt (metric' expa $ 1^&0)
-        , (ctr^._y) ± sqrt (metric' expa $ 0^&1) )
+      = ( (ctr^._x) ± (expa |$| 1^&0)
+        , (ctr^._y) ± (expa |$| 0^&1) )
  where ctr = shade^.shadeCtr; expa = shade^.shadeExpanse
 
 
