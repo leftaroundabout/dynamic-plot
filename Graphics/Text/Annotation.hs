@@ -64,7 +64,6 @@ import Data.Function (on)
 import Data.VectorSpace
 import Data.Basis
 import Data.AffineSpace
-import Data.LinearMap.HerMetric
 import Data.Manifold.PseudoAffine
 import Data.Manifold.TreeCover
 import qualified Data.Map.Lazy as Map

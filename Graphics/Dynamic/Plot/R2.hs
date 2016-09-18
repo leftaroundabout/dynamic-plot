@@ -113,9 +113,9 @@ import Data.Function (on)
 import Data.Ord (comparing)
 
 import Data.VectorSpace
+import Math.LinearMap.Category
 import Data.Basis
 import Data.AffineSpace
-import Data.LinearMap.HerMetric
 import Data.Manifold.PseudoAffine
 import Data.Function.Differentiable
 import Data.Manifold.Types
@@ -221,6 +221,8 @@ diagramPlot :: PlainGraphicsR2 -> DynamicPlottable
 diagramPlot d = plot $ PlainGraphics d
 
 
+metricFromLength :: RealFrac' s => s -> Norm s 
+metricFromLength l | l>0   = spanNorm [1 / sqrt l]
   
 instance Plottable (R-->R) where
   plot f = def & relevantRange_y .~ OtherDimDependantRange yRangef
@@ -280,12 +282,12 @@ instance Plottable (R-->(R,R)) where
 resolutionFunction :: GraphWindowSpecR2 -> RieMetric ℝ²
 resolutionFunction GraphWindowSpecR2{..} = resoFunc
  where w = rBound - lBound; h = tBound - bBound
-       ε = projector (recip δx, 0) ^+^ projector (0, recip δy)
+       ε = spanNorm [(recip δx, 0), (0, recip δy)]
        δx = w / fromIntegral xResolution
        δy = h / fromIntegral yResolution
        resoFunc (x,y)
          | x >= lBound, x <= rBound, y >= bBound, y <= tBound  = ε
-         | otherwise = projector (recip qx,0) ^+^ projector (0,recip qy)
+         | otherwise = spanNorm [(recip qx,0), (0,recip qy)]
         where qx | x < lBound  = lBound - x
                  | x > rBound  = x - rBound
                  | otherwise   = δx * qy/δy
@@ -321,7 +323,7 @@ instance Plottable (R-.^>R) where
                              [_y+~δq $ q, _y+~δp $ p, _y-~δp $ p, _y-~δq $ q
                              ,_y+~δq $ q ]))
                        ) <> trStRange (qd:ps)
-                 where [σp,σq] = map (`metric'`1) [σp', σq']
+                 where [σp,σq] = map (|$|1) [σp', σq']
                 trStRange _ = mempty
                 trMBound l = Dia.fromVertices l & Dia.dashingO [2,2] 0
                 
@@ -352,11 +354,11 @@ instance Plottable (RecursiveSamples Int P2 (DevBoxes P2)) where
                           )) <> trSR (qd:ps)
                        trSR _ = mempty
                        calcNormDev ((p,v), DevBoxes σ _) = (p .+^ d, p .-^ d)
-                        where d = metriScale' σ $ turnLeft v
+                        where d = let v' = turnLeft v in v' ^* (σ|$|v')
                 trStRange (Right pts) = (`foldMap`pts)
                    $ \(p, DevBoxes dv _)
-                              -> let δxm = metric' dv $ 1^&0
-                                     δym = metric' dv $ 0^&1
+                              -> let δxm = dv |$| 1^&0
+                                     δym = dv |$| 0^&1
                                  in if δxm > δx && δym > δy
                                       then simpleLine (_x +~ δxm $ p) (_x -~ δxm $ p)
                                             <> simpleLine (_y +~ δym $ p) (_y -~ δym $ p)
@@ -373,7 +375,7 @@ instance Plottable (RecursiveSamples Int P2 (DevBoxes P2)) where
 
 
 instance Plottable (Int -.^> P2) where
-  plot = plot . fmap (\() -> DevBoxes zeroV zeroV :: DevBoxes P2)
+  plot = plot . fmap (\() -> DevBoxes mempty zeroV :: DevBoxes P2)
 
 
 
@@ -437,7 +439,7 @@ flattenPCM_resoCut bb δx = case DiaBB.getCorners bb of
                xRange_norm'd = max (-1) ((lCorn^._x - xm)/w)
                            ... min   1  ((rCorn^._x - xm)/w)
 
-flattenPCM_P2_resoCut :: R2Box -> [DualSpace R2]
+flattenPCM_P2_resoCut :: R2Box -> [DualVector R2]
                               -> (RecursiveSamples x P2 t)
                               -> [ Either [((P2, R2), DevBoxes P2)]
                                           [(P2, t)]                 ]
@@ -449,7 +451,7 @@ flattenPCM_P2_resoCut bb δs = case DiaBB.getCorners bb of
           | DiaBB.isEmptyBox $ DiaBB.intersection bb (rPCM_R2_boundingBox rPCM)
                 = \case l@(Left [] : _) -> l
                         l -> Left [] : l
-          | metrics' dev δs > 0.5 || (sum $ ((^2).(pa<.>^)) <$> δs) > 3
+          | sum (normSq dev<$>δs) > 1/4 || (sum $ ((^2).(pa<.>^)) <$> δs) > 3
           , Left (Pair s1 s2) <- details
                 = go s1 . go s2
           | Right pts <- details = (Right (Arr.toList pts) :)
@@ -481,7 +483,7 @@ instance Plottable (Shade P2) where
           where axLine eigV = simpleLine (ctr .-~^ eigV) (ctr .+~^ eigV)
          (xRange,yRange) = shadeExtends shade
          ctr = shade^.shadeCtr
-         eigVs = eigenSpan $ shade^.shadeExpanse
+         eigVs = normSpanningSystem $ shade^.shadeExpanse
 
 instance Plottable (Shade (R,R)) where
   plot sh = plot (coerceShade sh :: Shade P2)
@@ -497,7 +499,7 @@ instance Plottable (Shade' (R,R)) where
                             & Dia.opacity 0.2
                             & Dia.moveTo ctr
          ctr = Dia.p2 $ shade^.shadeCtr
-         [ev₁@(e₁x,e₁y),ev₂] = eigenSpan' $ shade^.shadeNarrowness
+         [ev₁@(e₁x,e₁y),ev₂] = normSpanningSystem $ shade^.shadeNarrowness
          ϑ = atan2 e₁y e₁x  Dia.@@ Dia.rad
          w₁ = recip $ magnitude ev₁; w₂ = recip $ magnitude ev₂
 
@@ -576,21 +578,24 @@ instance Plottable (PointsWeb ℝ (Shade' ℝ)) where
          trivs :: [((ℝ, (Diff ℝ,Diff ℝ)), ((ℝ, Diff ℝ), LocalLinear ℝ ℝ))]
          divis :: [(ℝ, (Diff ℝ,Diff ℝ))]
          (trivs,divis) = concat***concat $ unzip (map mkTriv locals)
-          where mkTriv ((xc,Shade' yc yce), [(δxo, Shade' yo _)])
-                       = case tryMetricAsLength yce of
-                           Option (Just ry) ->
+          where mkTriv :: ((ℝ, Shade' ℝ), [(ℝ, Shade' ℝ)])
+                     -> ( [((ℝ, (Diff ℝ,Diff ℝ)), ((ℝ, Diff ℝ), LocalLinear ℝ ℝ))]
+                        , [(ℝ, (Diff ℝ,Diff ℝ))] )
+                mkTriv ((xc,Shade' yc yce), [(δxo, Shade' yo _)])
+                       = case findNormalLength yce of
+                           Just ry ->
                               ( [ ( (xc, dirSort 0 δxo)
                                   , ( (yc, ry)
-                                    , denseLinear $ \δx -> δx * (yo-yc)/δxo ) ) ], [] )
-                           Option Nothing ->
+                                    , id ^* ((yo-yc)/δxo) ) ) ], [] )
+                           Nothing ->
                               ( [], [(xc, dirSort 0 δxo)] )
                 mkTriv ((xc,Shade' yc yce), [(δxl, Shade' yl _), (δxr, Shade' yr _)])
-                       = case tryMetricAsLength yce of
-                           Option (Just ry) ->
+                       = case findNormalLength yce of
+                           Just ry ->
                               ( [ ( (xc, dirSort δxl δxr)
                                   , ( (yc, ry)
-                                    , denseLinear $ \δx -> δx * η ) ) ], [] )
-                           Option Nothing ->
+                                    , id ^* η ) ) ], [] )
+                           Nothing ->
                               ( [], [(xc, dirSort δxl δxr)] )
                  where δxg = (δxr - δxl)/2
                        η = (yr - yl)/(2*δxg)
@@ -1103,7 +1108,7 @@ type (-->) = RWDiffable ℝ
 -- 
 --   This function is equivalent to using 'plot' on an 'RWDiffable' arrow.
 fnPlot :: (∀ m . ( WithField ℝ PseudoAffine m
-                         , HasMetric (Needle (Interior m)) )
+                         , LSpace (Needle (Interior m)) )
                          => AgentVal (-->) m ℝ -> AgentVal (-->) m ℝ )
                      -> DynamicPlottable
 fnPlot f = plot fd
@@ -1112,7 +1117,7 @@ fnPlot f = plot fd
 
 -- | Plot a continuous, “parametric function”, i.e. mapping the real line to a path in ℝ².
 paramPlot :: (∀ m . ( WithField ℝ PseudoAffine m
-                         , HasMetric (Needle (Interior m)) )
+                         , LSpace (Needle (Interior m)) )
                        => AgentVal (-->) m ℝ -> (AgentVal (-->) m ℝ, AgentVal (-->) m ℝ) )
                      -> DynamicPlottable
 paramPlot f = plot fd
@@ -1120,7 +1125,7 @@ paramPlot f = plot fd
        fd = alg1to2 f
 
 scrutiniseDiffability :: (∀ m . ( WithField ℝ PseudoAffine m
-                                , HasMetric (Needle (Interior m)) )
+                                , LSpace (Needle (Interior m)) )
                          => AgentVal (-->) m ℝ -> AgentVal (-->) m ℝ )
                      -> DynamicPlottable
 scrutiniseDiffability f = plot [{-plot fd, -}dframe 0.2, dframe 0.02]
