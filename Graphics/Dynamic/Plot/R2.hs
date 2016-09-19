@@ -501,9 +501,10 @@ instance Plottable (Shade' (R,R)) where
                             & Dia.opacity 0.2
                             & Dia.moveTo ctr
          ctr = Dia.p2 $ shade^.shadeCtr
-         [ev₁@(e₁x,e₁y),ev₂] = normSpanningSystem $ shade^.shadeNarrowness
+         Norm expanr = shade^.shadeNarrowness
+         [ev₁@(_,(e₁x,e₁y)),ev₂] = eigen $ arr expanr
          ϑ = atan2 e₁y e₁x  Dia.@@ Dia.rad
-         w₁ = recip $ magnitude ev₁; w₂ = recip $ magnitude ev₂
+         [w₁,w₂] = recip . sqrt . fst <$> [ev₁, ev₂]
 
 instance Plottable (ConvexSet (R,R)) where
   plot EmptyConvex = mempty
