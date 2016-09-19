@@ -68,32 +68,6 @@ import Control.DeepSeq
 type R2 = Dia.V2 Double
 type P2 = Dia.P2 Double
 
-instance Semimanifold R2 where
-  type Needle R2 = R2
-  fromInterior = id
-  toInterior = pure
-  translateP = Tagged (^+^)
-  (.+~^) = (^+^)
-instance PseudoAffine R2 where
-  p.-~.q = pure(p^-^q)
-instance LocallyCoercible R2 (R,R) where
-  locallyTrivialDiffeomorphism v = (v^._x, v^._y)
-instance LocallyCoercible (R,R) R2 where
-  locallyTrivialDiffeomorphism = DiaTypes.r2
-
-instance Semimanifold P2 where
-  type Needle P2 = R2
-  fromInterior = id
-  toInterior = pure
-  translateP = Tagged (.+^)
-  (.+~^) = (.+^)
-instance PseudoAffine P2 where
-  p.-~.q = pure(p.-.q)
-instance LocallyCoercible P2 (R,R) where
-  locallyTrivialDiffeomorphism v = (v^._x, v^._y)
-instance LocallyCoercible (R,R) P2 where
-  locallyTrivialDiffeomorphism = DiaTypes.p2
-
 
 
 (^) :: Num n => n -> Int -> n

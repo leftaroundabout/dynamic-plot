@@ -247,7 +247,7 @@ instance Plottable (R-->R) where
                               1000
                               ( const . metricFromLength
                                                $ (rBound-lBound)/fromIntegral xResolution
-                              , resolutionFunction gs )
+                              , coerceMetric $ resolutionFunction gs )
                               ((id&&&f)
                                . alg (\x -> ( point lBound?<x?<point rBound ?-> x )))
                 trace (p:q:ps) = simpleLine p q <> trace (q:ps)
@@ -269,7 +269,7 @@ instance Plottable (R-->(R,R)) where
                         $ discretisePathSegs
                               1000
                               ( const . metricFromLength $ 1/100
-                              , resolutionFunction gs )
+                              , coerceMetric $ resolutionFunction gs )
                               f
                 trace (p:q:ps) = simpleLine p q <> trace (q:ps)
                 trace _ = mempty
@@ -282,12 +282,12 @@ instance Plottable (R-->(R,R)) where
 resolutionFunction :: GraphWindowSpecR2 -> RieMetric ℝ²
 resolutionFunction GraphWindowSpecR2{..} = resoFunc
  where w = rBound - lBound; h = tBound - bBound
-       ε = spanNorm [(recip δx, 0), (0, recip δy)]
+       ε = spanNorm [(recip δx^&0), (0^&recip δy)]
        δx = w / fromIntegral xResolution
        δy = h / fromIntegral yResolution
-       resoFunc (x,y)
+       resoFunc (DiaTypes.V2 x y)
          | x >= lBound, x <= rBound, y >= bBound, y <= tBound  = ε
-         | otherwise = spanNorm [(recip qx,0), (0,recip qy)]
+         | otherwise = spanNorm [(recip qx^&0), (0^&recip qy)]
         where qx | x < lBound  = lBound - x
                  | x > rBound  = x - rBound
                  | otherwise   = δx * qy/δy
@@ -486,7 +486,9 @@ instance Plottable (Shade P2) where
          eigVs = normSpanningSystem $ shade^.shadeExpanse
 
 instance Plottable (Shade (R,R)) where
-  plot sh = plot (coerceShade sh :: Shade P2)
+  plot sh = plot sh'
+   where sh' = case coerceShade sh :: Shade R2 of
+                 Shade v e -> Shade (Dia.P v) e :: Shade P2
 
 instance Plottable (Shade' (R,R)) where
   plot shade = def
@@ -515,7 +517,8 @@ instance Plottable (ConvexSet (R,R)) where
                               >>> Dia.fcA (Dia.withOpacity Dia.grey 0.01) ) ]
          
 instance Plottable (Shade' P2) where
-  plot sh = plot (coerceShade sh :: Shade' (R,R))
+  plot (Shade' (Dia.P v) e) = plot (coerceShade (Shade' v e :: Shade' R2)
+                                              :: Shade' (R,R))
 
 
 instance Plottable (Shaded ℝ ℝ) where
