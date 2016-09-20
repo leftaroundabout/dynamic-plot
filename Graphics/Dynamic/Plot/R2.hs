@@ -641,6 +641,8 @@ instance Plottable (SimpleTree P2) where
          tree = GenericTree [(ctr,root)]
 instance Plottable (Trees P2) where
   plot (GenericTree ts) = plot $ (GenericTree . Just) <$> ts
+instance Plottable (Trees R2) where
+  plot = plot . fmap Dia.P
 
 instance Plottable (SimpleTree (R,R)) where
   plot = plot . fmap (\(x,y) -> DiaTypes.p2 (x,y))
