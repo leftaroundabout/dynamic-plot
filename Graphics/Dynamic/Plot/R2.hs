@@ -54,6 +54,7 @@ module Graphics.Dynamic.Plot.R2 (
         , dynamicAxes, noDynamicAxes
         -- ** Plot type
         , DynamicPlottable
+        , tweakPrerendered
         -- ** Legacy
         , PlainGraphics(..)
         ) where
@@ -502,10 +503,10 @@ instance Plottable (ConvexSet (R,R)) where
   plot EmptyConvex = mempty
   plot (ConvexSet hull intersects)
       = plot [ plot intersects
-                 & tweakDiagram (Dia.opacity
+                 & tweakPrerendered (Dia.opacity
                                      (1 / fromIntegral (length intersects)) )
              , plot hull
-                 & tweakDiagram ( Dia.lwO 3
+                 & tweakPrerendered ( Dia.lwO 3
                               >>> Dia.opacity 1
                               >>> Dia.fcA (Dia.withOpacity Dia.grey 0.01) ) ]
          
@@ -1226,12 +1227,12 @@ autoDashLine w p q = simpleLine' (max 1 w) p q
        & if w < 1 then Dia.dashingO [w*6, 3] 0 else id
 
 
-tweakDiagram :: (PlainGraphicsR2->PlainGraphicsR2) -> DynamicPlottable->DynamicPlottable
-tweakDiagram f = dynamicPlot %~ (tweak .)
+tweakPrerendered :: (PlainGraphicsR2->PlainGraphicsR2) -> DynamicPlottable->DynamicPlottable
+tweakPrerendered f = dynamicPlot %~ (tweak .)
  where tweak = getPlot %~ f
 
 opacityFactor :: Double -> DynamicPlottable -> DynamicPlottable
-opacityFactor = tweakDiagram . Dia.opacity
+opacityFactor = tweakPrerendered . Dia.opacity
 
 
 -- | When you &#x201c;plot&#x201d; 'xInterval' / 'yInterval', it is ensured that the (initial) view encompasses 
