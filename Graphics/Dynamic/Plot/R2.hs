@@ -43,20 +43,22 @@ module Graphics.Dynamic.Plot.R2 (
         , PlainGraphicsR2
         , shapePlot
         , diagramPlot
+        -- * Plot-object attributes
+        -- ** Colour
+        , tint, autoTint
         -- ** Legend captions
         , legendName
+        -- * Viewport
         -- ** View selection
         , xInterval, yInterval, forceXRange, forceYRange
-        -- ** View dependance
+        -- ** View dependence
         , ViewXCenter(..), ViewYCenter(..), ViewWidth(..), ViewHeight(..)
         , ViewXResolution(..), ViewYResolution(..)
-        -- ** Auxiliary plot objects
+        -- * Auxiliary plot objects
         , dynamicAxes, noDynamicAxes
-        -- ** Plot type
+        -- * The plot type
         , DynamicPlottable
         , tweakPrerendered
-        -- ** Legacy
-        , PlainGraphics(..)
         ) where
 
 import Graphics.Dynamic.Plot.Colour
@@ -151,7 +153,7 @@ type GraphWindowSpec = GraphWindowSpecR2
 
 data DynamicPlottable = DynamicPlottable { 
         _relevantRange_x, _relevantRange_y :: RangeRequest R
-      , _isTintableMonochromic :: Bool
+      , _inherentColours :: [DCol.Colour ℝ]
       , _occlusiveness :: Double
          -- ^ How surface-occupying the plot is.
          --   Use positive values for opaque 2D plots that would tend to obscure
@@ -211,7 +213,7 @@ instance Plottable PlainGraphics where
 --   Use 'diagramPlot' instead, if you want to view the diagram as-is.
 shapePlot :: PlainGraphicsR2 -> DynamicPlottable
 shapePlot d = diagramPlot d
-               & isTintableMonochromic .~ True
+               & inherentColours .~ []
                & axesNecessity .~ 0
 
 -- | Plot a generic 'Dia.Diagram'.
@@ -222,7 +224,7 @@ diagramPlot d = plot $ PlainGraphics d
   
 instance Plottable (R-->R) where
   plot f = def & relevantRange_y .~ OtherDimDependantRange yRangef
-               & isTintableMonochromic .~ True
+               & autoTint
                & axesNecessity .~ 1
                & dynamicPlot .~ plot
    where yRangef (Option Nothing) = Option Nothing
@@ -255,7 +257,7 @@ instance Plottable (R-->R) where
 
 instance Plottable (R-->(R,R)) where
   plot f = def & relevantRange_y .~ mempty
-               & isTintableMonochromic .~ True
+               & autoTint
                & axesNecessity .~ 1
                & dynamicPlot .~ plot
    where plot gs@(GraphWindowSpecR2{..}) = curves `deepseq`
@@ -297,7 +299,7 @@ instance Plottable (R-.^>R) where
             = def
               & relevantRange_x .~ atLeastInterval (Interval x₀ xr)
               & relevantRange_y .~ otherDimDependence (rPCMLinFitRange rPCM)
-              & isTintableMonochromic .~ True
+              & autoTint
               & axesNecessity .~ 1
               & dynamicPlot .~ plot
    where 
@@ -336,7 +338,7 @@ instance Plottable (RecursiveSamples Int P2 (DevBoxes P2)) where
             = def
               & relevantRange_x .~ atLeastInterval xRange
               & relevantRange_y .~ atLeastInterval yRange
-              & isTintableMonochromic .~ True
+              & autoTint
               & axesNecessity .~ 1
               & dynamicPlot .~ plot
    where plot (GraphWindowSpecR2{..}) = mkPlot
@@ -394,13 +396,13 @@ tracePlot = plot . recursiveSamples . map ((,()) . Dia.p2)
 --   there is no &#201c;statistic optimisation&#201d; as in 'tracePlot'.
 lineSegPlot :: [(Double, Double)] -> DynamicPlottable
 lineSegPlot ps'
-    | null ps        = mempty & isTintableMonochromic .~ True
+    | null ps        = mempty & autoTint
     | otherwise      = def
              & relevantRange_x .~ atLeastInterval'
                                    ( foldMap (pure . spInterval . fst) (concat ps) )
              & relevantRange_y .~ atLeastInterval'
                                    ( foldMap (pure . spInterval . snd) (concat ps) )
-             & isTintableMonochromic .~ True
+             & autoTint
              & axesNecessity .~ 1
              & dynamicPlot .~ plot
  where plot (GraphWindowSpecR2{..}) = mkPlot (foldMap trace ps)
@@ -472,7 +474,7 @@ instance Plottable (Shade P2) where
   plot shade = def
               & relevantRange_x .~ atLeastInterval xRange
               & relevantRange_y .~ atLeastInterval yRange
-              & isTintableMonochromic .~ True
+              & autoTint
               & axesNecessity .~ 1
               & dynamicPlot .~ plot
    where plot _ = mkPlot $ foldMap axLine eigVs 
@@ -486,7 +488,7 @@ instance Plottable (Shade (R,R)) where
 
 instance Plottable (Shade' (R,R)) where
   plot shade = def
-              & isTintableMonochromic .~ True
+              & autoTint
               & axesNecessity .~ 1
               & dynamicPlot .~ plot
    where plot _ = mkPlot $ Dia.circle 1
@@ -518,7 +520,7 @@ instance Plottable (Shaded ℝ ℝ) where
   plot tr | length trivs' >= 2
           = def & relevantRange_x .~ atLeastInterval (Interval xmin xmax)
                 & relevantRange_y .~ atLeastInterval (Interval ymin ymax)
-                & isTintableMonochromic .~ True
+                & autoTint
                 & axesNecessity .~ 1
                 & dynamicPlot .~ plot
    where plot grWS@(GraphWindowSpecR2{..}) = mkPlot $
@@ -554,7 +556,7 @@ instance Plottable (PointsWeb ℝ (Shade' ℝ)) where
   plot web | length locals >= 2
           = def & relevantRange_x .~ atLeastInterval (Interval xmin xmax)
                 & relevantRange_y .~ atLeastInterval (Interval ymin ymax)
-                & isTintableMonochromic .~ True
+                & autoTint
                 & axesNecessity .~ 1
                 & dynamicPlot .~ plot
    where plot grWS@(GraphWindowSpecR2{..}) = mkPlot $
@@ -615,7 +617,7 @@ instance Plottable (SimpleTree P2) where
            = def
               & relevantRange_x .~ atLeastInterval xRange
               & relevantRange_y .~ atLeastInterval yRange
-              & isTintableMonochromic .~ True
+              & autoTint
               & axesNecessity .~ 1
               & dynamicPlot .~ plot
    where plot _ = mkPlot $ go 4 ctr (treeBranches root)
@@ -689,9 +691,9 @@ instance Semigroup DynamicPlottable where
   DynamicPlottable rx₁ ry₁ tm₁ oc₁ ax₁ le₁ dp₁
     <> DynamicPlottable rx₂ ry₂ tm₂ oc₂ ax₂ le₂ dp₂
         = DynamicPlottable
-   (rx₁<>rx₂) (ry₁<>ry₂) (tm₁||tm₂) (oc₁+oc₂) (ax₁+ax₂) (le₁++le₂) (dp₁<>dp₂) 
+   (rx₁<>rx₂) (ry₁<>ry₂) (tm₁++tm₂) (oc₁+oc₂) (ax₁+ax₂) (le₁++le₂) (dp₁<>dp₂) 
 instance Monoid DynamicPlottable where
-  mempty = DynamicPlottable mempty mempty False 0 0 [] mempty
+  mempty = DynamicPlottable mempty mempty [] 0 0 [] mempty
   mappend = (<>)
 instance Default DynamicPlottable where def = mempty
 
@@ -703,8 +705,20 @@ data GraphViewState = GraphViewState {
 
 
 
+-- | Set the caption for this plot object that should appear in the
+--   plot legend.
 legendName :: String -> DynamicPlottable -> DynamicPlottable
 legendName n = legendEntries %~ (LegendEntry (PlainText n) mempty :)
+
+-- | Colour this plot object in a fixed shade.
+tint :: DCol.Colour ℝ -> DynamicPlottable -> DynamicPlottable
+tint col = inherentColours .~ [col]
+       >>> dynamicPlot %~ fmap (getPlot %~ Dia.lc col . Dia.fc col)
+
+-- | Allow the object to be automatically assigned a colour that's otherwise
+--   unused in the plot. (This is the default for most plot objects.)
+autoTint :: DynamicPlottable -> DynamicPlottable
+autoTint = inherentColours .~ []
 
 
 instance (Ord r) => Semigroup (RangeRequest r) where
@@ -782,7 +796,7 @@ plotWindow graphs' = do
                                             , graphColor = cl }
                         ) : ) $ assignGrViews gs cs' (axn + _axesNecessity)
                 where (cl, cs')
-                        | _isTintableMonochromic = (Just $ defColourScheme c, cs)
+                        | null _inherentColours  = (Just $ defColourScheme c, cs)
                         | otherwise              = (Nothing, c:cs)
                assignGrViews [] _ axesNeed 
                  | axesNeed > 0  = assignGrViews [dynamicAxes] [grey] (-1)
@@ -1053,7 +1067,7 @@ scrollZoomStrength = 1/20
 continFnPlot :: (Double -> Double) -> DynamicPlottable
 continFnPlot f = def
              & relevantRange_y .~ otherDimDependence yRangef
-             & isTintableMonochromic .~ True
+             & autoTint
              & axesNecessity .~ 1
              & dynamicPlot .~ plot
  where yRangef = onInterval $ \(l, r) -> ((!%0.1) &&& (!%0.9)) . sort . pruneOutlyers
@@ -1114,7 +1128,7 @@ scrutiniseDiffability f = plot [{-plot fd, -}dframe 0.2, dframe 0.02]
        fd = alg f
        fscrut = analyseLocalBehaviour fd
        dframe rfh = def
-                 & isTintableMonochromic .~ True
+                 & autoTint
                  & dynamicPlot .~ mkFrame
         where mkFrame (GraphWindowSpecR2{..}) = case fscrut xm of
                       Option (Just ((ym,y'm), δOδx²))
@@ -1275,7 +1289,7 @@ newtype ViewXCenter = ViewXCenter { getViewXCenter :: Double }
 instance (Plottable p) => Plottable (ViewXCenter -> p) where
   plot f = def & relevantRange_y .~ OtherDimDependantRange
                      (\g -> deescalate relevantRange_y g . plot . f . cxI =<< g)
-               & isTintableMonochromic .~ fcxVoid^.isTintableMonochromic
+               & inherentColours .~ fcxVoid^.inherentColours
                & axesNecessity .~ fcxVoid^.axesNecessity
                & dynamicPlot .~ \g -> _dynamicPlot (plot . f $ cx g) g
     where cx (GraphWindowSpecR2{..}) = ViewXCenter $ (lBound+rBound)/2
@@ -1288,7 +1302,7 @@ newtype ViewYCenter = ViewYCenter { getViewYCenter :: Double }
 instance (Plottable p) => Plottable (ViewYCenter -> p) where
   plot f = def & relevantRange_x .~ OtherDimDependantRange
                      (\g -> deescalate relevantRange_x g . plot . f . cyI =<< g)
-               & isTintableMonochromic .~ fcyVoid^.isTintableMonochromic
+               & inherentColours .~ fcyVoid^.inherentColours
                & axesNecessity .~ fcyVoid^.axesNecessity
                & dynamicPlot .~ \g -> _dynamicPlot (plot . f $ cy g) g
     where cy (GraphWindowSpecR2{..}) = ViewYCenter $ (bBound+tBound)/2
@@ -1301,7 +1315,7 @@ newtype ViewWidth = ViewWidth { getViewWidth :: Double }
 instance (Plottable p) => Plottable (ViewWidth -> p) where
   plot f = def & relevantRange_y .~ OtherDimDependantRange
                      (\g -> deescalate relevantRange_y g . plot . f . wI =<< g)
-               & isTintableMonochromic .~ fwVoid^.isTintableMonochromic
+               & inherentColours .~ fwVoid^.inherentColours
                & axesNecessity .~ fwVoid^.axesNecessity
                & dynamicPlot .~ \g -> _dynamicPlot (plot . f $ w g) g
     where w (GraphWindowSpecR2{..}) = ViewWidth $ rBound - lBound
@@ -1314,7 +1328,7 @@ newtype ViewHeight = ViewHeight { getViewHeight :: Double }
 instance (Plottable p) => Plottable (ViewHeight -> p) where
   plot f = def & relevantRange_x .~ OtherDimDependantRange
                      (\g -> deescalate relevantRange_x g . plot . f . hI =<< g)
-               & isTintableMonochromic .~ fhVoid^.isTintableMonochromic
+               & inherentColours .~ fhVoid^.inherentColours
                & axesNecessity .~ fhVoid^.axesNecessity
                & dynamicPlot .~ \g -> _dynamicPlot (plot . f $ h g) g
     where h (GraphWindowSpecR2{..}) = ViewHeight $ tBound - bBound
