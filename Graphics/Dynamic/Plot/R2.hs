@@ -97,8 +97,10 @@ import Control.Lens hiding ((...), (<.>))
 import Control.Lens.TH(makeLenses)
 
   
+import Control.Concurrent (runInBoundThread)
 import Control.Concurrent.Async
 import Control.DeepSeq
+import Control.Exception (evaluate)
 
 
 import Data.List (foldl', sort, sortBy, partition, zip4)
@@ -782,13 +784,11 @@ atLeastInterval' = OtherDimDependantRange . const
 --   ATTENTION: the window may sometimes freeze, especially when displaying 
 --   complicated functions with 'fnPlot` from ghci. This is apparently
 --   a kind of deadlock problem with one of the C libraries that are invoked,
---   in particular, 'fnPlot' makes heavy use of <http://hackage.haskell.org/package/hmatrix hmatrix>
---   and thus <http://www.gnu.org/software/gsl/ GSL>.
 --   At the moment, we can recommend no better solution than to abort and restart ghci
 --   (or what else you use – iHaskell kernel, process, ...) if this occurs.
 plotWindow :: [DynamicPlottable] -> IO GraphWindowSpec
 plotWindow [] = plotWindow [dynamicAxes]
-plotWindow graphs' = do
+plotWindow graphs' = runInBoundThread $ do
    
    dgStore <- newIORef $ mempty
    
@@ -801,7 +801,7 @@ plotWindow graphs' = do
                assignGrViews :: [DynamicPlottable] -> [Colour] -> Double
                                -> IO [(DynamicPlottable, GraphViewState)]
                assignGrViews (g@DynamicPlottable{..}:gs) (c:cs) axn = do 
-                   v <- async $ return $! _dynamicPlot window₀
+                   v <- async . evaluate $ _dynamicPlot window₀
                    fmap ((g, GraphViewState { lastStableView = Nothing
                                             , realtimeView = v, nextTgtView = v 
                                             , graphColor = cl }
@@ -915,7 +915,7 @@ plotWindow graphs' = do
           grViewsOld <- readIORef graphs
           writeIORef graphs <=< forM grViewsOld $ 
                \(o@DynamicPlottable{..}, gv) -> do
-                  newRt <- async $ return $! _dynamicPlot newRealView
+                  newRt <- async . evaluate $ _dynamicPlot newRealView
                   poll (realtimeView gv) >>= \case
                     Just(Right vw) -> return (o
                       , gv{ realtimeView = newRt, lastStableView = Just (vstOld, vw) })
@@ -932,7 +932,7 @@ plotWindow graphs' = do
           grViewsOld <- readIORef graphs
           writeIORef graphs <=< forM grViewsOld $ 
                \(o@DynamicPlottable{..}, gv) -> do
-                  newTt <- async $ return $! _dynamicPlot newTgtView
+                  newTt <- async . evaluate $ _dynamicPlot newTgtView
                   cancel $ nextTgtView gv
                   return (o, gv{ nextTgtView = newTt })
           writeIORef viewTgt newTgtView
