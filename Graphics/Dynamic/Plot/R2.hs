@@ -97,8 +97,8 @@ import Control.Lens hiding ((...), (<.>))
 import Control.Lens.TH(makeLenses)
 
   
-import Control.Concurrent (runInBoundThread)
-import Control.Concurrent.Async
+import Control.Concurrent (runInBoundThread, threadDelay, ThreadId, forkIO, killThread)
+import Control.Concurrent.MVar
 import Control.DeepSeq
 import Control.Exception (evaluate)
 
@@ -167,6 +167,14 @@ data DynamicPlottable = DynamicPlottable {
   }
 makeLenses ''DynamicPlottable
 
+
+data ObjInPlot = ObjInPlot {
+        _lastStableView :: IORef (Maybe (GraphWindowSpec, Plot))
+      , _newPlotView :: MVar (GraphWindowSpec, Plot)
+      , _plotObjColour :: Maybe AColour
+      , _originalPlotObject :: DynamicPlottable
+   }
+makeLenses ''ObjInPlot
 
 
 newtype PlainGraphics = PlainGraphics { getPlainGraphics :: PlainGraphicsR2 }
@@ -710,12 +718,6 @@ instance Monoid DynamicPlottable where
   mappend = (<>)
 instance Default DynamicPlottable where def = mempty
 
-data GraphViewState = GraphViewState {
-        lastStableView :: Maybe (GraphWindowSpec, Plot)
-      , realtimeView, nextTgtView :: Async Plot
-      , graphColor :: Maybe AColour
-   }
-
 
 
 -- | Set the caption for this plot object that should appear in the
@@ -788,34 +790,35 @@ atLeastInterval' = OtherDimDependantRange . const
 --   (or what else you use – iHaskell kernel, process, ...) if this occurs.
 plotWindow :: [DynamicPlottable] -> IO GraphWindowSpec
 plotWindow [] = plotWindow [dynamicAxes]
-plotWindow graphs' = runInBoundThread $ do
-   
-   dgStore <- newIORef $ mempty
-   
+plotWindow givenPlotObjs = runInBoundThread $ do
    
    let defColourScheme = defaultColourScheme
    
+   viewState <- newIORef $ autoDefaultView givenPlotObjs
+   viewTgt <- newIORef =<< readIORef viewState
+   viewTgtGlobal <- newMVar =<< readIORef viewState
+   screenResolution <- newIORef (640, 480)
    
-   ([viewTgt, viewState :: IORef GraphWindowSpec], graphs) <- do
-           let window₀ = autoDefaultView graphs'
-               assignGrViews :: [DynamicPlottable] -> [Colour] -> Double
-                               -> IO [(DynamicPlottable, GraphViewState)]
-               assignGrViews (g@DynamicPlottable{..}:gs) (c:cs) axn = do 
-                   v <- async . evaluate $ _dynamicPlot window₀
-                   fmap ((g, GraphViewState { lastStableView = Nothing
-                                            , realtimeView = v, nextTgtView = v 
-                                            , graphColor = cl }
-                        ) : ) $ assignGrViews gs cs' (axn + _axesNecessity)
-                where (cl, cs')
-                        | null _inherentColours  = (Just $ defColourScheme c, cs)
-                        | otherwise              = (Nothing, c:cs)
-               assignGrViews [] _ axesNeed 
-                 | axesNeed > 0  = assignGrViews [dynamicAxes] [grey] (-1)
-                 | otherwise     = return []
-               graphs'' = sortBy (comparing _occlusiveness) graphs'
-           w <- mapM newIORef $ replicate 2 window₀
-           gs <- newIORef =<< assignGrViews graphs'' defaultColourSeq 0
-           return (w,gs)
+   dgStore <- newIORef mempty
+   
+   (plotObjs, cancelWorkers) :: ([ObjInPlot], IO ()) <- do
+       let assignPlObjPropties :: [DynamicPlottable] -> [Colour] -> Necessity
+                                    -> IO [(ObjInPlot, ThreadId)]
+           assignPlObjPropties [] _ axesNeed
+              | axesNeed > 0  = assignPlObjPropties [dynamicAxes] [grey] (-1)
+              | otherwise     = return []
+           assignPlObjPropties (o:os) (c:cs) axn = do
+              newDia <- newEmptyMVar
+              workerId <- forkIO $ objectPlotterThread o viewTgtGlobal newDia
+              stableView <- newIORef Nothing
+              ((ObjInPlot stableView newDia cl o, workerId) :)
+                     <$> assignPlObjPropties os cs' (axn + o^.axesNecessity)
+            where (cl, cs')
+                    | null (o^.inherentColours)  = (Just $ defColourScheme c, cs)
+                    | otherwise                  = (Nothing, c:cs)
+       (pObs, workerId) <- unzip <$> assignPlObjPropties givenPlotObjs defaultColourSeq 0
+       return ( snd <$> sortBy (comparing $ _occlusiveness . fst) (zip givenPlotObjs pObs)
+              , forM_ workerId killThread )
    
    
    GTK.initGUI
@@ -829,9 +832,10 @@ plotWindow graphs' = runInBoundThread $ do
                 (canvasX,canvasY) <- GTK.widgetGetSize drawA
                 modifyIORef viewTgt $ \view -> view{ xResolution = fromIntegral canvasX
                                                    , yResolution = fromIntegral canvasY }
+
                 dia <- readIORef dgStore
-                let oldSize = Dia.size dia
-                    scaledDia = Dia.bg Dia.black
+                    
+                let scaledDia = Dia.bg Dia.black
                                 . Dia.scaleX (fromInt canvasX / 2)
                                 . Dia.scaleY (-fromInt canvasY / 2)
                                 . Dia.translate (1 ^& (-1))
@@ -908,35 +912,6 @@ plotWindow graphs' = runInBoundThread $ do
        return $ GTK.widgetQueueDraw drawA
        
    
-   let updateRTView, updateTgtView :: (GraphWindowSpec -> GraphWindowSpec) -> IO ()
-       updateRTView updRealView = do
-          vstOld <- readIORef viewState
-          let newRealView = updRealView vstOld
-          grViewsOld <- readIORef graphs
-          writeIORef graphs <=< forM grViewsOld $ 
-               \(o@DynamicPlottable{..}, gv) -> do
-                  newRt <- async . evaluate $ _dynamicPlot newRealView
-                  poll (realtimeView gv) >>= \case
-                    Just(Right vw) -> return (o
-                      , gv{ realtimeView = newRt, lastStableView = Just (vstOld, vw) })
-                    _ -> do 
-                       cancel $ realtimeView gv
-                       poll (nextTgtView gv) >>= \case
-                         Just(Right vw) -> do
-                           ttvn <- readIORef viewTgt 
-                           return (o, gv{ realtimeView = newRt, lastStableView = Just (ttvn, vw) })
-                         _ -> return (o, gv{ realtimeView = newRt })
-          writeIORef viewState newRealView
-       updateTgtView updTgtView = do
-          newTgtView <- updTgtView <$> readIORef viewTgt
-          grViewsOld <- readIORef graphs
-          writeIORef graphs <=< forM grViewsOld $ 
-               \(o@DynamicPlottable{..}, gv) -> do
-                  newTt <- async . evaluate $ _dynamicPlot newTgtView
-                  cancel $ nextTgtView gv
-                  return (o, gv{ nextTgtView = newTt })
-          writeIORef viewTgt newTgtView
-   
    t₀ <- getCurrentTime
    lastFrameTime <- newIORef t₀
    
@@ -951,12 +926,12 @@ plotWindow graphs' = runInBoundThread $ do
                w = (rBound - lBound)/2; h = (tBound - bBound)/2
                x₀ = lBound + w; y₀ = bBound + h
                textTK txSiz asp = TextTK defaultTxtStyle txSiz asp 0.2 0.2
-               renderComp (DynamicPlottable{..}, GraphViewState{..}) = do
-                   plt <- poll realtimeView >>= \case
-                                  Just (Right pl) -> return $ Just pl
-                                  _ -> case lastStableView of
-                                   Just (_, vw) -> return $ Just vw
-                                   _ -> poll nextTgtView >> return Nothing
+               renderComp plotObj = do
+                   plt <- tryReadMVar (plotObj^.newPlotView) >>= \case
+                       Nothing -> fmap snd <$> readIORef (plotObj^.lastStableView)
+                       newDia -> do
+                           writeIORef (plotObj^.lastStableView) newDia
+                           return $ snd <$> newDia
                    case plt of
                     Nothing -> return mempty
                     Just Plot{..} -> let 
@@ -968,18 +943,18 @@ plotWindow graphs' = runInBoundThread $ do
                        fontPts = 12
                        transform :: PlainGraphicsR2 -> PlainGraphicsR2
                        transform = normaliseView . clr
-                         where clr | Just c <- graphColor  = Dia.lcA c . Dia.fcA c
-                                   | otherwise             = id
+                         where clr | Just c <- plotObj^.plotObjColour
+                                                = Dia.lcA c . Dia.fcA c
+                                   | otherwise  = id
                      in do
                        renderedAnnot <- mapM (prerenderAnnotation antTK) _plotAnnotations
                        return . transform $ fold renderedAnnot <> _getPlot
 
-           gvStates <- readIORef graphs
-           waitAny $ map (realtimeView . snd) gvStates
-           
-           thePlot <- (mconcat . reverse) <$> mapM renderComp (reverse gvStates)
+           thePlot <- (mconcat . reverse) <$> mapM renderComp (reverse plotObjs)
            theLegend <- prerenderLegend (textTK 10 1) colourScheme
-                $ (\(p,g) -> (,) <$> _legendEntries p <*> [graphColor g]) =<< gvStates
+                $ (\g -> (,) <$> g^.originalPlotObject.legendEntries
+                             <*> [g^.plotObjColour]
+                  ) =<< plotObjs
                    
            writeIORef dgStore $ ( theLegend & Dia.scaleX (0.1 / sqrt (fromIntegral xResolution))
                                             & Dia.scaleY (0.1 / sqrt (fromIntegral yResolution)) 
@@ -994,7 +969,8 @@ plotWindow graphs' = runInBoundThread $ do
            writeIORef lastFrameTime t
    
            do vt <- readIORef viewTgt
-              updateRTView $ \vo -> 
+              _ <- tryPutMVar viewTgtGlobal vt
+              modifyIORef viewState $ \vo -> 
                    let a%b = let η = min 1 $ 2 * realToFrac δt in η*a + (1-η)*b 
                    in GraphWindowSpecR2 (lBound vt % lBound vo) (rBound vt % rBound vo)
                                         (bBound vt % bBound vo) (tBound vt % tBound vo)
@@ -1006,8 +982,7 @@ plotWindow graphs' = runInBoundThread $ do
            return True
    
    GTK.onDestroy window $ do
-        (readIORef graphs >>=) . mapM_  -- cancel remaining threads
-           $ \(_, GraphViewState{..}) -> cancel realtimeView >> cancel nextTgtView
+        cancelWorkers
         GTK.mainQuit
                  
    
@@ -1017,6 +992,22 @@ plotWindow graphs' = runInBoundThread $ do
    GTK.mainGUI
    
    readIORef viewState
+
+
+
+
+objectPlotterThread :: DynamicPlottable
+                       -> MVar GraphWindowSpec
+                       -> MVar (GraphWindowSpec, Plot)
+                       -> IO ()
+objectPlotterThread pl viewVar diaVar = loop where
+ loop = do
+    threadDelay $ 50 * milliseconds
+    view <- readMVar viewVar
+    diagram <- evaluate $ pl^.dynamicPlot $ view
+    putMVar diaVar (view, diagram)
+    
+
 
 
 autoDefaultView :: [DynamicPlottable] -> GraphWindowSpec
@@ -1366,3 +1357,5 @@ atExtendOf' d₁ q d₂ = d₂
        (Just (llx,lux)) = Dia.extentX d₂; (Just (lly,luy)) = Dia.extentY d₂
 
 
+
+milliseconds = 1000 :: Int
