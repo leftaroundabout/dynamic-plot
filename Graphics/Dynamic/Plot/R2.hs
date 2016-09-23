@@ -927,7 +927,7 @@ plotWindow givenPlotObjs = runInBoundThread $ do
                x₀ = lBound + w; y₀ = bBound + h
                textTK txSiz asp = TextTK defaultTxtStyle txSiz asp 0.2 0.2
                renderComp plotObj = do
-                   plt <- tryReadMVar (plotObj^.newPlotView) >>= \case
+                   plt <- tryTakeMVar (plotObj^.newPlotView) >>= \case
                        Nothing -> fmap snd <$> readIORef (plotObj^.lastStableView)
                        newDia -> do
                            writeIORef (plotObj^.lastStableView) newDia
@@ -969,7 +969,7 @@ plotWindow givenPlotObjs = runInBoundThread $ do
            writeIORef lastFrameTime t
    
            do vt <- readIORef viewTgt
-              _ <- tryPutMVar viewTgtGlobal vt
+              modifyMVar_ viewTgtGlobal . const $ return vt
               modifyIORef viewState $ \vo -> 
                    let a%b = let η = min 1 $ 2 * realToFrac δt in η*a + (1-η)*b 
                    in GraphWindowSpecR2 (lBound vt % lBound vo) (rBound vt % rBound vo)
@@ -1006,6 +1006,7 @@ objectPlotterThread pl viewVar diaVar = loop where
     view <- readMVar viewVar
     diagram <- evaluate $ pl^.dynamicPlot $ view
     putMVar diaVar (view, diagram)
+    loop
     
 
 
