@@ -817,7 +817,7 @@ plotWindow givenPlotObjs = runInBoundThread $ do
                     | null (o^.inherentColours)  = (Just $ defColourScheme c, cs)
                     | otherwise                  = (Nothing, c:cs)
        (pObs, workerId) <- unzip <$> assignPlObjPropties givenPlotObjs defaultColourSeq 0
-       return ( snd <$> sortBy (comparing $ _occlusiveness . fst) (zip givenPlotObjs pObs)
+       return ( sortBy (comparing $ _occlusiveness . _originalPlotObject) pObs
               , forM_ workerId killThread )
    
    
