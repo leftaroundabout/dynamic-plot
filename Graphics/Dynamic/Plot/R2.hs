@@ -236,7 +236,7 @@ diagramPlot d = plot $ PlainGraphics d
 
 
 metricFromLength :: RealFrac' s => s -> Norm s 
-metricFromLength l | l>0   = spanNorm [1 / sqrt l]
+metricFromLength l | l>0   = spanNorm [1 / l]
   
 instance Plottable (R-->R) where
   plot f = def & relevantRange_y .~ OtherDimDependantRange yRangef
@@ -258,7 +258,7 @@ instance Plottable (R-->R) where
           where curves :: [[P2]]
                 curves = map (map $ convℝ² . snd) . gatherSides
                         $ discretisePathSegs
-                              1000
+                              10000
                               ( const . metricFromLength
                                                $ (rBound-lBound)/fromIntegral xResolution
                               , coerceMetric $ resolutionFunction gs )
@@ -1142,7 +1142,7 @@ paramPlot f = plot fd
        fd = alg1to2 f
 
 scrutiniseDiffability :: (∀ m . ( WithField ℝ PseudoAffine m
-                                , LSpace (Needle (Interior m)) )
+                                , SimpleSpace (Needle m) )
                          => AgentVal (-->) m ℝ -> AgentVal (-->) m ℝ )
                      -> DynamicPlottable
 scrutiniseDiffability f = plot [{-plot fd, -}dframe 0.2, dframe 0.02]
