@@ -499,10 +499,11 @@ instance Plottable (Shade P2) where
          ctr = shade^.shadeCtr
          eigVs = normSpanningSystem $ shade^.shadeExpanse
 
+instance Plottable (Shade ℝ²) where
+  plot (Shade v e) = plot (Shade (Dia.P v) e :: Shade P2)
+
 instance Plottable (Shade (R,R)) where
-  plot sh = plot sh'
-   where sh' = case coerceShade sh :: Shade R2 of
-                 Shade v e -> Shade (Dia.P v) e :: Shade P2
+  plot sh = plot (coerceShade sh :: Shade R2)
 
 instance Plottable (Shade' (R,R)) where
   plot shade = def
@@ -531,9 +532,11 @@ instance Plottable (ConvexSet (R,R)) where
                               >>> Dia.opacity 1
                               >>> Dia.fcA (Dia.withOpacity Dia.grey 0.01) ) ]
          
+instance Plottable (Shade' ℝ²) where
+  plot sh = plot (coerceShade sh :: Shade' R2)
+         
 instance Plottable (Shade' P2) where
-  plot (Shade' (Dia.P v) e) = plot (coerceShade (Shade' v e :: Shade' R2)
-                                              :: Shade' (R,R))
+  plot (Shade' (Dia.P v) e) = plot (Shade' v e :: Shade' ℝ²)
 
 
 instance Plottable (Shaded ℝ ℝ) where
