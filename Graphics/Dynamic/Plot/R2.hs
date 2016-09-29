@@ -533,7 +533,7 @@ instance Plottable (ConvexSet (R,R)) where
                               >>> Dia.fcA (Dia.withOpacity Dia.grey 0.01) ) ]
          
 instance Plottable (Shade' ℝ²) where
-  plot sh = plot (coerceShade sh :: Shade' R2)
+  plot sh = plot (coerceShade sh :: Shade' (ℝ,ℝ))
          
 instance Plottable (Shade' P2) where
   plot (Shade' (Dia.P v) e) = plot (Shade' v e :: Shade' ℝ²)
