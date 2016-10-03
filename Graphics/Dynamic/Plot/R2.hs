@@ -81,6 +81,8 @@ import qualified Diagrams.Backend.Cairo as Cairo
 import qualified Diagrams.Backend.Cairo.Text as CairoTxt
     
 import qualified Data.Colour as DCol
+import qualified Codec.Picture as JPix
+import qualified Codec.Picture.Types as JPix
 
 import qualified Diagrams.Backend.Gtk as BGTK
 import qualified Graphics.UI.Gtk as GTK
@@ -636,6 +638,35 @@ instance Plottable (PointsWeb ℝ (Shade' ℝ)) where
   plot _ = def
 
 instance Plottable (PointsWeb ℝ² (CSp.Colour ℝ)) where
+  plot web = plot (coerceWebDomain web :: PointsWeb (ℝ,ℝ) (CSp.Colour ℝ))
+
+instance Plottable (PointsWeb (ℝ,ℝ) (CSp.Colour ℝ)) where
+  plot web = def & dynamicPlot .~ plotWeb
+   where plotWeb graSpec = mkPlot (Dia.image
+                 $ Dia.DImage (Dia.ImageRaster $ JPix.ImageRGBA8 pixRendered)
+                              renderWidth renderHeight
+                              placement)
+         cartesianed = sampleEntireWeb_2Dcartesian_lin web renderWidth renderHeight
+         renderWidth = 640 -- xResolution graSpec
+         renderHeight = 480 -- yResolution graSpec
+         (x₀,x₁) = head &&& last $ fst <$> snd (head cartesianed)
+         (y₀,y₁) = head &&& last $ fst <$> cartesianed
+         placement = mempty
+         pixRendered = snd `id` JPix.generateFoldImage
+                               (\(iyPrev, (y, xvs) : yvs) _ix iy
+                                  -> if iy > iyPrev
+                                      then case yvs of
+                                            ((y',(_x,vc):xvs') : yvs')
+                                               -> ( (iy, (y', xvs') : yvs')
+                                                  , toRGBA vc )
+                                      else case xvs of
+                                            ((_x,vc) : xvs')
+                                               -> ( (iy, (y, xvs') : yvs)
+                                                  , toRGBA vc ) )
+                               (0, cartesianed) renderWidth renderHeight
+         toRGBA (Option (Just c))
+             = JPix.promotePixel (CSp.quantiseColour c :: JPix.PixelRGB8)
+         toRGBA _ = JPix.PixelRGBA8 0 0 0 0
 
 
 instance (Plottable x) => Plottable (Latest x) where

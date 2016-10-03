@@ -63,6 +63,7 @@ Library
                      , colour >= 2 && < 3
                      , manifolds >= 0.3 && < 0.4
                      , colour-space
+                     , JuicyPixels > 3 && < 4
                      , lens < 4.15
   Other-Extensions:  FlexibleInstances
                      , TypeFamilies
