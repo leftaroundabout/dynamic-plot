@@ -46,7 +46,7 @@ Library
                      , containers
                      , semigroups
                      , data-default
-                     , random
+                     , random-fu
                      , MonadRandom
                      , time
                      , deepseq

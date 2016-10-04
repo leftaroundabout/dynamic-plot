@@ -133,7 +133,7 @@ import qualified Data.Map.Lazy as Map
 
 import qualified Data.Colour.Manifold as CSp
 
--- import qualified Data.Random as Random
+import qualified Data.Random as Random
 
 import Data.IORef
 
@@ -172,7 +172,7 @@ data DynamicPlottable' m = DynamicPlottable {
   }
 makeLenses ''DynamicPlottable'
 
-type DynamicPlottable = DynamicPlottable' Identity
+type DynamicPlottable = DynamicPlottable' Random.RVar
 
 data ObjInPlot = ObjInPlot {
         _lastStableView :: IORef (Maybe (GraphWindowSpec, Plot))
@@ -774,9 +774,9 @@ instance Semigroup DynamicPlottable where
     <> DynamicPlottable rx₂ ry₂ tm₂ oc₂ ax₂ le₂ fu₂ dp₂
         = DynamicPlottable
    (rx₁<>rx₂) (ry₁<>ry₂) (tm₁++tm₂) (oc₁+oc₂) (ax₁+ax₂)
-                             (le₁++le₂) ((<>)<$>fu₁<*>fu₂) (dp₁<>dp₂) 
+                             (le₁++le₂) ((<>)<$>fu₁<*>fu₂) (liftA2(<>)<$>dp₁<*>dp₂) 
 instance Monoid DynamicPlottable where
-  mempty = DynamicPlottable mempty mempty [] 0 0 [] mempty mempty
+  mempty = DynamicPlottable mempty mempty [] 0 0 [] mempty (const $ pure mempty)
   mappend = (<>)
 instance Default DynamicPlottable where def = mempty
 
@@ -1066,7 +1066,7 @@ objectPlotterThread pl₀ viewVar diaVar = loop pl₀ where
  loop pl = do
     threadDelay $ 50 * milliseconds
     view <- readMVar viewVar
-    diagram <- evaluate . runIdentity $ pl^.dynamicPlot $ view
+    diagram <- evaluate =<< Random.runRVar (pl^.dynamicPlot $ view) Random.StdRandom
     putMVar diaVar (view, diagram)
     case pl^.futurePlots of
        Just pl' -> loop pl'
