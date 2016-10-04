@@ -128,6 +128,7 @@ import Data.Function.Differentiable
 import Data.Manifold.Types
 import Data.Manifold.TreeCover
 import Data.Manifold.Web
+import Data.Manifold.Riemannian (Geodesic)
 import qualified Data.Map.Lazy as Map
 
 import qualified Data.Colour.Manifold as CSp
@@ -641,8 +642,15 @@ instance Plottable (PointsWeb ℝ² (CSp.Colour ℝ)) where
   plot web = plot (coerceWebDomain web :: PointsWeb (ℝ,ℝ) (CSp.Colour ℝ))
 
 instance Plottable (PointsWeb (ℝ,ℝ) (CSp.Colour ℝ)) where
-  plot web = def & dynamicPlot .~ plotWeb
-                 & occlusiveness .~ 4
+  plot = webbedSurfPlot toRGBA
+   where toRGBA (Option (Just c))
+             = JPix.promotePixel (CSp.quantiseColour c :: JPix.PixelRGB8)
+         toRGBA _ = JPix.PixelRGBA8 0 0 0 0
+
+webbedSurfPlot :: Geodesic a
+       => (Option a -> JPix.PixelRGBA8) -> PointsWeb (ℝ,ℝ) a -> DynamicPlottable
+webbedSurfPlot toRGBA web = def & dynamicPlot .~ plotWeb
+                                & occlusiveness .~ 4
    where plotWeb graSpec = mkPlot $ 
               (Dia.image $ Dia.DImage
                             (Dia.ImageRaster $ JPix.ImageRGBA8 pixRendered)
@@ -670,9 +678,6 @@ instance Plottable (PointsWeb (ℝ,ℝ) (CSp.Colour ℝ)) where
                                                -> ( (iy, (y, xvs') : yvs)
                                                   , toRGBA vc ) )
                                (0, cartesianed) renderWidth renderHeight
-         toRGBA (Option (Just c))
-             = JPix.promotePixel (CSp.quantiseColour c :: JPix.PixelRGB8)
-         toRGBA _ = JPix.PixelRGBA8 0 0 0 0
 
 
 instance (Plottable x) => Plottable (Latest x) where
