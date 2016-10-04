@@ -90,7 +90,9 @@ import Graphics.UI.Gtk ( AttrOp((:=)) )
 import qualified Graphics.UI.Gtk.Gdk.EventM as Event
 import qualified System.Glib.Signals (on)
 
-import Control.Monad.Trans (liftIO)
+import Control.Monad.Trans (liftIO, lift)
+import Control.Monad.ST
+import Data.STRef
 
 import qualified Control.Category.Hask as Hask
 import Control.Category.Constrained.Prelude hiding ((^))
@@ -134,6 +136,7 @@ import qualified Data.Map.Lazy as Map
 import qualified Data.Colour.Manifold as CSp
 
 import qualified Data.Random as Random
+import qualified System.Random as Random
 
 import Data.IORef
 
@@ -642,16 +645,19 @@ instance Plottable (PointsWeb ℝ² (CSp.Colour ℝ)) where
   plot web = plot (coerceWebDomain web :: PointsWeb (ℝ,ℝ) (CSp.Colour ℝ))
 
 instance Plottable (PointsWeb (ℝ,ℝ) (CSp.Colour ℝ)) where
-  plot = webbedSurfPlot toRGBA
+  plot = webbedSurfPlot $ pure . toRGBA
    where toRGBA (Option (Just c))
              = JPix.promotePixel (CSp.quantiseColour c :: JPix.PixelRGB8)
          toRGBA _ = JPix.PixelRGBA8 0 0 0 0
 
 webbedSurfPlot :: Geodesic a
-       => (Option a -> JPix.PixelRGBA8) -> PointsWeb (ℝ,ℝ) a -> DynamicPlottable
+       => (Option a -> Random.RVar JPix.PixelRGBA8)
+           -> PointsWeb (ℝ,ℝ) a -> DynamicPlottable
 webbedSurfPlot toRGBA web = def & dynamicPlot .~ plotWeb
                                 & occlusiveness .~ 4
-   where plotWeb graSpec = pure . mkPlot $ 
+   where plotWeb graSpec = do
+            pixRendered <- pixRender
+            pure . mkPlot $ 
               (Dia.image $ Dia.DImage
                             (Dia.ImageRaster $ JPix.ImageRGBA8 pixRendered)
                             renderWidth renderHeight
@@ -666,18 +672,28 @@ webbedSurfPlot toRGBA web = def & dynamicPlot .~ plotWeb
          wPix = (x₁ - x₀)/renderWidth
          hPix = (y₁ - y₀)/renderHeight
          placement = Dia.translation (xc^&yc) <> Dia.scalingX wPix <> Dia.scalingY hPix
-         pixRendered = snd `id` JPix.generateFoldImage
-                               (\(iyPrev, (y, xvs) : yvs) _ix iy
-                                  -> if iy > iyPrev
-                                      then case yvs of
-                                            ((y',(_x,vc):xvs') : yvs')
-                                               -> ( (iy, (y', xvs') : yvs')
-                                                  , toRGBA vc )
-                                      else case xvs of
-                                            ((_x,vc) : xvs')
-                                               -> ( (iy, (y, xvs') : yvs)
-                                                  , toRGBA vc ) )
-                               (0, cartesianed) renderWidth renderHeight
+         pixRender = do
+              seed <- Random.mkStdGen <$> Random.stdUniform
+              return $ runST (do
+                 randomGen <- newSTRef seed
+                 cursorState <- newSTRef (0, cartesianed)
+                 JPix.withImage renderWidth renderHeight $ \_ix iy -> do
+                      (iyPrev, (y, xvs) : yvs) <- readSTRef cursorState
+                      vc <- if iy > iyPrev
+                        then case yvs of
+                              ((y',(_x,vc):xvs') : yvs') -> do
+                                 writeSTRef cursorState (iy, (y', xvs') : yvs')
+                                 return vc
+                        else case xvs of
+                              ((_x,vc) : xvs') -> do
+                                 writeSTRef cursorState (iy, (y, xvs') : yvs)
+                                 return vc
+                      rg <- readSTRef randomGen
+                      let (c, rg') = Random.sampleState (toRGBA vc) rg
+                      writeSTRef randomGen rg'
+                      return c
+               )
+                               
 
 
 instance (Plottable x) => Plottable (Latest x) where
