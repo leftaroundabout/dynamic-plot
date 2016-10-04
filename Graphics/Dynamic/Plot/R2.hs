@@ -642,16 +642,22 @@ instance Plottable (PointsWeb ℝ² (CSp.Colour ℝ)) where
 
 instance Plottable (PointsWeb (ℝ,ℝ) (CSp.Colour ℝ)) where
   plot web = def & dynamicPlot .~ plotWeb
-   where plotWeb graSpec = mkPlot (Dia.image
-                 $ Dia.DImage (Dia.ImageRaster $ JPix.ImageRGBA8 pixRendered)
-                              renderWidth renderHeight
-                              placement)
+                 & occlusiveness .~ 4
+   where plotWeb graSpec = mkPlot $ 
+              (Dia.image $ Dia.DImage
+                            (Dia.ImageRaster $ JPix.ImageRGBA8 pixRendered)
+                            renderWidth renderHeight
+                            placement)
          cartesianed = sampleEntireWeb_2Dcartesian_lin web renderWidth renderHeight
-         renderWidth = 640 -- xResolution graSpec
-         renderHeight = 480 -- yResolution graSpec
+         renderWidth = 120 -- xResolution graSpec
+         renderHeight = 90 -- yResolution graSpec
          (x₀,x₁) = head &&& last $ fst <$> snd (head cartesianed)
          (y₀,y₁) = head &&& last $ fst <$> cartesianed
-         placement = mempty
+         xc = (x₀+x₁)/2
+         yc = (y₀+y₁)/2
+         wPix = (x₁ - x₀)/renderWidth
+         hPix = (y₁ - y₀)/renderHeight
+         placement = Dia.translation (xc^&yc) <> Dia.scalingX wPix <> Dia.scalingY hPix
          pixRendered = snd `id` JPix.generateFoldImage
                                (\(iyPrev, (y, xvs) : yvs) _ix iy
                                   -> if iy > iyPrev
