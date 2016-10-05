@@ -47,7 +47,6 @@ Library
                      , semigroups
                      , data-default
                      , random, random-fu
-                     , MonadRandom
                      , time
                      , deepseq
                      , process
@@ -62,6 +61,7 @@ Library
                      , glib
                      , colour >= 2 && < 3
                      , manifolds >= 0.3 && < 0.4
+                     , manifold-random
                      , colour-space
                      , JuicyPixels > 3 && < 4
                      , lens < 4.15

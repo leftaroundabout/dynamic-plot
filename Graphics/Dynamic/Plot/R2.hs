@@ -137,6 +137,7 @@ import qualified Data.Colour.Manifold as CSp
 
 import qualified Data.Random as Random
 import qualified System.Random as Random
+import qualified Data.Random.Manifold
 
 import Data.IORef
 
@@ -649,6 +650,16 @@ instance Plottable (PointsWeb (ℝ,ℝ) (CSp.Colour ℝ)) where
    where toRGBA (Option (Just c))
              = JPix.promotePixel (CSp.quantiseColour c :: JPix.PixelRGB8)
          toRGBA _ = JPix.PixelRGBA8 0 0 0 0
+
+instance Plottable (PointsWeb ℝ² (Shade (CSp.Colour ℝ))) where
+  plot web = plot (coerceWebDomain web :: PointsWeb (ℝ,ℝ) (Shade (CSp.Colour ℝ)))
+
+instance Plottable (PointsWeb (ℝ,ℝ) (Shade (CSp.Colour ℝ))) where
+  plot = webbedSurfPlot $ toRGBA
+   where toRGBA (Option (Just c))
+             = JPix.promotePixel . (CSp.quantiseColour :: CSp.Colour ℝ -> JPix.PixelRGB8)
+                                       <$> Random.rvar c
+         toRGBA _ = return $ JPix.PixelRGBA8 0 0 0 0
 
 webbedSurfPlot :: Geodesic a
        => (Option a -> Random.RVar JPix.PixelRGBA8)
