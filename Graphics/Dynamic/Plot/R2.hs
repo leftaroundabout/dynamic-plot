@@ -665,6 +665,8 @@ webbedSurfPlot :: Geodesic a
        => (Option a -> Random.RVar JPix.PixelRGBA8)
            -> PointsWeb (ℝ,ℝ) a -> DynamicPlottable
 webbedSurfPlot toRGBA web = def & dynamicPlot .~ plotWeb
+                                & relevantRange_x .~ atLeastInterval (x₀...x₁)
+                                & relevantRange_y .~ atLeastInterval (y₀...y₁)
                                 & occlusiveness .~ 4
    where plotWeb graSpec = do
             pixRendered <- pixRender
@@ -676,8 +678,11 @@ webbedSurfPlot toRGBA web = def & dynamicPlot .~ plotWeb
          cartesianed = sampleEntireWeb_2Dcartesian_lin web renderWidth renderHeight
          renderWidth = 120 -- xResolution graSpec
          renderHeight = 90 -- yResolution graSpec
-         (x₀,x₁) = head &&& last $ fst <$> snd (head cartesianed)
-         (y₀,y₁) = head &&& last $ fst <$> cartesianed
+         x₀ = minimum (fst<$>pts)
+         x₁ = maximum (fst<$>pts)
+         y₀ = minimum (snd<$>pts)
+         y₁ = maximum (snd<$>pts)
+         pts = fst . fst <$> Hask.toList (localFocusWeb web)
          xc = (x₀+x₁)/2
          yc = (y₀+y₁)/2
          wPix = (x₁ - x₀)/renderWidth
@@ -687,7 +692,7 @@ webbedSurfPlot toRGBA web = def & dynamicPlot .~ plotWeb
               seed <- Random.mkStdGen <$> Random.stdUniform
               return $ runST (do
                  randomGen <- newSTRef seed
-                 cursorState <- newSTRef (0, cartesianed)
+                 cursorState <- newSTRef (0, reverse cartesianed)
                  JPix.withImage renderWidth renderHeight $ \_ix iy -> do
                       (iyPrev, (y, xvs) : yvs) <- readSTRef cursorState
                       vc <- if iy > iyPrev
