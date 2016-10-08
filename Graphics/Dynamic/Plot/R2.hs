@@ -43,6 +43,8 @@ module Graphics.Dynamic.Plot.R2 (
         , PlainGraphicsR2
         , shapePlot
         , diagramPlot
+        -- ** Computation in progress
+        , plotLatest
         -- * Plot-object attributes
         -- ** Colour
         , tint, autoTint
@@ -79,6 +81,8 @@ import qualified Diagrams.Backend.Cairo as Cairo
 import qualified Diagrams.Backend.Cairo.Text as CairoTxt
     
 import qualified Data.Colour as DCol
+import qualified Codec.Picture as JPix
+import qualified Codec.Picture.Types as JPix
 
 import qualified Diagrams.Backend.Gtk as BGTK
 import qualified Graphics.UI.Gtk as GTK
@@ -86,7 +90,9 @@ import Graphics.UI.Gtk ( AttrOp((:=)) )
 import qualified Graphics.UI.Gtk.Gdk.EventM as Event
 import qualified System.Glib.Signals (on)
 
-import Control.Monad.Trans (liftIO)
+import Control.Monad.Trans (liftIO, lift)
+import Control.Monad.ST
+import Data.STRef
 
 import qualified Control.Category.Hask as Hask
 import Control.Category.Constrained.Prelude hiding ((^))
@@ -97,12 +103,15 @@ import Control.Lens hiding ((...), (<.>))
 import Control.Lens.TH(makeLenses)
 
   
-import Control.Concurrent.Async
+import Control.Concurrent (runInBoundThread, threadDelay, ThreadId, forkIO, killThread)
+import Control.Concurrent.MVar
 import Control.DeepSeq
+import Control.Exception (evaluate)
 
 
 import Data.List (foldl', sort, sortBy, partition, zip4)
 import qualified Data.List.NonEmpty as NE
+import Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.Vector as Arr
 import Data.Maybe
 import Data.Semigroup
@@ -113,21 +122,22 @@ import Data.Function (on)
 import Data.Ord (comparing)
 
 import Data.VectorSpace
+import Math.LinearMap.Category
 import Data.Basis
 import Data.AffineSpace
-import Data.LinearMap.HerMetric
 import Data.Manifold.PseudoAffine
 import Data.Function.Differentiable
 import Data.Manifold.Types
 import Data.Manifold.TreeCover
 import Data.Manifold.Web
+import Data.Manifold.Riemannian (Geodesic)
 import qualified Data.Map.Lazy as Map
 
 import qualified Data.Colour.Manifold as CSp
 
-import Data.Tagged
-
-import Text.Printf
+import qualified Data.Random as Random
+import qualified System.Random as Random
+import qualified Data.Random.Manifold
 
 import Data.IORef
 
@@ -151,7 +161,7 @@ data RangeRequest r
 
 type GraphWindowSpec = GraphWindowSpecR2
 
-data DynamicPlottable = DynamicPlottable { 
+data DynamicPlottable' m = DynamicPlottable { 
         _relevantRange_x, _relevantRange_y :: RangeRequest R
       , _inherentColours :: [DCol.Colour ℝ]
       , _occlusiveness :: Double
@@ -161,10 +171,20 @@ data DynamicPlottable = DynamicPlottable {
          --   The z-order will be chosen accordingly.
       , _axesNecessity :: Necessity
       , _legendEntries :: [LegendEntry]
-      , _dynamicPlot :: GraphWindowSpec -> Plot
+      , _futurePlots :: Maybe (DynamicPlottable' m)
+      , _dynamicPlot :: GraphWindowSpec -> m Plot
   }
-makeLenses ''DynamicPlottable
+makeLenses ''DynamicPlottable'
 
+type DynamicPlottable = DynamicPlottable' Random.RVar
+
+data ObjInPlot = ObjInPlot {
+        _lastStableView :: IORef (Maybe (GraphWindowSpec, Plot))
+      , _newPlotView :: MVar (GraphWindowSpec, Plot)
+      , _plotObjColour :: Maybe AColour
+      , _originalPlotObject :: DynamicPlottable
+   }
+makeLenses ''ObjInPlot
 
 
 newtype PlainGraphics = PlainGraphics { getPlainGraphics :: PlainGraphicsR2 }
@@ -197,7 +217,7 @@ instance Plottable PlainGraphics where
            & relevantRange_x .~ atLeastInterval rlx
            & relevantRange_y .~ atLeastInterval rly
            & axesNecessity .~ -1
-           & dynamicPlot .~ plot
+           & dynamicPlot .~ pure.plot
    where bb = DiaBB.boundingBox d
          (rlx,rly) = case DiaBB.getCorners bb of
                        Just (c1, c2)
@@ -221,12 +241,14 @@ diagramPlot :: PlainGraphicsR2 -> DynamicPlottable
 diagramPlot d = plot $ PlainGraphics d
 
 
+metricFromLength :: RealFrac' s => s -> Norm s 
+metricFromLength l | l>0   = spanNorm [1 / l]
   
 instance Plottable (R-->R) where
   plot f = def & relevantRange_y .~ OtherDimDependantRange yRangef
                & autoTint
                & axesNecessity .~ 1
-               & dynamicPlot .~ plot
+               & dynamicPlot .~ pure.plot
    where yRangef (Option Nothing) = Option Nothing
          yRangef (Option (Just (Interval l r)))
              = case intervalImages
@@ -242,10 +264,10 @@ instance Plottable (R-->R) where
           where curves :: [[P2]]
                 curves = map (map $ convℝ² . snd) . gatherSides
                         $ discretisePathSegs
-                              1000
+                              10000
                               ( const . metricFromLength
                                                $ (rBound-lBound)/fromIntegral xResolution
-                              , resolutionFunction gs )
+                              , coerceMetric $ resolutionFunction gs )
                               ((id&&&f)
                                . alg (\x -> ( point lBound?<x?<point rBound ?-> x )))
                 trace (p:q:ps) = simpleLine p q <> trace (q:ps)
@@ -259,7 +281,7 @@ instance Plottable (R-->(R,R)) where
   plot f = def & relevantRange_y .~ mempty
                & autoTint
                & axesNecessity .~ 1
-               & dynamicPlot .~ plot
+               & dynamicPlot .~ pure.plot
    where plot gs@(GraphWindowSpecR2{..}) = curves `deepseq`
                                           mkPlot (foldMap trace curves)
           where curves :: [[P2]]
@@ -267,7 +289,7 @@ instance Plottable (R-->(R,R)) where
                         $ discretisePathSegs
                               1000
                               ( const . metricFromLength $ 1/100
-                              , resolutionFunction gs )
+                              , coerceMetric $ resolutionFunction gs )
                               f
                 trace (p:q:ps) = simpleLine p q <> trace (q:ps)
                 trace _ = mempty
@@ -280,12 +302,12 @@ instance Plottable (R-->(R,R)) where
 resolutionFunction :: GraphWindowSpecR2 -> RieMetric ℝ²
 resolutionFunction GraphWindowSpecR2{..} = resoFunc
  where w = rBound - lBound; h = tBound - bBound
-       ε = projector (recip δx, 0) ^+^ projector (0, recip δy)
+       ε = spanNorm [(recip δx^&0), (0^&recip δy)]
        δx = w / fromIntegral xResolution
        δy = h / fromIntegral yResolution
-       resoFunc (x,y)
+       resoFunc (DiaTypes.V2 x y)
          | x >= lBound, x <= rBound, y >= bBound, y <= tBound  = ε
-         | otherwise = projector (recip qx,0) ^+^ projector (0,recip qy)
+         | otherwise = spanNorm [(recip qx^&0), (0^&recip qy)]
         where qx | x < lBound  = lBound - x
                  | x > rBound  = x - rBound
                  | otherwise   = δx * qy/δy
@@ -304,7 +326,8 @@ instance Plottable (R-.^>R) where
               & dynamicPlot .~ plot
    where 
          xr = wsp * fromIntegral gSplN
-         plot (GraphWindowSpecR2{..}) = mkPlot . trace $ flattenPCM_resoCut bb δx rPCM
+         plot (GraphWindowSpecR2{..}) = pure . mkPlot . trace
+                                          $ flattenPCM_resoCut bb δx rPCM
           where 
                 trace dPath = fold [ trMBound [ p & _y +~ s*δ
                                              | (p, DevBoxes _ δ) <- dPath ]
@@ -321,7 +344,7 @@ instance Plottable (R-.^>R) where
                              [_y+~δq $ q, _y+~δp $ p, _y-~δp $ p, _y-~δq $ q
                              ,_y+~δq $ q ]))
                        ) <> trStRange (qd:ps)
-                 where [σp,σq] = map (`metric'`1) [σp', σq']
+                 where [σp,σq] = map (|$|1) [σp', σq']
                 trStRange _ = mempty
                 trMBound l = Dia.fromVertices l & Dia.dashingO [2,2] 0
                 
@@ -341,7 +364,7 @@ instance Plottable (RecursiveSamples Int P2 (DevBoxes P2)) where
               & autoTint
               & axesNecessity .~ 1
               & dynamicPlot .~ plot
-   where plot (GraphWindowSpecR2{..}) = mkPlot
+   where plot (GraphWindowSpecR2{..}) = pure . mkPlot
                         . foldMap trStRange
                         $ flattenPCM_P2_resoCut bbView [(1/δxl)^&0, 0^&(1/δyl)] rPCM
           where trStRange (Left appr) = trSR $ map calcNormDev appr
@@ -352,11 +375,11 @@ instance Plottable (RecursiveSamples Int P2 (DevBoxes P2)) where
                           )) <> trSR (qd:ps)
                        trSR _ = mempty
                        calcNormDev ((p,v), DevBoxes σ _) = (p .+^ d, p .-^ d)
-                        where d = metriScale' σ $ turnLeft v
+                        where d = let v' = turnLeft v in v' ^* (σ|$|v')
                 trStRange (Right pts) = (`foldMap`pts)
                    $ \(p, DevBoxes dv _)
-                              -> let δxm = metric' dv $ 1^&0
-                                     δym = metric' dv $ 0^&1
+                              -> let δxm = dv |$| 1^&0
+                                     δym = dv |$| 0^&1
                                  in if δxm > δx && δym > δy
                                       then simpleLine (_x +~ δxm $ p) (_x -~ δxm $ p)
                                             <> simpleLine (_y +~ δym $ p) (_y -~ δym $ p)
@@ -373,7 +396,7 @@ instance Plottable (RecursiveSamples Int P2 (DevBoxes P2)) where
 
 
 instance Plottable (Int -.^> P2) where
-  plot = plot . fmap (\() -> DevBoxes zeroV zeroV :: DevBoxes P2)
+  plot = plot . fmap (\() -> DevBoxes mempty zeroV :: DevBoxes P2)
 
 
 
@@ -404,7 +427,7 @@ lineSegPlot ps'
                                    ( foldMap (pure . spInterval . snd) (concat ps) )
              & autoTint
              & axesNecessity .~ 1
-             & dynamicPlot .~ plot
+             & dynamicPlot .~ pure . plot
  where plot (GraphWindowSpecR2{..}) = mkPlot (foldMap trace ps)
         where trace (p:q:ps) = simpleLine (Dia.p2 p) (Dia.p2 q) <> trace (q:ps)
               trace _ = mempty
@@ -437,7 +460,7 @@ flattenPCM_resoCut bb δx = case DiaBB.getCorners bb of
                xRange_norm'd = max (-1) ((lCorn^._x - xm)/w)
                            ... min   1  ((rCorn^._x - xm)/w)
 
-flattenPCM_P2_resoCut :: R2Box -> [DualSpace R2]
+flattenPCM_P2_resoCut :: R2Box -> [DualVector R2]
                               -> (RecursiveSamples x P2 t)
                               -> [ Either [((P2, R2), DevBoxes P2)]
                                           [(P2, t)]                 ]
@@ -449,7 +472,7 @@ flattenPCM_P2_resoCut bb δs = case DiaBB.getCorners bb of
           | DiaBB.isEmptyBox $ DiaBB.intersection bb (rPCM_R2_boundingBox rPCM)
                 = \case l@(Left [] : _) -> l
                         l -> Left [] : l
-          | metrics' dev δs > 0.5 || (sum $ ((^2).(pa<.>^)) <$> δs) > 3
+          | sum (normSq dev<$>δs) > 1/4 || (sum $ ((^2).(pa<.>^)) <$> δs) > 3
           , Left (Pair s1 s2) <- details
                 = go s1 . go s2
           | Right pts <- details = (Right (Arr.toList pts) :)
@@ -477,29 +500,33 @@ instance Plottable (Shade P2) where
               & autoTint
               & axesNecessity .~ 1
               & dynamicPlot .~ plot
-   where plot _ = mkPlot $ foldMap axLine eigVs 
+   where plot _ = pure . mkPlot $ foldMap axLine eigVs 
           where axLine eigV = simpleLine (ctr .-~^ eigV) (ctr .+~^ eigV)
          (xRange,yRange) = shadeExtends shade
          ctr = shade^.shadeCtr
-         eigVs = eigenSpan $ shade^.shadeExpanse
+         eigVs = normSpanningSystem $ shade^.shadeExpanse
+
+instance Plottable (Shade ℝ²) where
+  plot (Shade v e) = plot (Shade (Dia.P v) e :: Shade P2)
 
 instance Plottable (Shade (R,R)) where
-  plot sh = plot (coerceShade sh :: Shade P2)
+  plot sh = plot (coerceShade sh :: Shade R2)
 
 instance Plottable (Shade' (R,R)) where
   plot shade = def
               & autoTint
               & axesNecessity .~ 1
               & dynamicPlot .~ plot
-   where plot _ = mkPlot $ Dia.circle 1
+   where plot _ = pure . mkPlot $ Dia.circle 1
                             & Dia.scaleX w₁ & Dia.scaleY w₂
                             & Dia.rotate ϑ
                             & Dia.opacity 0.2
                             & Dia.moveTo ctr
          ctr = Dia.p2 $ shade^.shadeCtr
-         [ev₁@(e₁x,e₁y),ev₂] = eigenSpan' $ shade^.shadeNarrowness
+         Norm expanr = shade^.shadeNarrowness
+         [ev₁@(_,(e₁x,e₁y)),ev₂] = eigen $ arr expanr
          ϑ = atan2 e₁y e₁x  Dia.@@ Dia.rad
-         w₁ = recip $ magnitude ev₁; w₂ = recip $ magnitude ev₂
+         [w₁,w₂] = recip . sqrt . fst <$> [ev₁, ev₂]
 
 instance Plottable (ConvexSet (R,R)) where
   plot EmptyConvex = mempty
@@ -512,8 +539,11 @@ instance Plottable (ConvexSet (R,R)) where
                               >>> Dia.opacity 1
                               >>> Dia.fcA (Dia.withOpacity Dia.grey 0.01) ) ]
          
+instance Plottable (Shade' ℝ²) where
+  plot sh = plot (coerceShade sh :: Shade' (ℝ,ℝ))
+         
 instance Plottable (Shade' P2) where
-  plot sh = plot (coerceShade sh :: Shade' (R,R))
+  plot (Shade' (Dia.P v) e) = plot (Shade' v e :: Shade' ℝ²)
 
 
 instance Plottable (Shaded ℝ ℝ) where
@@ -523,7 +553,7 @@ instance Plottable (Shaded ℝ ℝ) where
                 & autoTint
                 & axesNecessity .~ 1
                 & dynamicPlot .~ plot
-   where plot grWS@(GraphWindowSpecR2{..}) = mkPlot $
+   where plot grWS@(GraphWindowSpecR2{..}) = pure . mkPlot $
                             foldMap parallelogram trivs
                          <> (foldMap (singlePointFor grWS) leafPoints
                                -- & Dia.dashingO [2,3] 0
@@ -558,7 +588,7 @@ instance Plottable (PointsWeb ℝ (Shade' ℝ)) where
                 & relevantRange_y .~ atLeastInterval (Interval ymin ymax)
                 & autoTint
                 & axesNecessity .~ 1
-                & dynamicPlot .~ plot
+                & dynamicPlot .~ pure . plot
    where plot grWS@(GraphWindowSpecR2{..}) = mkPlot $
                             foldMap parallelogram trivs
                          <> foldMap vbar divis
@@ -576,21 +606,24 @@ instance Plottable (PointsWeb ℝ (Shade' ℝ)) where
          trivs :: [((ℝ, (Diff ℝ,Diff ℝ)), ((ℝ, Diff ℝ), LocalLinear ℝ ℝ))]
          divis :: [(ℝ, (Diff ℝ,Diff ℝ))]
          (trivs,divis) = concat***concat $ unzip (map mkTriv locals)
-          where mkTriv ((xc,Shade' yc yce), [(δxo, Shade' yo _)])
-                       = case tryMetricAsLength yce of
-                           Option (Just ry) ->
+          where mkTriv :: ((ℝ, Shade' ℝ), [(ℝ, Shade' ℝ)])
+                     -> ( [((ℝ, (Diff ℝ,Diff ℝ)), ((ℝ, Diff ℝ), LocalLinear ℝ ℝ))]
+                        , [(ℝ, (Diff ℝ,Diff ℝ))] )
+                mkTriv ((xc,Shade' yc yce), [(δxo, Shade' yo _)])
+                       = case findNormalLength yce of
+                           Just ry ->
                               ( [ ( (xc, dirSort 0 δxo)
                                   , ( (yc, ry)
-                                    , denseLinear $ \δx -> δx * (yo-yc)/δxo ) ) ], [] )
-                           Option Nothing ->
+                                    , id ^* ((yo-yc)/δxo) ) ) ], [] )
+                           Nothing ->
                               ( [], [(xc, dirSort 0 δxo)] )
                 mkTriv ((xc,Shade' yc yce), [(δxl, Shade' yl _), (δxr, Shade' yr _)])
-                       = case tryMetricAsLength yce of
-                           Option (Just ry) ->
+                       = case findNormalLength yce of
+                           Just ry ->
                               ( [ ( (xc, dirSort δxl δxr)
                                   , ( (yc, ry)
-                                    , denseLinear $ \δx -> δx * η ) ) ], [] )
-                           Option Nothing ->
+                                    , id ^* η ) ) ], [] )
+                           Nothing ->
                               ( [], [(xc, dirSort δxl δxr)] )
                  where δxg = (δxr - δxl)/2
                        η = (yr - yl)/(2*δxg)
@@ -610,6 +643,85 @@ instance Plottable (PointsWeb ℝ (Shade' ℝ)) where
   plot _ = def
 
 instance Plottable (PointsWeb ℝ² (CSp.Colour ℝ)) where
+  plot web = plot (coerceWebDomain web :: PointsWeb (ℝ,ℝ) (CSp.Colour ℝ))
+
+instance Plottable (PointsWeb (ℝ,ℝ) (CSp.Colour ℝ)) where
+  plot = webbedSurfPlot $ pure . toRGBA
+   where toRGBA (Option (Just c))
+             = JPix.promotePixel (CSp.quantiseColour c :: JPix.PixelRGB8)
+         toRGBA _ = JPix.PixelRGBA8 0 0 0 0
+
+instance Plottable (PointsWeb ℝ² (Shade (CSp.Colour ℝ))) where
+  plot web = plot (coerceWebDomain web :: PointsWeb (ℝ,ℝ) (Shade (CSp.Colour ℝ)))
+
+instance Plottable (PointsWeb (ℝ,ℝ) (Shade (CSp.Colour ℝ))) where
+  plot = webbedSurfPlot $ toRGBA
+   where toRGBA (Option (Just c))
+             = JPix.promotePixel . (CSp.quantiseColour :: CSp.Colour ℝ -> JPix.PixelRGB8)
+                                       <$> Random.rvar c
+         toRGBA _ = return $ JPix.PixelRGBA8 0 0 0 0
+
+webbedSurfPlot :: Geodesic a
+       => (Option a -> Random.RVar JPix.PixelRGBA8)
+           -> PointsWeb (ℝ,ℝ) a -> DynamicPlottable
+webbedSurfPlot toRGBA web = def & dynamicPlot .~ plotWeb
+                                & relevantRange_x .~ atLeastInterval (x₀...x₁)
+                                & relevantRange_y .~ atLeastInterval (y₀...y₁)
+                                & occlusiveness .~ 4
+   where plotWeb graSpec = do
+            pixRendered <- pixRender
+            pure . mkPlot $ 
+              (Dia.image $ Dia.DImage
+                            (Dia.ImageRaster $ JPix.ImageRGBA8 pixRendered)
+                            renderWidth renderHeight
+                            placement)
+         cartesianed = sampleEntireWeb_2Dcartesian_lin web renderWidth renderHeight
+         renderWidth = 120 -- xResolution graSpec
+         renderHeight = 90 -- yResolution graSpec
+         x₀ = minimum (fst<$>pts)
+         x₁ = maximum (fst<$>pts)
+         y₀ = minimum (snd<$>pts)
+         y₁ = maximum (snd<$>pts)
+         pts = fst . fst <$> Hask.toList (localFocusWeb web)
+         xc = (x₀+x₁)/2
+         yc = (y₀+y₁)/2
+         wPix = (x₁ - x₀)/renderWidth
+         hPix = (y₁ - y₀)/renderHeight
+         placement = Dia.translation (xc^&yc) <> Dia.scalingX wPix <> Dia.scalingY hPix
+         pixRender = do
+              seed <- Random.mkStdGen <$> Random.stdUniform
+              return $ runST (do
+                 randomGen <- newSTRef seed
+                 cursorState <- newSTRef (0, reverse cartesianed)
+                 JPix.withImage renderWidth renderHeight $ \_ix iy -> do
+                      (iyPrev, (y, xvs) : yvs) <- readSTRef cursorState
+                      vc <- if iy > iyPrev
+                        then case yvs of
+                              ((y',(_x,vc):xvs') : yvs') -> do
+                                 writeSTRef cursorState (iy, (y', xvs') : yvs')
+                                 return vc
+                        else case xvs of
+                              ((_x,vc) : xvs') -> do
+                                 writeSTRef cursorState (iy, (y, xvs') : yvs)
+                                 return vc
+                      rg <- readSTRef randomGen
+                      let (c, rg') = Random.sampleState (toRGBA vc) rg
+                      writeSTRef randomGen rg'
+                      return c
+               )
+                               
+
+
+instance (Plottable x) => Plottable (Latest x) where
+  plot (Latest (ev₀ :| [])) = plot ev₀
+  plot (Latest (ev₀ :| ev₁:evs))
+     = plot ev₀ & futurePlots .~ (Just . plot . Latest $ ev₁:|evs)
+
+
+plotLatest :: Plottable x => [x] -> DynamicPlottable
+plotLatest (x:xs) = plot $ Latest (x:|xs)
+plotLatest l = plot l
+
 
 instance Plottable (SimpleTree P2) where
   plot (GenericTree Nothing) = plot ([] :: [SimpleTree P2])
@@ -620,7 +732,7 @@ instance Plottable (SimpleTree P2) where
               & autoTint
               & axesNecessity .~ 1
               & dynamicPlot .~ plot
-   where plot _ = mkPlot $ go 4 ctr (treeBranches root)
+   where plot _ = pure . mkPlot $ go 4 ctr (treeBranches root)
           where go w bctr = foldMap (\(c,GenericTree b)
                                        -> autoDashLine w bctr c
                                           <> go (w*0.6) c b     )
@@ -632,6 +744,8 @@ instance Plottable (SimpleTree P2) where
          tree = GenericTree [(ctr,root)]
 instance Plottable (Trees P2) where
   plot (GenericTree ts) = plot $ (GenericTree . Just) <$> ts
+instance Plottable (Trees R2) where
+  plot = plot . fmap Dia.P
 
 instance Plottable (SimpleTree (R,R)) where
   plot = plot . fmap (\(x,y) -> DiaTypes.p2 (x,y))
@@ -688,20 +802,15 @@ mkAnnotatedPlot :: [Annotation] -> PlainGraphicsR2 -> Plot
 mkAnnotatedPlot ans = Plot ans
 
 instance Semigroup DynamicPlottable where
-  DynamicPlottable rx₁ ry₁ tm₁ oc₁ ax₁ le₁ dp₁
-    <> DynamicPlottable rx₂ ry₂ tm₂ oc₂ ax₂ le₂ dp₂
+  DynamicPlottable rx₁ ry₁ tm₁ oc₁ ax₁ le₁ fu₁ dp₁
+    <> DynamicPlottable rx₂ ry₂ tm₂ oc₂ ax₂ le₂ fu₂ dp₂
         = DynamicPlottable
-   (rx₁<>rx₂) (ry₁<>ry₂) (tm₁++tm₂) (oc₁+oc₂) (ax₁+ax₂) (le₁++le₂) (dp₁<>dp₂) 
+   (rx₁<>rx₂) (ry₁<>ry₂) (tm₁++tm₂) (oc₁+oc₂) (ax₁+ax₂)
+                             (le₁++le₂) ((<>)<$>fu₁<*>fu₂) (liftA2(<>)<$>dp₁<*>dp₂) 
 instance Monoid DynamicPlottable where
-  mempty = DynamicPlottable mempty mempty [] 0 0 [] mempty
+  mempty = DynamicPlottable mempty mempty [] 0 0 [] mempty (const $ pure mempty)
   mappend = (<>)
 instance Default DynamicPlottable where def = mempty
-
-data GraphViewState = GraphViewState {
-        lastStableView :: Maybe (GraphWindowSpec, Plot)
-      , realtimeView, nextTgtView :: Async Plot
-      , graphColor :: Maybe AColour
-   }
 
 
 
@@ -713,7 +822,7 @@ legendName n = legendEntries %~ (LegendEntry (PlainText n) mempty :)
 -- | Colour this plot object in a fixed shade.
 tint :: DCol.Colour ℝ -> DynamicPlottable -> DynamicPlottable
 tint col = inherentColours .~ [col]
-       >>> dynamicPlot %~ fmap (getPlot %~ Dia.lc col . Dia.fc col)
+       >>> dynamicPlot %~ fmap (fmap $ getPlot %~ Dia.lc col . Dia.fc col)
 
 -- | Allow the object to be automatically assigned a colour that's otherwise
 --   unused in the plot. (This is the default for most plot objects.)
@@ -771,40 +880,39 @@ atLeastInterval' = OtherDimDependantRange . const
 --   ATTENTION: the window may sometimes freeze, especially when displaying 
 --   complicated functions with 'fnPlot` from ghci. This is apparently
 --   a kind of deadlock problem with one of the C libraries that are invoked,
---   in particular, 'fnPlot' makes heavy use of <http://hackage.haskell.org/package/hmatrix hmatrix>
---   and thus <http://www.gnu.org/software/gsl/ GSL>.
 --   At the moment, we can recommend no better solution than to abort and restart ghci
 --   (or what else you use – iHaskell kernel, process, ...) if this occurs.
 plotWindow :: [DynamicPlottable] -> IO GraphWindowSpec
 plotWindow [] = plotWindow [dynamicAxes]
-plotWindow graphs' = do
-   
-   dgStore <- newIORef $ mempty
-   
+plotWindow givenPlotObjs = runInBoundThread $ do
    
    let defColourScheme = defaultColourScheme
    
+   viewState <- newIORef $ autoDefaultView givenPlotObjs
+   viewTgt <- newIORef =<< readIORef viewState
+   viewTgtGlobal <- newMVar =<< readIORef viewState
+   screenResolution <- newIORef (640, 480)
    
-   ([viewTgt, viewState :: IORef GraphWindowSpec], graphs) <- do
-           let window₀ = autoDefaultView graphs'
-               assignGrViews :: [DynamicPlottable] -> [Colour] -> Double
-                               -> IO [(DynamicPlottable, GraphViewState)]
-               assignGrViews (g@DynamicPlottable{..}:gs) (c:cs) axn = do 
-                   v <- async $ return $! _dynamicPlot window₀
-                   fmap ((g, GraphViewState { lastStableView = Nothing
-                                            , realtimeView = v, nextTgtView = v 
-                                            , graphColor = cl }
-                        ) : ) $ assignGrViews gs cs' (axn + _axesNecessity)
-                where (cl, cs')
-                        | null _inherentColours  = (Just $ defColourScheme c, cs)
-                        | otherwise              = (Nothing, c:cs)
-               assignGrViews [] _ axesNeed 
-                 | axesNeed > 0  = assignGrViews [dynamicAxes] [grey] (-1)
-                 | otherwise     = return []
-               graphs'' = sortBy (comparing _occlusiveness) graphs'
-           w <- mapM newIORef $ replicate 2 window₀
-           gs <- newIORef =<< assignGrViews graphs'' defaultColourSeq 0
-           return (w,gs)
+   dgStore <- newIORef mempty
+   
+   (plotObjs, cancelWorkers) :: ([ObjInPlot], IO ()) <- do
+       let assignPlObjPropties :: [DynamicPlottable] -> [Colour] -> Necessity
+                                    -> IO [(ObjInPlot, ThreadId)]
+           assignPlObjPropties [] _ axesNeed
+              | axesNeed > 0  = assignPlObjPropties [dynamicAxes] [grey] (-1)
+              | otherwise     = return []
+           assignPlObjPropties (o:os) (c:cs) axn = do
+              newDia <- newEmptyMVar
+              workerId <- forkIO $ objectPlotterThread o viewTgtGlobal newDia
+              stableView <- newIORef Nothing
+              ((ObjInPlot stableView newDia cl o, workerId) :)
+                     <$> assignPlObjPropties os cs' (axn + o^.axesNecessity)
+            where (cl, cs')
+                    | null (o^.inherentColours)  = (Just $ defColourScheme c, cs)
+                    | otherwise                  = (Nothing, c:cs)
+       (pObs, workerId) <- unzip <$> assignPlObjPropties givenPlotObjs defaultColourSeq 0
+       return ( sortBy (comparing $ _occlusiveness . _originalPlotObject) pObs
+              , forM_ workerId killThread )
    
    
    GTK.initGUI
@@ -818,9 +926,10 @@ plotWindow graphs' = do
                 (canvasX,canvasY) <- GTK.widgetGetSize drawA
                 modifyIORef viewTgt $ \view -> view{ xResolution = fromIntegral canvasX
                                                    , yResolution = fromIntegral canvasY }
+
                 dia <- readIORef dgStore
-                let oldSize = Dia.size dia
-                    scaledDia = Dia.bg Dia.black
+                    
+                let scaledDia = Dia.bg Dia.black
                                 . Dia.scaleX (fromInt canvasX / 2)
                                 . Dia.scaleY (-fromInt canvasY / 2)
                                 . Dia.translate (1 ^& (-1))
@@ -897,35 +1006,6 @@ plotWindow graphs' = do
        return $ GTK.widgetQueueDraw drawA
        
    
-   let updateRTView, updateTgtView :: (GraphWindowSpec -> GraphWindowSpec) -> IO ()
-       updateRTView updRealView = do
-          vstOld <- readIORef viewState
-          let newRealView = updRealView vstOld
-          grViewsOld <- readIORef graphs
-          writeIORef graphs <=< forM grViewsOld $ 
-               \(o@DynamicPlottable{..}, gv) -> do
-                  newRt <- async $ return $! _dynamicPlot newRealView
-                  poll (realtimeView gv) >>= \case
-                    Just(Right vw) -> return (o
-                      , gv{ realtimeView = newRt, lastStableView = Just (vstOld, vw) })
-                    _ -> do 
-                       cancel $ realtimeView gv
-                       poll (nextTgtView gv) >>= \case
-                         Just(Right vw) -> do
-                           ttvn <- readIORef viewTgt 
-                           return (o, gv{ realtimeView = newRt, lastStableView = Just (ttvn, vw) })
-                         _ -> return (o, gv{ realtimeView = newRt })
-          writeIORef viewState newRealView
-       updateTgtView updTgtView = do
-          newTgtView <- updTgtView <$> readIORef viewTgt
-          grViewsOld <- readIORef graphs
-          writeIORef graphs <=< forM grViewsOld $ 
-               \(o@DynamicPlottable{..}, gv) -> do
-                  newTt <- async $ return $! _dynamicPlot newTgtView
-                  cancel $ nextTgtView gv
-                  return (o, gv{ nextTgtView = newTt })
-          writeIORef viewTgt newTgtView
-   
    t₀ <- getCurrentTime
    lastFrameTime <- newIORef t₀
    
@@ -940,12 +1020,12 @@ plotWindow graphs' = do
                w = (rBound - lBound)/2; h = (tBound - bBound)/2
                x₀ = lBound + w; y₀ = bBound + h
                textTK txSiz asp = TextTK defaultTxtStyle txSiz asp 0.2 0.2
-               renderComp (DynamicPlottable{..}, GraphViewState{..}) = do
-                   plt <- poll realtimeView >>= \case
-                                  Just (Right pl) -> return $ Just pl
-                                  _ -> case lastStableView of
-                                   Just (_, vw) -> return $ Just vw
-                                   _ -> poll nextTgtView >> return Nothing
+               renderComp plotObj = do
+                   plt <- tryTakeMVar (plotObj^.newPlotView) >>= \case
+                       Nothing -> fmap snd <$> readIORef (plotObj^.lastStableView)
+                       newDia -> do
+                           writeIORef (plotObj^.lastStableView) newDia
+                           return $ snd <$> newDia
                    case plt of
                     Nothing -> return mempty
                     Just Plot{..} -> let 
@@ -957,18 +1037,18 @@ plotWindow graphs' = do
                        fontPts = 12
                        transform :: PlainGraphicsR2 -> PlainGraphicsR2
                        transform = normaliseView . clr
-                         where clr | Just c <- graphColor  = Dia.lcA c . Dia.fcA c
-                                   | otherwise             = id
+                         where clr | Just c <- plotObj^.plotObjColour
+                                                = Dia.lcA c . Dia.fcA c
+                                   | otherwise  = id
                      in do
                        renderedAnnot <- mapM (prerenderAnnotation antTK) _plotAnnotations
                        return . transform $ fold renderedAnnot <> _getPlot
 
-           gvStates <- readIORef graphs
-           waitAny $ map (realtimeView . snd) gvStates
-           
-           thePlot <- (mconcat . reverse) <$> mapM renderComp (reverse gvStates)
+           thePlot <- (mconcat . reverse) <$> mapM renderComp (reverse plotObjs)
            theLegend <- prerenderLegend (textTK 10 1) colourScheme
-                $ (\(p,g) -> (,) <$> _legendEntries p <*> [graphColor g]) =<< gvStates
+                $ (\g -> (,) <$> g^.originalPlotObject.legendEntries
+                             <*> [g^.plotObjColour]
+                  ) =<< plotObjs
                    
            writeIORef dgStore $ ( theLegend & Dia.scaleX (0.1 / sqrt (fromIntegral xResolution))
                                             & Dia.scaleY (0.1 / sqrt (fromIntegral yResolution)) 
@@ -983,7 +1063,8 @@ plotWindow graphs' = do
            writeIORef lastFrameTime t
    
            do vt <- readIORef viewTgt
-              updateRTView $ \vo -> 
+              modifyMVar_ viewTgtGlobal . const $ return vt
+              modifyIORef viewState $ \vo -> 
                    let a%b = let η = min 1 $ 2 * realToFrac δt in η*a + (1-η)*b 
                    in GraphWindowSpecR2 (lBound vt % lBound vo) (rBound vt % rBound vo)
                                         (bBound vt % bBound vo) (tBound vt % tBound vo)
@@ -995,8 +1076,7 @@ plotWindow graphs' = do
            return True
    
    GTK.onDestroy window $ do
-        (readIORef graphs >>=) . mapM_  -- cancel remaining threads
-           $ \(_, GraphViewState{..}) -> cancel realtimeView >> cancel nextTgtView
+        cancelWorkers
         GTK.mainQuit
                  
    
@@ -1006,6 +1086,25 @@ plotWindow graphs' = do
    GTK.mainGUI
    
    readIORef viewState
+
+
+
+
+objectPlotterThread :: DynamicPlottable
+                       -> MVar GraphWindowSpec
+                       -> MVar (GraphWindowSpec, Plot)
+                       -> IO ()
+objectPlotterThread pl₀ viewVar diaVar = loop pl₀ where
+ loop pl = do
+    threadDelay $ 50 * milliseconds
+    view <- readMVar viewVar
+    diagram <- evaluate =<< Random.runRVar (pl^.dynamicPlot $ view) Random.StdRandom
+    putMVar diaVar (view, diagram)
+    case pl^.futurePlots of
+       Just pl' -> loop pl'
+       Nothing  -> loop pl
+    
+
 
 
 autoDefaultView :: [DynamicPlottable] -> GraphWindowSpec
@@ -1069,7 +1168,7 @@ continFnPlot f = def
              & relevantRange_y .~ otherDimDependence yRangef
              & autoTint
              & axesNecessity .~ 1
-             & dynamicPlot .~ plot
+             & dynamicPlot .~ pure . plot
  where yRangef = onInterval $ \(l, r) -> ((!%0.1) &&& (!%0.9)) . sort . pruneOutlyers
                                                $ map f [l, l + (r-l)/80 .. r]
        plot (GraphWindowSpecR2{..}) = curve `deepseq` mkPlot (trace curve)
@@ -1103,7 +1202,7 @@ type (-->) = RWDiffable ℝ
 -- 
 --   This function is equivalent to using 'plot' on an 'RWDiffable' arrow.
 fnPlot :: (∀ m . ( WithField ℝ PseudoAffine m
-                         , HasMetric (Needle (Interior m)) )
+                 , SimpleSpace (Needle m) )
                          => AgentVal (-->) m ℝ -> AgentVal (-->) m ℝ )
                      -> DynamicPlottable
 fnPlot f = plot fd
@@ -1112,7 +1211,7 @@ fnPlot f = plot fd
 
 -- | Plot a continuous, “parametric function”, i.e. mapping the real line to a path in ℝ².
 paramPlot :: (∀ m . ( WithField ℝ PseudoAffine m
-                         , HasMetric (Needle (Interior m)) )
+                         , LSpace (Needle (Interior m)) )
                        => AgentVal (-->) m ℝ -> (AgentVal (-->) m ℝ, AgentVal (-->) m ℝ) )
                      -> DynamicPlottable
 paramPlot f = plot fd
@@ -1120,7 +1219,7 @@ paramPlot f = plot fd
        fd = alg1to2 f
 
 scrutiniseDiffability :: (∀ m . ( WithField ℝ PseudoAffine m
-                                , HasMetric (Needle (Interior m)) )
+                                , SimpleSpace (Needle m) )
                          => AgentVal (-->) m ℝ -> AgentVal (-->) m ℝ )
                      -> DynamicPlottable
 scrutiniseDiffability f = plot [{-plot fd, -}dframe 0.2, dframe 0.02]
@@ -1129,7 +1228,7 @@ scrutiniseDiffability f = plot [{-plot fd, -}dframe 0.2, dframe 0.02]
        fscrut = analyseLocalBehaviour fd
        dframe rfh = def
                  & autoTint
-                 & dynamicPlot .~ mkFrame
+                 & dynamicPlot .~ pure . mkFrame
         where mkFrame (GraphWindowSpecR2{..}) = case fscrut xm of
                       Option (Just ((ym,y'm), δOδx²))
                         | Option (Just δx) <- δOδx² δy
@@ -1154,7 +1253,7 @@ continColourSurfaceFnPlot f = def
              & axesNecessity .~ 1
              & occlusiveness .~ 4
              & dynamicPlot .~ plot
- where plot (GraphWindowSpecR2{..}) = mkPlot
+ where plot (GraphWindowSpecR2{..}) = pure . mkPlot
               $ Dia.place
                 ( Dia.rasterDia cf (xResolution`div`4) (yResolution`div`4)
                   & Dia.scaleX wPix & Dia.scaleY hPix
@@ -1200,7 +1299,7 @@ dynamicAxes :: DynamicPlottable
 dynamicAxes = def
              & axesNecessity .~ superfluent
              & occlusiveness .~ 1
-             & dynamicPlot .~ plot
+             & dynamicPlot .~ pure . plot
  where plot gwSpec@(GraphWindowSpecR2{..}) = Plot labels lines
         where (DynamicAxes yAxCls xAxCls) = crtDynamicAxes gwSpec
               lines = zeroLine (lBound^&0) (rBound^&0)  `provided`(bBound<0 && tBound>0)
@@ -1242,7 +1341,7 @@ autoDashLine w p q = simpleLine' (max 1 w) p q
 
 
 tweakPrerendered :: (PlainGraphicsR2->PlainGraphicsR2) -> DynamicPlottable->DynamicPlottable
-tweakPrerendered f = dynamicPlot %~ (tweak .)
+tweakPrerendered f = dynamicPlot %~ (fmap tweak .)
  where tweak = getPlot %~ f
 
 opacityFactor :: Double -> DynamicPlottable -> DynamicPlottable
@@ -1355,3 +1454,5 @@ atExtendOf' d₁ q d₂ = d₂
        (Just (llx,lux)) = Dia.extentX d₂; (Just (lly,luy)) = Dia.extentY d₂
 
 
+
+milliseconds = 1000 :: Int
