@@ -365,6 +365,25 @@ instance Show GraphWindowSpecR2 where
                                \xResolution="++show xResolution++", \
                                \yResolution="++show yResolution++"}"
 
+windowCenter :: Lens' GraphWindowSpecR2 (R,R)
+windowCenter = lens
+    (\(GraphWindowSpecR2 l r b t _ _ _) -> ((l+r)/2, (b+t)/2))
+    (\(GraphWindowSpecR2 l r b t xRes yRes colSch) (cx, cy)
+         -> let rx = (r-l)/2; ry = (t-b)/2
+            in GraphWindowSpecR2 (cx - rx) (cx + rx) (cy - ry) (cy + ry)
+                                 xRes yRes colSch
+    )
+windowDiameter :: Lens' GraphWindowSpecR2 R
+windowDiameter = lens
+    (\(GraphWindowSpecR2 l r b t _ _ _) -> sqrt $ (r-l)^2 + (t-b)^2)
+    (\(GraphWindowSpecR2 l r b t xRes yRes colSch) dNew
+         -> let cx = (l+r)/2; rx = (r-l)/2
+                cy = (b+t)/2; ry = (t-b)/2
+                dOld = 2 * sqrt (rx^2 + ry^2)
+                η = dNew / dOld
+            in GraphWindowSpecR2 (cx - η*rx) (cx + η*rx) (cy - η*ry) (cy + η*ry)
+                                 xRes yRes colSch
+    )
 
 
 
