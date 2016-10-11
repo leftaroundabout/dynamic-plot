@@ -517,16 +517,19 @@ instance Plottable (Shade' (R,R)) where
               & autoTint
               & axesNecessity .~ 1
               & dynamicPlot .~ plot
-   where plot _ = pure . mkPlot $ Dia.circle 1
+   where plot wSpec = pure . mkPlot $ Dia.circle 1
                             & Dia.scaleX w₁ & Dia.scaleY w₂
                             & Dia.rotate ϑ
                             & Dia.opacity 0.2
                             & Dia.moveTo ctr
+          where [w₁,w₂] = recip . sqrt
+                        . max (recip $ 100 * max ((wSpec^.windowDiameter)^2) ctrDistance)
+                        . fst <$> [ev₁, ev₂]
+                ctrDistance = distanceSq (shade^.shadeCtr) (wSpec^.windowCenter)
          ctr = Dia.p2 $ shade^.shadeCtr
          Norm expanr = shade^.shadeNarrowness
          [ev₁@(_,(e₁x,e₁y)),ev₂] = eigen $ arr expanr
          ϑ = atan2 e₁y e₁x  Dia.@@ Dia.rad
-         [w₁,w₂] = recip . sqrt . fst <$> [ev₁, ev₂]
 
 instance Plottable (ConvexSet (R,R)) where
   plot EmptyConvex = mempty
