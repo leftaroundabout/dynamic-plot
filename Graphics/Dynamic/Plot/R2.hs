@@ -528,7 +528,10 @@ instance Plottable (Shade' (R,R)) where
                 ctrDistance = distanceSq (shade^.shadeCtr) (wSpec^.windowCenter)
          ctr = Dia.p2 $ shade^.shadeCtr
          Norm expanr = shade^.shadeNarrowness
-         [ev₁@(_,(e₁x,e₁y)),ev₂] = eigen $ arr expanr
+         [ev₁@(_,(e₁x,e₁y)),ev₂] = case eigen $ arr expanr of
+                  (e₁:e₂:_) -> [e₁,e₂]
+                  [e@(_,(vx,vy))] -> [e, (0,(-vx,vy))]
+                  [] -> [(0,(1,0)), (0,(0,1))]
          ϑ = atan2 e₁y e₁x  Dia.@@ Dia.rad
 
 instance Plottable (ConvexSet (R,R)) where
