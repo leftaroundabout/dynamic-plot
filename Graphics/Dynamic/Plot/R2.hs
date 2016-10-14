@@ -826,6 +826,7 @@ instance Default DynamicPlottable where def = mempty
 --   plot legend.
 legendName :: String -> DynamicPlottable -> DynamicPlottable
 legendName n = legendEntries %~ (LegendEntry (PlainText n) mempty :)
+           >>> futurePlots %~ fmap (legendName n)
 
 -- | Colour this plot object in a fixed shade.
 tint :: DCol.Colour ℝ -> DynamicPlottable -> DynamicPlottable
