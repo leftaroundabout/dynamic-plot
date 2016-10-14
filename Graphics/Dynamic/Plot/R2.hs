@@ -178,9 +178,11 @@ makeLenses ''DynamicPlottable'
 
 type DynamicPlottable = DynamicPlottable' Random.RVar
 
+type AnnotPlot = (Plot, [LegendEntry])
+
 data ObjInPlot = ObjInPlot {
-        _lastStableView :: IORef (Maybe (GraphWindowSpec, Plot))
-      , _newPlotView :: MVar (GraphWindowSpec, Plot)
+        _lastStableView :: IORef (Maybe (GraphWindowSpec, AnnotPlot))
+      , _newPlotView :: MVar (GraphWindowSpec, AnnotPlot)
       , _plotObjColour :: Maybe AColour
       , _originalPlotObject :: DynamicPlottable
    }
@@ -1034,7 +1036,7 @@ plotWindow givenPlotObjs = runInBoundThread $ do
                            return $ snd <$> newDia
                    case plt of
                     Nothing -> return mempty
-                    Just Plot{..} -> let 
+                    Just (Plot{..}, objLegend) -> let 
                        antTK = DiagramTK { viewScope = currentView 
                                          , textTools = textTK txtSize aspect }
                        txtSize = h * fontPts / fromIntegral yResolution
@@ -1048,13 +1050,14 @@ plotWindow givenPlotObjs = runInBoundThread $ do
                                    | otherwise  = id
                      in do
                        renderedAnnot <- mapM (prerenderAnnotation antTK) _plotAnnotations
-                       return . transform $ fold renderedAnnot <> _getPlot
+                       return (transform $ fold renderedAnnot <> _getPlot, objLegend)
 
-           thePlot <- (mconcat . reverse) <$> mapM renderComp (reverse plotObjs)
+           (thisPlots, thisLegends)
+                 <- unzip . reverse <$> mapM renderComp (reverse plotObjs)
+           let thePlot = mconcat thisPlots
            theLegend <- prerenderLegend (textTK 10 1) colourScheme
-                $ (\g -> (,) <$> g^.originalPlotObject.legendEntries
-                             <*> [g^.plotObjColour]
-                  ) =<< plotObjs
+                $ (\(g,l) -> (,) <$> l <*> [g^.plotObjColour]
+                  ) =<< zip plotObjs thisLegends
                    
            writeIORef dgStore $ ( theLegend & Dia.scaleX (0.1 / sqrt (fromIntegral xResolution))
                                             & Dia.scaleY (0.1 / sqrt (fromIntegral yResolution)) 
@@ -1098,14 +1101,14 @@ plotWindow givenPlotObjs = runInBoundThread $ do
 
 objectPlotterThread :: DynamicPlottable
                        -> MVar GraphWindowSpec
-                       -> MVar (GraphWindowSpec, Plot)
+                       -> MVar (GraphWindowSpec, (Plot, [LegendEntry]))
                        -> IO ()
 objectPlotterThread pl₀ viewVar diaVar = loop pl₀ where
  loop pl = do
     threadDelay $ 50 * milliseconds
     view <- readMVar viewVar
     diagram <- evaluate =<< Random.runRVar (pl^.dynamicPlot $ view) Random.StdRandom
-    putMVar diaVar (view, diagram)
+    putMVar diaVar (view, (diagram, pl^.legendEntries))
     case pl^.futurePlots of
        Just pl' -> loop pl'
        Nothing  -> loop pl
