@@ -1220,13 +1220,13 @@ fnPlot f = plot fd
        fd = alg f
 
 -- | Plot a continuous, “parametric function”, i.e. mapping the real line to a path in ℝ².
-paramPlot :: (∀ m . ( WithField ℝ PseudoAffine m
-                         , LSpace (Needle (Interior m)) )
+paramPlot :: (∀ m . ( WithField ℝ PseudoAffine m, SimpleSpace (Needle m) )
                        => AgentVal (-->) m ℝ -> (AgentVal (-->) m ℝ, AgentVal (-->) m ℝ) )
                      -> DynamicPlottable
 paramPlot f = plot fd
  where fd :: ℝ --> (ℝ,ℝ)
        fd = alg1to2 f
+
 
 scrutiniseDiffability :: (∀ m . ( WithField ℝ PseudoAffine m
                                 , SimpleSpace (Needle m) )
