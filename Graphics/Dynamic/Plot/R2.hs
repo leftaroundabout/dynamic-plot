@@ -81,6 +81,7 @@ import qualified Diagrams.Backend.Cairo as Cairo
 import qualified Diagrams.Backend.Cairo.Text as CairoTxt
     
 import qualified Data.Colour as DCol
+import qualified Data.Colour.Names as DCol
 import qualified Codec.Picture as JPix
 import qualified Codec.Picture.Types as JPix
 
@@ -218,6 +219,7 @@ instance Plottable PlainGraphics where
   plot (PlainGraphics d) = def
            & relevantRange_x .~ atLeastInterval rlx
            & relevantRange_y .~ atLeastInterval rly
+           & inherentColours .~ [DCol.grey]
            & axesNecessity .~ -1
            & dynamicPlot .~ pure.plot
    where bb = DiaBB.boundingBox d
