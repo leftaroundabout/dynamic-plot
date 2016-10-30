@@ -214,6 +214,10 @@ instance Plottable (R -> R) where
 
 instance (Plottable p) => Plottable [p] where
   plot = foldMap plot
+instance (Plottable p) => Plottable (Option p) where
+  plot = foldMap plot
+instance (Plottable p) => Plottable (Maybe p) where
+  plot = foldMap plot
 
 instance Plottable PlainGraphics where
   plot (PlainGraphics d) = def
@@ -538,6 +542,10 @@ instance Plottable (Shade' (R,R)) where
                   [] -> [(0,(1,0)), (0,(0,1))]
          ϑ = atan2 e₁y e₁x  Dia.@@ Dia.rad
 
+instance Plottable (ConvexSet ℝ²) where
+  plot EmptyConvex = mempty
+  plot (ConvexSet hull intersects)
+    = plot (ConvexSet (coerceShade hull) (coerceShade<$>intersects) :: ConvexSet (ℝ,ℝ))
 instance Plottable (ConvexSet (R,R)) where
   plot EmptyConvex = mempty
   plot (ConvexSet hull intersects)
