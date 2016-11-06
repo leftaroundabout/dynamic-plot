@@ -50,6 +50,8 @@ module Graphics.Dynamic.Plot.R2 (
         , tint, autoTint
         -- ** Legend captions
         , legendName
+        -- ** Animation
+        , plotDelay
         -- * Viewport
         -- ** View selection
         , xInterval, yInterval, forceXRange, forceYRange
@@ -171,6 +173,7 @@ data DynamicPlottable' m = DynamicPlottable {
          --   other objects, negative values for sparse/small point plots.
          --   The z-order will be chosen accordingly.
       , _axesNecessity :: Necessity
+      , _frameDelay :: NominalDiffTime
       , _legendEntries :: [LegendEntry]
       , _futurePlots :: Maybe (DynamicPlottable' m)
       , _dynamicPlot :: GraphWindowSpec -> m Plot
@@ -820,13 +823,22 @@ mkAnnotatedPlot :: [Annotation] -> PlainGraphicsR2 -> Plot
 mkAnnotatedPlot ans = Plot ans
 
 instance Semigroup DynamicPlottable where
-  DynamicPlottable rx₁ ry₁ tm₁ oc₁ ax₁ le₁ fu₁ dp₁
-    <> DynamicPlottable rx₂ ry₂ tm₂ oc₂ ax₂ le₂ fu₂ dp₂
+  DynamicPlottable rx₁ ry₁ tm₁ oc₁ ax₁ dl₁ le₁ fu₁ dp₁
+    <> DynamicPlottable rx₂ ry₂ tm₂ oc₂ ax₂ dl₂ le₂ fu₂ dp₂
         = DynamicPlottable
-   (rx₁<>rx₂) (ry₁<>ry₂) (tm₁++tm₂) (oc₁+oc₂) (ax₁+ax₂)
+   (rx₁<>rx₂) (ry₁<>ry₂) (tm₁++tm₂) (oc₁+oc₂) (ax₁+ax₂) (max dl₁ dl₂)
                              (le₁++le₂) ((<>)<$>fu₁<*>fu₂) (liftA2(<>)<$>dp₁<*>dp₂) 
 instance Monoid DynamicPlottable where
-  mempty = DynamicPlottable mempty mempty [] 0 0 [] mempty (const $ pure mempty)
+  mempty = DynamicPlottable
+             mempty  -- don't request any range
+             mempty
+             []      -- no colours
+             0       -- neither obscures anything nor has details that could be obscured
+             0       -- don't need axis (but don't mind them either)
+             (1/20)  -- 20 fps is at the moment the fastest enabled refresh rate anyway
+             []      -- no legend entries
+             mempty  -- no time-evolution
+             (const $ pure mempty)
   mappend = (<>)
 instance Default DynamicPlottable where def = mempty
 
@@ -1119,8 +1131,8 @@ objectPlotterThread pl₀ viewVar diaVar = loop pl₀ where
     tPrev <- getCurrentTime
     view <- readMVar viewVar
     diagram <- evaluate =<< Random.runRVar (pl^.dynamicPlot $ view) Random.StdRandom
-    waitTill $ addUTCTime (1/20) tPrev
     putMVar diaVar (view, (diagram, pl^.legendEntries))
+    waitTill $ addUTCTime (pl^.frameDelay) tPrev
     case pl^.futurePlots of
        Just pl' -> loop pl'
        Nothing  -> loop pl
@@ -1481,3 +1493,13 @@ waitTill t = do
    tnow <- getCurrentTime
    threadDelay . max 0 . round $ diffUTCTime t tnow
                                    * 1e+6 -- threadDelay ticks in microseconds
+
+-- | Limit the refresh / frame rate for this plot object. Useful to slowly
+--   study some sequence of plots with 'plotLatest', or to just reduce processor load.
+-- 
+--   Note: the argument will probably change to
+--   <http://hackage.haskell.org/package/thyme-0.3.5.5/docs/Data-Thyme-Clock.html#t:NominalDiffTime NominalDiffTime> from the <http://hackage.haskell.org/package/thyme thyme>
+--   library soon.
+plotDelay :: NominalDiffTime -> DynamicPlottable -> DynamicPlottable
+plotDelay dly = frameDelay .~ dly
+            >>> futurePlots %~ fmap (plotDelay dly)
