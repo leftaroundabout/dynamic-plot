@@ -1100,7 +1100,7 @@ plotWindow givenPlotObjs = runInBoundThread $ do
         GTK.mainQuit
                  
    
-   GTK.timeoutAdd mainLoop 100
+   GTK.timeoutAdd mainLoop 50
    
 
    GTK.mainGUI
@@ -1116,9 +1116,10 @@ objectPlotterThread :: DynamicPlottable
                        -> IO ()
 objectPlotterThread pl₀ viewVar diaVar = loop pl₀ where
  loop pl = do
-    threadDelay $ 50 * milliseconds
+    tPrev <- getCurrentTime
     view <- readMVar viewVar
     diagram <- evaluate =<< Random.runRVar (pl^.dynamicPlot $ view) Random.StdRandom
+    waitTill $ addUTCTime (1/20) tPrev
     putMVar diaVar (view, (diagram, pl^.legendEntries))
     case pl^.futurePlots of
        Just pl' -> loop pl'
@@ -1475,4 +1476,8 @@ atExtendOf' d₁ q d₂ = d₂
 
 
 
-milliseconds = 1000 :: Int
+waitTill :: UTCTime -> IO ()
+waitTill t = do
+   tnow <- getCurrentTime
+   threadDelay . max 0 . round $ diffUTCTime t tnow
+                                   * 1e+6 -- threadDelay ticks in microseconds
