@@ -1491,7 +1491,7 @@ atExtendOf' d₁ q d₂ = d₂
 waitTill :: UTCTime -> IO ()
 waitTill t = do
    tnow <- getCurrentTime
-   threadDelay . max 0 . round $ diffUTCTime t tnow
+   threadDelay . max 1000 . round $ diffUTCTime t tnow
                                    * 1e+6 -- threadDelay ticks in microseconds
 
 -- | Limit the refresh / frame rate for this plot object. Useful to slowly
