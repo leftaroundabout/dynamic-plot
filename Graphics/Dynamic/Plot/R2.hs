@@ -252,8 +252,9 @@ diagramPlot :: PlainGraphicsR2 -> DynamicPlottable
 diagramPlot d = plot $ PlainGraphics d
 
 
-metricFromLength :: RealFrac' s => s -> Norm s 
-metricFromLength l | l>0   = spanNorm [1 / l]
+metricFromLength :: ∀ s . RealFrac' s => s -> Norm s 
+metricFromLength l | l>0   = case closedScalarWitness :: ClosedScalarWitness s of
+       ClosedScalarWitness -> spanNorm [1 / l]
   
 instance Plottable (R-->R) where
   plot f = def & relevantRange_y .~ OtherDimDependantRange yRangef
