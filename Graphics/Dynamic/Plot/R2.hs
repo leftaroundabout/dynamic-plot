@@ -159,7 +159,7 @@ makeLenses ''Plot
 
 
 data RangeRequest r 
-       = OtherDimDependantRange (Option (Interval r) -> Option (Interval r))
+       = OtherDimDependantRange (Maybe (Interval r) -> Maybe (Interval r))
        | MustBeThisRange (Interval r)
 
 type GraphWindowSpec = GraphWindowSpecR2
@@ -261,13 +261,13 @@ instance Plottable (R-->R) where
                & autoTint
                & axesNecessity .~ 1
                & dynamicPlot .~ pure.plot
-   where yRangef (Option Nothing) = Option Nothing
-         yRangef (Option (Just (Interval l r)))
+   where yRangef Nothing = Nothing
+         yRangef (Just (Interval l r))
              = case intervalImages
                       100
                       ( const . metricFromLength $ (r-l)/16 , const $ metricFromLength 0.0001 )
                       ( alg (\x -> ( point l?<x?<point r ?-> (f$~x) ))) of 
-                 ([],[]) -> Option Nothing
+                 ([],[]) -> Nothing
                  (liv,riv) -> pure . foldr1 (<>) . map (uncurry Interval . snd)
                                $ take 4 liv ++ take 4 riv
          
@@ -434,9 +434,9 @@ lineSegPlot ps'
     | null ps        = mempty & autoTint
     | otherwise      = def
              & relevantRange_x .~ atLeastInterval'
-                                   ( foldMap (pure . spInterval . fst) (concat ps) )
+                           ( getOption $ foldMap (pure . spInterval . fst) (concat ps) )
              & relevantRange_y .~ atLeastInterval'
-                                   ( foldMap (pure . spInterval . snd) (concat ps) )
+                           ( getOption $ foldMap (pure . spInterval . snd) (concat ps) )
              & autoTint
              & axesNecessity .~ 1
              & dynamicPlot .~ pure . plot
@@ -669,7 +669,7 @@ instance Plottable (PointsWeb ℝ² (CSp.Colour ℝ)) where
 
 instance Plottable (PointsWeb (ℝ,ℝ) (CSp.Colour ℝ)) where
   plot = webbedSurfPlot $ pure . toRGBA
-   where toRGBA (Option (Just c))
+   where toRGBA (Just c)
              = JPix.promotePixel (CSp.quantiseColour c :: JPix.PixelRGB8)
          toRGBA _ = JPix.PixelRGBA8 0 0 0 0
 
@@ -678,13 +678,13 @@ instance Plottable (PointsWeb ℝ² (Shade (CSp.Colour ℝ))) where
 
 instance Plottable (PointsWeb (ℝ,ℝ) (Shade (CSp.Colour ℝ))) where
   plot = webbedSurfPlot $ toRGBA
-   where toRGBA (Option (Just c))
+   where toRGBA (Just c)
              = JPix.promotePixel . (CSp.quantiseColour :: CSp.Colour ℝ -> JPix.PixelRGB8)
                                        <$> Random.rvar c
          toRGBA _ = return $ JPix.PixelRGBA8 0 0 0 0
 
 webbedSurfPlot :: Geodesic a
-       => (Option a -> Random.RVar JPix.PixelRGBA8)
+       => (Maybe a -> Random.RVar JPix.PixelRGBA8)
            -> PointsWeb (ℝ,ℝ) a -> DynamicPlottable
 webbedSurfPlot toRGBA web = def & dynamicPlot .~ plotWeb
                                 & relevantRange_x .~ atLeastInterval (x₀...x₁)
@@ -867,7 +867,7 @@ instance (Ord r) => Semigroup (RangeRequest r) where
   _ <> MustBeThisRange r = MustBeThisRange r
   OtherDimDependantRange r1 <> OtherDimDependantRange r2 = OtherDimDependantRange $ r1<>r2
 instance (Ord r) => Monoid (RangeRequest r) where
-  mempty = OtherDimDependantRange $ const mempty
+  mempty = OtherDimDependantRange $ const Nothing
   mappend = (<>)
 
 otherDimDependence :: (Interval r->Interval r) -> RangeRequest r
@@ -876,7 +876,7 @@ otherDimDependence = OtherDimDependantRange . fmap
 atLeastInterval :: Interval r -> RangeRequest r
 atLeastInterval = atLeastInterval' . pure
 
-atLeastInterval' :: Option (Interval r) -> RangeRequest r
+atLeastInterval' :: Maybe (Interval r) -> RangeRequest r
 atLeastInterval' = OtherDimDependantRange . const
 
 
@@ -1152,9 +1152,9 @@ autoDefaultView graphs = GraphWindowSpecR2 l r b t defResX defResY defaultColour
         OtherDimDependantRange ξ `dependentOn` MustBeThisRange i
            = addMargin . defRng . ξ $ pure i
         OtherDimDependantRange ξ `dependentOn` OtherDimDependantRange υ
-           = addMargin . defRng . ξ . pure . defRng $ υ mempty
+           = addMargin . defRng . ξ . pure . defRng $ υ Nothing
         
-        defRng (Option (Just (Interval a b))) | b>a     
+        defRng (Just (Interval a b)) | b>a     
                   = Interval a b
         defRng _  = Interval (-1) 1   -- ad-hoc hack to catch NaNs etc..
         addMargin (Interval a b) = (a - q, b + q)
@@ -1264,8 +1264,8 @@ scrutiniseDiffability f = plot [{-plot fd, -}dframe 0.2, dframe 0.02]
                  & autoTint
                  & dynamicPlot .~ pure . mkFrame
         where mkFrame (GraphWindowSpecR2{..}) = case fscrut xm of
-                      Option (Just ((ym,y'm), δOδx²))
-                        | Option (Just δx) <- δOδx² δy
+                      Just ((ym,y'm), δOδx²)
+                        | Just δx <- δOδx² δy
                           -> δx `seq` let frame = mconcat
                                             [ simpleLine ((xm-δx)^&(ym+yo-δx*y'm))
                                                          ((xm+δx)^&(ym+yo+δx*y'm))
