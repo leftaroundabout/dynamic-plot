@@ -60,7 +60,7 @@ Library
                      , gtk > 0.10 && < 0.15
                      , glib
                      , colour >= 2 && < 3
-                     , manifolds >= 0.3.1 && < 0.4
+                     , manifolds >= 0.4 && < 0.5
                      , manifold-random
                      , colour-space
                      , JuicyPixels > 3 && < 4
