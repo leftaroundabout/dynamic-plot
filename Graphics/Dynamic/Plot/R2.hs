@@ -1235,8 +1235,7 @@ type (-->) = RWDiffable ℝ
 --   segments.)
 -- 
 --   This function is equivalent to using 'plot' on an 'RWDiffable' arrow.
-fnPlot :: (∀ m . ( WithField ℝ PseudoAffine m
-                 , SimpleSpace (Needle m) )
+fnPlot :: (∀ m . Object (RWDiffable ℝ) m
                          => AgentVal (-->) m ℝ -> AgentVal (-->) m ℝ )
                      -> DynamicPlottable
 fnPlot f = plot fd
