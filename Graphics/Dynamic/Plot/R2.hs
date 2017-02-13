@@ -40,6 +40,7 @@ module Graphics.Dynamic.Plot.R2 (
         , continFnPlot
         , tracePlot
         , lineSegPlot
+        , linregressionPlot
         , PlainGraphicsR2
         , shapePlot
         , diagramPlot
@@ -131,9 +132,10 @@ import Data.AffineSpace
 import Data.Manifold.PseudoAffine
 import Data.Function.Differentiable
 import Data.Manifold.Types
+import Data.Manifold.Shade
 import Data.Manifold.TreeCover
 import Data.Manifold.Web
-import Data.Manifold.Riemannian (Geodesic)
+import Data.Manifold.Riemannian (Geodesic, pointsBarycenter)
 import qualified Data.Map.Lazy as Map
 
 import qualified Data.Colour.Manifold as CSp
@@ -1241,6 +1243,40 @@ fnPlot :: (∀ m . Object (RWDiffable ℝ) m
 fnPlot f = plot fd
  where fd :: ℝ --> ℝ
        fd = alg f
+
+uncertainFnPlot :: ∀ m . (SimpleSpace m, Scalar m ~ ℝ)
+                 => (ℝ -> (m +> ℝ)) -> Shade' m -> DynamicPlottable
+uncertainFnPlot = case linearManifoldWitness :: LinearManifoldWitness m of
+   LinearManifoldWitness BoundarylessWitness -> \mfun (Shade' mBest me)
+      -> plot [ continFnPlot (($ mBest^+^δm) . mfun)
+              | δm <- normSpanningSystem' me ]
+
+linregressionPlot :: ∀ x m y . ( SimpleSpace m, Scalar m ~ ℝ, y ~ ℝ, x ~ ℝ )
+                 =>  (x -> (m +> y)) -> [(x, Shade' y)]
+                      -> (Shade' m -> DynamicPlottable -> DynamicPlottable
+                               -> DynamicPlottable)
+                         -> DynamicPlottable
+linregressionPlot = lrp (linearManifoldWitness, dualSpaceWitness)
+ where lrp :: (LinearManifoldWitness m, DualSpaceWitness m)
+                 -> (x -> (m +> y)) -> [(x, Shade' y)]
+                      -> (Shade' m -> DynamicPlottable -> DynamicPlottable
+                              -> DynamicPlottable)
+                        -> DynamicPlottable
+       lrp _ _ [] _ = mempty
+       lrp (LinearManifoldWitness BoundarylessWitness, DualSpaceWitness)
+             mfun dataPts resultHook = resultHook shm
+                        (plot [ plot (Shade (x,y) (sumSubspaceNorms mempty $ dualNorm ey)
+                                        :: Shade (ℝ,ℝ))
+                              | (x, Shade' y ey) <- dataPts ])
+                        (uncertainFnPlot mfun shm)
+        where (mBest, mDevs) = linearRegressionWVar (mfun . (bcx.+~^))
+                                  [ (δx,(fromInterior y,ey))
+                                  | (x,Shade' y ey)<-dataPts
+                                  , let Just δx = x.-~.bcx ]
+              Just bcx = (pointsBarycenter . NE.fromList $ fst<$>dataPts)
+              shm :: Shade' m
+              shm@(Shade' _ em) = dualShade . coverAllAround mBest
+                                    $ convexPolytopeRepresentatives mDevs
 
 -- | Plot a continuous, “parametric function”, i.e. mapping the real line to a path in ℝ².
 paramPlot :: (∀ m . ( WithField ℝ PseudoAffine m, SimpleSpace (Needle m) )
