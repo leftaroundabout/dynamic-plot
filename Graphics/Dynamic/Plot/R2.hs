@@ -1248,8 +1248,11 @@ uncertainFnPlot :: ∀ m . (SimpleSpace m, Scalar m ~ ℝ)
                  => (ℝ -> (m +> ℝ)) -> Shade' m -> DynamicPlottable
 uncertainFnPlot = case linearManifoldWitness :: LinearManifoldWitness m of
    LinearManifoldWitness BoundarylessWitness -> \mfun (Shade' mBest me)
-      -> plot [ continFnPlot (($ mBest^+^δm) . mfun)
-              | δm <- normSpanningSystem' me ]
+      -> plot $ continFnPlot (($ mBest) . mfun)
+            : [ tweakPrerendered (Dia.opacity 0.2)
+               $ continFnPlot (($ mBest^+^σ*^δm) . mfun)
+              | δm <- normSpanningSystem' me
+              , σ <- [-1,1] ]
 
 linregressionPlot :: ∀ x m y . ( SimpleSpace m, Scalar m ~ ℝ, y ~ ℝ, x ~ ℝ )
                  =>  (x -> (m +> y)) -> [(x, Shade' y)]
