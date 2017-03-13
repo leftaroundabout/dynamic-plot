@@ -741,7 +741,10 @@ instance (Plottable x) => Plottable (Latest x) where
   plot (Latest (ev₀ :| ev₁:evs))
      = plot ev₀ & futurePlots .~ (Just . plot . Latest $ ev₁:|evs)
 
-
+-- | Lazily consume the list, always plotting the latest value available as they
+--   arrive.
+--   Useful for displaying results of expensive computations that iteratively improve
+--   some result, but also for making simple animations (see 'plotDelay').
 plotLatest :: Plottable x => [x] -> DynamicPlottable
 plotLatest (x:xs) = plot $ Latest (x:|xs)
 plotLatest l = plot l
