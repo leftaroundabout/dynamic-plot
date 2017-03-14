@@ -351,6 +351,9 @@ data BaseColour = Neutral -- ^ Either black or white, depending on the context.
 
 type ColourScheme = Colour -> AColour
 
+data PColour = TrueColour FColour | SymbolicColour Colour
+
+
 data GraphWindowSpecR2 = GraphWindowSpecR2 {
       lBound, rBound, bBound, tBound :: R
     , xResolution, yResolution :: Int

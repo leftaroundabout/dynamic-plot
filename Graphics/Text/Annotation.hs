@@ -25,6 +25,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TemplateHaskell            #-}
 
 module Graphics.Text.Annotation where
 
@@ -52,6 +53,7 @@ import Control.Arrow.Constrained hiding ((|||))
 import Control.Monad.Constrained
 
 import Control.Lens hiding ((...), (<.>))
+import Control.Lens.TH
 
   
 import Data.List (foldl', sort, intercalate, isPrefixOf, isInfixOf, find, zip4)
@@ -110,6 +112,9 @@ data AnnotationObj = TextAnnotation TextObj TextAlignment
 data AnnotationPlace = ExactPlace R2
 
 data TextObj = PlainText String
+fromPlaintextObj :: TextObj -> String
+fromPlaintextObj (PlainText t) = t
+
 data TextAlignment = TextAlignment { hAlign, vAlign :: Alignment } -- , blockSpread :: Bool }
 data Alignment = AlignBottom | AlignMid | AlignTop
 
@@ -187,24 +192,28 @@ lg = logBase 10
 
 
 data LegendEntry = LegendEntry {
-        plotObjectTitle :: TextObj
-      , customLegendObject :: Option ()
+        _plotObjectTitle :: TextObj
+      , _plotObjRepresentativeColour :: Maybe PColour
+      , _customLegendObject :: Option ()
       }
+makeLenses ''LegendEntry
+
+instance HasColour LegendEntry where
+  asAColourWith sch = asAColourWith sch . _plotObjRepresentativeColour
 
 
 prerenderLegend :: TextTK -> ColourScheme
-                     -> [(LegendEntry, Maybe AColour)] -> IO PlainGraphicsR2
+                     -> [LegendEntry] -> IO PlainGraphicsR2
 prerenderLegend _ _ [] = return mempty
 prerenderLegend TextTK{..} cscm l = do
    let bgColour = cscm neutral
-       defColour = cscm (paler contrast)
-   lRends <- fmap Dia.vcat $ forM l `id`
-              \( LegendEntry{ plotObjectTitle = PlainText str
-                            , customLegendObject = Option Nothing }, c ) -> do
+   lRends <- fmap Dia.vcat $ forM l `id`\legEntry -> do
           txtR <- CairoTxt.textVisualBoundedIO txtCairoStyle
-                       $ DiaTxt.Text mempty (DiaTxt.BoxAlignedText 0 0.5) str
+                       $ DiaTxt.Text mempty (DiaTxt.BoxAlignedText 0 0.5)
+                                            (fromPlaintextObj $ legEntry^.plotObjectTitle)
           let h = Dia.height txtR
-          return $ Dia.hsep 5 [ Dia.rect h h & Dia.fcA (maybe defColour id c)
+          return $ Dia.hsep 5 [ Dia.rect h h & Dia.fcA
+                                 (asAColourWith cscm legEntry)
                               , txtR
                               ] & Dia.centerXY
                                 & Dia.frame 2

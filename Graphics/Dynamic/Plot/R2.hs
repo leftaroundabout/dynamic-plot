@@ -168,7 +168,7 @@ type GraphWindowSpec = GraphWindowSpecR2
 
 data DynamicPlottable' m = DynamicPlottable { 
         _relevantRange_x, _relevantRange_y :: RangeRequest R
-      , _inherentColours :: [DCol.Colour ℝ]
+      , _inherentColours :: [PColour]
       , _occlusiveness :: Double
          -- ^ How surface-occupying the plot is.
          --   Use positive values for opaque 2D plots that would tend to obscure
@@ -228,7 +228,7 @@ instance Plottable PlainGraphics where
   plot (PlainGraphics d) = def
            & relevantRange_x .~ atLeastInterval rlx
            & relevantRange_y .~ atLeastInterval rly
-           & inherentColours .~ [DCol.grey]
+           & inherentColours .~ [TrueColour DCol.grey]
            & axesNecessity .~ -1
            & dynamicPlot .~ pure.plot
    where bb = DiaBB.boundingBox d
@@ -853,18 +853,39 @@ instance Default DynamicPlottable where def = mempty
 -- | Set the caption for this plot object that should appear in the
 --   plot legend.
 legendName :: String -> DynamicPlottable -> DynamicPlottable
-legendName n = legendEntries %~ (LegendEntry (PlainText n) mempty :)
+legendName n obj = legendEntries %~ (LegendEntry (PlainText n) colour mempty :)
            >>> futurePlots %~ fmap (legendName n)
+                           $ obj
+ where colour = case obj^.inherentColours of
+          (c₀:_) -> Just c₀
+          _ -> Nothing
 
 -- | Colour this plot object in a fixed shade.
 tint :: DCol.Colour ℝ -> DynamicPlottable -> DynamicPlottable
-tint col = inherentColours .~ [col]
+tint col = inherentColours .~ [TrueColour col]
        >>> dynamicPlot %~ fmap (fmap $ getPlot %~ Dia.lc col . Dia.fc col)
 
 -- | Allow the object to be automatically assigned a colour that's otherwise
 --   unused in the plot. (This is the default for most plot objects.)
 autoTint :: DynamicPlottable -> DynamicPlottable
 autoTint = inherentColours .~ []
+
+-- | Assign each object an individual colour, if applicable.
+chooseAutoTints :: [DynamicPlottable] -> [DynamicPlottable]
+chooseAutoTints = go defaultColourSeq
+ where go (c:cs) (o:os)
+        | null $ o^.inherentColours
+               = (o & inherentColours.~[SymbolicColour c]
+                    & dynamicPlot %~
+                       (\plotF gwSpec ->
+                          let ac = asAColourWith (colourScheme gwSpec) c
+                          in fmap (getPlot %~ Dia.lcA ac . Dia.fcA ac) $ plotF gwSpec)
+                    & legendEntries %~ map
+                       (plotObjRepresentativeColour .~ Just (SymbolicColour c))
+                 ) : go cs os
+       go cs (o:os) = o : go cs os
+       go _ [] = []
+       
 
 
 instance (Ord r) => Semigroup (RangeRequest r) where
@@ -924,8 +945,9 @@ plotWindow [] = plotWindow [dynamicAxes]
 plotWindow givenPlotObjs = runInBoundThread $ do
    
    let defColourScheme = defaultColourScheme
+       tintedPlotObjs = chooseAutoTints givenPlotObjs
    
-   viewState <- newIORef $ autoDefaultView givenPlotObjs
+   viewState <- newIORef $ autoDefaultView tintedPlotObjs
    viewTgt <- newIORef =<< readIORef viewState
    viewTgtGlobal <- newMVar =<< readIORef viewState
    screenResolution <- newIORef (640, 480)
@@ -933,21 +955,23 @@ plotWindow givenPlotObjs = runInBoundThread $ do
    dgStore <- newIORef mempty
    
    (plotObjs, cancelWorkers) :: ([ObjInPlot], IO ()) <- do
-       let assignPlObjPropties :: [DynamicPlottable] -> [Colour] -> Necessity
+       let assignPlObjPropties :: [DynamicPlottable] -> Necessity
                                     -> IO [(ObjInPlot, ThreadId)]
-           assignPlObjPropties [] _ axesNeed
-              | axesNeed > 0  = assignPlObjPropties [dynamicAxes] [grey] (-1)
+           assignPlObjPropties [] axesNeed
+              | axesNeed > 0  = assignPlObjPropties [tint Dia.grey dynamicAxes] (-1)
               | otherwise     = return []
-           assignPlObjPropties (o:os) (c:cs) axn = do
+           assignPlObjPropties (o:os) axn = do
               newDia <- newEmptyMVar
               workerId <- forkIO $ objectPlotterThread o viewTgtGlobal newDia
               stableView <- newIORef Nothing
               ((ObjInPlot stableView newDia cl o, workerId) :)
-                     <$> assignPlObjPropties os cs' (axn + o^.axesNecessity)
-            where (cl, cs')
-                    | null (o^.inherentColours)  = (Just $ defColourScheme c, cs)
-                    | otherwise                  = (Nothing, c:cs)
-       (pObs, workerId) <- unzip <$> assignPlObjPropties givenPlotObjs defaultColourSeq 0
+                     <$> assignPlObjPropties os (axn + o^.axesNecessity)
+            where cl | TrueColour c₀:_ <- o^.inherentColours
+                                  = Just $ Dia.opaque c₀
+                     | SymbolicColour c₀:_ <- o^.inherentColours 
+                                  = Just $ defColourScheme c₀
+                     | otherwise  = Nothing
+       (pObs, workerId) <- unzip <$> assignPlObjPropties tintedPlotObjs 0
        return ( sortBy (comparing $ _occlusiveness . _originalPlotObject) pObs
               , forM_ workerId killThread )
    
@@ -1073,10 +1097,7 @@ plotWindow givenPlotObjs = runInBoundThread $ do
                                                          / (h * fromIntegral xResolution)
                        fontPts = 12
                        transform :: PlainGraphicsR2 -> PlainGraphicsR2
-                       transform = normaliseView . clr
-                         where clr | Just c <- plotObj^.plotObjColour
-                                                = Dia.lcA c . Dia.fcA c
-                                   | otherwise  = id
+                       transform = normaliseView
                      in do
                        renderedAnnot <- mapM (prerenderAnnotation antTK) _plotAnnotations
                        return (transform $ fold renderedAnnot <> _getPlot, objLegend)
@@ -1085,8 +1106,7 @@ plotWindow givenPlotObjs = runInBoundThread $ do
                  <- unzip . reverse <$> mapM renderComp (reverse plotObjs)
            let thePlot = mconcat thisPlots
            theLegend <- prerenderLegend (textTK 10 1) colourScheme
-                $ (\(g,l) -> (,) <$> l <*> [g^.plotObjColour]
-                  ) =<< zip plotObjs thisLegends
+                                   $ concat thisLegends
                    
            writeIORef dgStore $ ( theLegend & Dia.scaleX (0.1 / sqrt (fromIntegral xResolution))
                                             & Dia.scaleY (0.1 / sqrt (fromIntegral yResolution)) 

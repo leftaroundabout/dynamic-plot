@@ -7,8 +7,10 @@
 -- Stability   : experimental
 -- Portability : requires GHC>6 extensions
 
+{-# LANGUAGE FlexibleInstances #-}
+
 module Graphics.Dynamic.Plot.Colour ( module Graphics.Dynamic.Plot.Colour
-                                    , Colour, AColour, FColour, ColourScheme
+                                    , Colour, AColour, FColour, PColour, ColourScheme
                                     ) where
 
 
@@ -68,3 +70,20 @@ hueInvert :: FColour -> FColour
 hueInvert c = let (l,a,b) = cieLABView i c
               in cieLAB i l (1-a) (1-b)
  where i = Illum.a
+
+
+
+
+class HasColour c where
+  asAColourWith :: ColourScheme -> c -> AColour
+
+instance HasColour AColour where asAColourWith _ = id
+instance HasColour FColour where asAColourWith _ = DCol.opaque
+instance HasColour Colour where asAColourWith = ($)
+instance HasColour PColour where
+  asAColourWith sch (TrueColour c) = asAColourWith sch c
+  asAColourWith sch (SymbolicColour c) = asAColourWith sch c
+
+instance (HasColour a) => HasColour (Maybe a) where
+  asAColourWith sch Nothing = sch $ paler contrast
+  asAColourWith sch (Just c) = asAColourWith sch c
