@@ -44,6 +44,8 @@ module Graphics.Dynamic.Plot.R2 (
         , PlainGraphicsR2
         , shapePlot
         , diagramPlot
+        -- ** Multiple objects in one plot
+        , plotMultiple
         -- ** Computation in progress
         , plotLatest
         -- * Plot-object attributes
@@ -181,6 +183,16 @@ data DynamicPlottable' m = DynamicPlottable {
       , _dynamicPlot :: GraphWindowSpec -> m Plot
   }
 makeLenses ''DynamicPlottable'
+
+sustained :: Hask.Functor m
+         => Setter' (DynamicPlottable' m) a -> Setter' (DynamicPlottable' m) a
+sustained q = sets $ \f p -> p & q %~ f
+                               & futurePlots %~ fmap (sustained q %~ f)
+
+allDynamicPlot :: Hask.Functor m => Setter' (DynamicPlottable' m)
+                                            (GraphWindowSpec -> m Plot)
+allDynamicPlot = sustained dynamicPlot
+
 
 type DynamicPlottable = DynamicPlottable' Random.RVar
 
@@ -736,6 +748,14 @@ webbedSurfPlot toRGBA web = def & dynamicPlot .~ plotWeb
                                
 
 
+-- | Combine multiple objects in a single plot. Each will get an individual 'tint'
+--   (if applicable). This is also the default behaviour of 'plotWindow'.
+-- 
+--   To plot a family objects all with the /same/ (but automatically-chosen) tint,
+--   simply use 'plot' on the list, or combine them monoidally with '<>'.
+plotMultiple :: Plottable x => [x] -> DynamicPlottable
+plotMultiple = fold . chooseAutoTints . map plot
+
 instance (Plottable x) => Plottable (Latest x) where
   plot (Latest (ev₀ :| [])) = plot ev₀
   plot (Latest (ev₀ :| ev₁:evs))
@@ -862,26 +882,28 @@ legendName n obj = legendEntries %~ (LegendEntry (PlainText n) colour mempty :)
 
 -- | Colour this plot object in a fixed shade.
 tint :: DCol.Colour ℝ -> DynamicPlottable -> DynamicPlottable
-tint col = inherentColours .~ [TrueColour col]
-       >>> dynamicPlot %~ fmap (fmap $ getPlot %~ Dia.lc col . Dia.fc col)
+tint col = sustained inherentColours .~ [TrueColour col]
+       >>> allDynamicPlot %~ fmap (fmap $ getPlot %~ Dia.lc col . Dia.fc col)
+       >>> sustained legendEntries %~ map
+                       (plotObjRepresentativeColour ?~ TrueColour col)
 
 -- | Allow the object to be automatically assigned a colour that's otherwise
 --   unused in the plot. (This is the default for most plot objects.)
 autoTint :: DynamicPlottable -> DynamicPlottable
-autoTint = inherentColours .~ []
+autoTint = sustained inherentColours .~ []
 
 -- | Assign each object an individual colour, if applicable.
 chooseAutoTints :: [DynamicPlottable] -> [DynamicPlottable]
 chooseAutoTints = go defaultColourSeq
  where go (c:cs) (o:os)
         | null $ o^.inherentColours
-               = (o & inherentColours.~[SymbolicColour c]
-                    & dynamicPlot %~
+               = (o & sustained inherentColours.~[SymbolicColour c]
+                    & allDynamicPlot %~
                        (\plotF gwSpec ->
                           let ac = asAColourWith (colourScheme gwSpec) c
                           in fmap (getPlot %~ Dia.lcA ac . Dia.fcA ac) $ plotF gwSpec)
-                    & legendEntries %~ map
-                       (plotObjRepresentativeColour .~ Just (SymbolicColour c))
+                    & sustained legendEntries %~ map
+                       (plotObjRepresentativeColour ?~ SymbolicColour c)
                  ) : go cs os
        go cs (o:os) = o : go cs os
        go _ [] = []
@@ -1436,7 +1458,7 @@ autoDashLine w p q = simpleLine' (max 1 w) p q
 
 
 tweakPrerendered :: (PlainGraphicsR2->PlainGraphicsR2) -> DynamicPlottable->DynamicPlottable
-tweakPrerendered f = dynamicPlot %~ (fmap tweak .)
+tweakPrerendered f = allDynamicPlot %~ (fmap tweak .)
  where tweak = getPlot %~ f
 
 opacityFactor :: Double -> DynamicPlottable -> DynamicPlottable
