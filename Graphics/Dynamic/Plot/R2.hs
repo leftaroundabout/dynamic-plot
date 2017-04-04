@@ -1317,7 +1317,7 @@ linregressionPlot = lrp (linearManifoldWitness, dualSpaceWitness)
                                         :: Shade (ℝ,ℝ))
                               | (x, Shade' y ey) <- dataPts ])
                         (uncertainFnPlot mfun shm)
-        where (mBest, mDevs) = linearRegressionWVar (mfun . (bcx.+~^))
+        where (mBest, mDevs) = linearRegressionWExtremeVar (mfun . (bcx.+~^))
                                   [ (δx,(fromInterior y,ey))
                                   | (x,Shade' y ey)<-dataPts
                                   , let Just δx = x.-~.bcx ]
