@@ -1324,7 +1324,7 @@ linregressionPlot = lrp (linearManifoldWitness, dualSpaceWitness)
               Just bcx = (pointsBarycenter . NE.fromList $ fst<$>dataPts)
               shm :: Shade' m
               shm@(Shade' _ em) = dualShade . coverAllAround mBest
-                                    $ convexPolytopeRepresentatives mDevs
+                                    $ symmetricPolytopeOuterVertices mDevs
 
 -- | Plot a continuous, “parametric function”, i.e. mapping the real line to a path in ℝ².
 paramPlot :: (∀ m . ( WithField ℝ PseudoAffine m, SimpleSpace (Needle m) )
