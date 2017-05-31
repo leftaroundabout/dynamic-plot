@@ -611,10 +611,10 @@ instance Plottable (Shaded ℝ ℝ) where
                          = ((x,δx),yq) : ((x',δx),yq') : tail (ccδs xyqs)
                  where δx = (x'' - x)/4
          [xmin, ymin, xmax, ymax]
-            = [minimum, maximum]<*>[_topological<$>allLeaves, _untopological<$>allLeaves]
+            = [minimum, maximum]<*>[fst<$>allLeaves, snd<$>allLeaves]
          lLoop ps@(p:_) = Dia.fromVertices $ ps++[p]
          leafPoints = sortBy (comparing (^._x))
-                         $ (\(x`WithAny`y) -> y^&x) <$> allLeaves
+                         $ (\(x,y) -> y^&x) <$> allLeaves
          allLeaves = onlyLeaves tr
   plot _ = def
 
