@@ -80,6 +80,7 @@ import Diagrams.Prelude ((^&), (&), _x, _y)
 import qualified Diagrams.Prelude as Dia
 import qualified Diagrams.TwoD.Size as Dia
 import qualified Diagrams.TwoD.Types as DiaTypes
+import Diagrams.TwoD.Types (V2(V2))
 import Diagrams.BoundingBox (BoundingBox)
 import qualified Diagrams.BoundingBox as DiaBB
 import qualified Diagrams.Backend.Cairo as Cairo
@@ -696,6 +697,25 @@ instance Plottable (PointsWeb (ℝ,ℝ) (Shade (CSp.Colour ℝ))) where
              = JPix.promotePixel . (CSp.quantiseColour :: CSp.Colour ℝ -> JPix.PixelRGB8)
                                        <$> Random.rvar c
          toRGBA _ = return $ JPix.PixelRGBA8 0 0 0 0
+
+instance Plottable (Cutplane (ℝ,ℝ)) where
+  plot (Cutplane (x₀,y₀) (Stiefel1 (dy,dx)))
+    = plot (Cutplane (V2 x₀ y₀) (Stiefel1 (V2 dy dx)))
+
+instance Plottable (Cutplane ℝ²) where
+  plot (Cutplane (V2 x₀ y₀) (Stiefel1 (V2 dy dx)))
+          = def & autoTint
+                & axesNecessity .~ 1
+                & dynamicPlot .~ pure . plot
+   where plot grWS@(GraphWindowSpecR2{..}) = mkPlot $ simpleLine p q
+          where [p,q]
+                 | abs (dy*(rBound-lBound)) > abs (dx*(tBound-bBound))
+                    = [xf bBound ^& bBound, xf tBound ^& tBound]
+                 | otherwise
+                    = [lBound ^& yf lBound, rBound ^& yf rBound]
+         yf x = y₀ - dy/dx * (x-x₀)
+         xf y = x₀ - dx/dy * (y-y₀)
+
 
 webbedSurfPlot :: Geodesic a
        => (Maybe a -> Random.RVar JPix.PixelRGBA8)
