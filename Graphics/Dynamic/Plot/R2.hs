@@ -61,6 +61,7 @@ module Graphics.Dynamic.Plot.R2 (
         -- * Viewport
         -- ** View selection
         , xInterval, yInterval, forceXRange, forceYRange
+        , unitAspect
         -- ** View dependence
         , ViewXCenter(..), ViewYCenter(..), ViewWidth(..), ViewHeight(..)
         , ViewXResolution(..), ViewYResolution(..)
@@ -178,6 +179,7 @@ type GraphWindowSpec = GraphWindowSpecR2
 
 data DynamicPlottable' m = DynamicPlottable { 
         _relevantRange_x, _relevantRange_y :: RangeRequest R
+      , _viewportConstraint :: GraphWindowSpec -> GraphWindowSpec
       , _inherentColours :: [PColour]
       , _occlusiveness :: Double
          -- ^ How surface-occupying the plot is.
@@ -876,15 +878,17 @@ mkAnnotatedPlot :: [Annotation] -> PlainGraphicsR2 -> Plot
 mkAnnotatedPlot ans = Plot ans
 
 instance Semigroup DynamicPlottable where
-  DynamicPlottable rx₁ ry₁ tm₁ oc₁ ax₁ dl₁ le₁ fu₁ dp₁
-    <> DynamicPlottable rx₂ ry₂ tm₂ oc₂ ax₂ dl₂ le₂ fu₂ dp₂
+  DynamicPlottable rx₁ ry₁ vpc₁ tm₁ oc₁ ax₁ dl₁ le₁ fu₁ dp₁
+    <> DynamicPlottable rx₂ ry₂ vpc₂ tm₂ oc₂ ax₂ dl₂ le₂ fu₂ dp₂
         = DynamicPlottable
-   (rx₁<>rx₂) (ry₁<>ry₂) (tm₁++tm₂) (oc₁+oc₂) (ax₁+ax₂) (max dl₁ dl₂)
+   (rx₁<>rx₂) (ry₁<>ry₂) (vpc₁.vpc₂) (tm₁++tm₂)
+          (oc₁+oc₂) (ax₁+ax₂) (max dl₁ dl₂)
                              (le₁++le₂) ((<>)<$>fu₁<*>fu₂) (liftA2(<>)<$>dp₁<*>dp₂) 
 instance Monoid DynamicPlottable where
   mempty = DynamicPlottable
              mempty  -- don't request any range
              mempty
+             id      -- don't enforce anything about the viewport
              []      -- no colours
              0       -- neither obscures anything nor has details that could be obscured
              0       -- don't need axis (but don't mind them either)
@@ -1024,6 +1028,7 @@ plotWindow givenPlotObjs = runInBoundThread $ do
    viewTgt <- newIORef =<< readIORef viewState
    viewTgtGlobal <- newMVar =<< readIORef viewState
    screenResolution <- newIORef (640, 480)
+   let viewConstraint = flip (foldr _viewportConstraint) givenPlotObjs
    
    dgStore <- newIORef mempty
    
@@ -1058,7 +1063,8 @@ plotWindow givenPlotObjs = runInBoundThread $ do
        drawA <- GTK.drawingAreaNew
        GTK.onExpose drawA $ \_ -> do
                 (canvasX,canvasY) <- GTK.widgetGetSize drawA
-                modifyIORef viewTgt $ \view -> view{ xResolution = fromIntegral canvasX
+                modifyIORef viewTgt
+                   $ \view -> viewConstraint $ view{ xResolution = fromIntegral canvasX
                                                    , yResolution = fromIntegral canvasY }
 
                 dia <- readIORef dgStore
@@ -1229,10 +1235,17 @@ objectPlotterThread pl₀ viewVar diaVar = loop pl₀ where
        Nothing  -> loop pl
     
 
+-- | Require that both coordinate axes are zoomed the same way, such that e.g.
+--   the unit circle will appear as an actual circle.
+unitAspect :: DynamicPlottable -> DynamicPlottable
+unitAspect = viewportConstraint . mapped . windowDataAspect .~ 1
 
 
 autoDefaultView :: [DynamicPlottable] -> GraphWindowSpec
-autoDefaultView graphs = GraphWindowSpecR2 l r b t defResX defResY defaultColourScheme
+autoDefaultView graphs =
+         foldr _viewportConstraint
+            (GraphWindowSpecR2 l r b t defResX defResY defaultColourScheme)
+            graphs
   where (xRange, yRange) = foldMap (_relevantRange_x &&& _relevantRange_y) graphs
         ((l,r), (b,t)) = ( xRange `dependentOn` yRange
                          , yRange `dependentOn` xRange )

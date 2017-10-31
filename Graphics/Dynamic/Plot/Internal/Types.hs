@@ -390,6 +390,18 @@ windowDiameter = lens
             in GraphWindowSpecR2 (cx - η*rx) (cx + η*rx) (cy - η*ry) (cy + η*ry)
                                  xRes yRes colSch
     )
+windowDataAspect :: Lens' GraphWindowSpecR2 R
+windowDataAspect = lens
+    (\(GraphWindowSpecR2 l r b t xRes yRes _) -> (r-l)/(t-b)
+                                                * fromIntegral yRes/fromIntegral xRes)
+    (\(GraphWindowSpecR2 l r b t xRes yRes colSch) βNew
+         -> let cx = (l+r)/2; rx = (r-l)/2
+                cy = (b+t)/2; ry = (t-b)/2
+                βOld = (r-l)/(t-b) * fromIntegral yRes/fromIntegral xRes
+                ψ = sqrt $ βNew / βOld
+            in GraphWindowSpecR2 (cx - rx*ψ) (cx + rx*ψ) (cy - ry/ψ) (cy + ry/ψ)
+                                 xRes yRes colSch
+    )
 
 
 
