@@ -1520,14 +1520,18 @@ dynamicAxes = def
               dirLabels = [ if dir^._x > dir^._y
                              then Annotation (TextAnnotation txt
                                               $ TextAlignment AlignMid AlignBottom)
-                                             (ExactPlace $ rBound^&0)
+                                             (ExactPlace $ xFar^&0)
                                              False
                              else Annotation (TextAnnotation txt
                                               $ TextAlignment AlignBottom AlignMid)
-                                             (ExactPlace $ 0^&tBound)
+                                             (ExactPlace $ 0^&yFar)
                                              False
                           | (dir,lbl) <- poLabels
                           , let txt = PlainText lbl
+                                xFar = if rBound > abs lBound/2
+                                        then rBound else lBound
+                                yFar = if tBound > abs bBound/2
+                                        then tBound else bBound
                           ]
        zeroLine p1 p2 = simpleLine p1 p2 & Dia.lc Dia.grey
        renderClass crd (AxisClass axes strength _)

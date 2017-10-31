@@ -173,10 +173,10 @@ prerenderAnnotation (DiagramTK{ textTools = TextTK{..}, viewScope = GraphWindowS
                            AlignMid    -> (lBound + w/2, rBound - w/2)
                            AlignTop    -> (lBound + w  , rBound      )
                          (b', t') = case vAlign of
-                           AlignBottom -> (bBound'      , tBound - h  )
-                           AlignMid    -> (bBound' + h/2, tBound - h/2)
-                           AlignTop    -> (bBound' + h  , tBound      )
-                         w = ζx * width; h = ζy * height
+                           AlignBottom -> (bBound'      , tBound - 2*h  )
+                           AlignMid    -> (bBound' + h/2, tBound - 3*h/2)
+                           AlignTop    -> (bBound' + h  , tBound - h    )
+                         w = ζx * width; h = 1.5 * ζy * height
                          bBound' = bBound + lineHeight*ζy
               return . Dia.translate p . Dia.scaleX ζx . Dia.scaleY ζy 
                      $ Dia.lc Dia.grey fullText
