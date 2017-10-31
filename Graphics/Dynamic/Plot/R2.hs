@@ -66,9 +66,13 @@ module Graphics.Dynamic.Plot.R2 (
         , ViewXResolution(..), ViewYResolution(..)
         -- * Auxiliary plot objects
         , dynamicAxes, noDynamicAxes
-        -- * The plot type
+        -- * Types
+        -- ** The plot type
         , DynamicPlottable
         , tweakPrerendered
+        -- ** Viewport choice
+        , ViewportConfig
+        , xResV, yResV
         ) where
 
 import Graphics.Dynamic.Plot.Colour
@@ -959,13 +963,21 @@ atLeastInterval' = OtherDimDependantRange . const
 --   the result as-is.
 --
 --   If the objects contain animations, only the initial frame will be rendered.
-plotPrerender :: [DynamicPlottable] -> IO PlainGraphicsR2
-plotPrerender [] = plotPrerender [dynamicAxes]
-plotPrerender l = do
-   renderd <- Random.runRVar (plotMultiple l' ^. dynamicPlot $ viewport) Random.StdRandom
+plotPrerender :: ViewportConfig -> [DynamicPlottable] -> IO PlainGraphicsR2
+plotPrerender vpc [] = plotPrerender vpc [dynamicAxes]
+plotPrerender vpc l = do
+   renderd <- Random.runRVar (plotMultiple l' ^. dynamicPlot
+                                 $ viewport{ xResolution = vpc^.xResV
+                                           , yResolution = vpc^.yResV })
+                             Random.StdRandom
    annot <- renderAnnotationsForView viewport (renderd^.plotAnnotations)
    return $ annot <> renderd^.getPlot
- where viewport = autoDefaultView l'
+          & Dia.withEnvelope (Dia.rect w h
+                               & Dia.alignTL
+                               & Dia.moveTo (Dia.P $ V2 lBound tBound)
+                                   :: PlainGraphicsR2)
+ where viewport@(GraphWindowSpecR2{..}) = autoDefaultView l'
+       w = rBound - lBound; h = tBound - bBound
        l' = l ++ if axesNeed>0
                   then [dynamicAxes]
                   else []

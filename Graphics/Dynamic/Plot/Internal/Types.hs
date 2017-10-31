@@ -26,6 +26,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TemplateHaskell            #-}
 
 module Graphics.Dynamic.Plot.Internal.Types where
 
@@ -49,6 +50,7 @@ import Control.Arrow.Constrained
 import Control.Monad.Constrained
 
 import Control.Lens hiding ((...), (<.>))
+import Control.Lens.TH
 
 import qualified Data.Vector as Arr
 import Data.List (sort)
@@ -65,6 +67,7 @@ import Data.Semigroup
 import Data.Tagged
 
 import Control.DeepSeq
+import Data.Default
 
 type R2 = Dia.V2 Double
 type P2 = Dia.P2 Double
@@ -480,3 +483,12 @@ newtype Latest a = Latest { getLatestOf :: NonEmpty a }
  deriving (Hask.Functor)
 
 
+
+
+data ViewportConfig = ViewportConfig {
+      _xResV, _yResV :: Int
+    }
+makeLenses ''ViewportConfig
+
+instance Default ViewportConfig where
+  def = ViewportConfig 640 480
