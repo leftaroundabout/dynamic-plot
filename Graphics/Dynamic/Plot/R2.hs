@@ -66,7 +66,7 @@ module Graphics.Dynamic.Plot.R2 (
         , ViewXCenter(..), ViewYCenter(..), ViewWidth(..), ViewHeight(..)
         , ViewXResolution(..), ViewYResolution(..)
         -- * Auxiliary plot objects
-        , dynamicAxes, noDynamicAxes
+        , dynamicAxes, noDynamicAxes, xAxisLabel, yAxisLabel
         -- * Types
         -- ** The plot type
         , DynamicPlottable
@@ -177,6 +177,8 @@ data RangeRequest r
 
 type GraphWindowSpec = GraphWindowSpecR2
 
+type AxisLabel = (ℝ², String)
+
 data DynamicPlottable' m = DynamicPlottable { 
         _relevantRange_x, _relevantRange_y :: RangeRequest R
       , _viewportConstraint :: GraphWindowSpec -> GraphWindowSpec
@@ -189,10 +191,14 @@ data DynamicPlottable' m = DynamicPlottable {
       , _axesNecessity :: Necessity
       , _frameDelay :: NominalDiffTime
       , _legendEntries :: [LegendEntry]
+      , _axisLabelRequests :: [AxisLabel]
       , _futurePlots :: Maybe (DynamicPlottable' m)
-      , _dynamicPlot :: GraphWindowSpec -> m Plot
+      , _dynamicPlotWithAxisLabels :: [AxisLabel] -> GraphWindowSpec -> m Plot
   }
 makeLenses ''DynamicPlottable'
+
+dynamicPlot :: Setter' (DynamicPlottable' m) (GraphWindowSpec -> m Plot)
+dynamicPlot = dynamicPlotWithAxisLabels . mapped
 
 sustained :: Hask.Functor m
          => Setter' (DynamicPlottable' m) a -> Setter' (DynamicPlottable' m) a
@@ -206,7 +212,7 @@ allDynamicPlot = sustained dynamicPlot
 
 type DynamicPlottable = DynamicPlottable' Random.RVar
 
-type AnnotPlot = (Plot, [LegendEntry])
+type AnnotPlot = (Plot, ([LegendEntry],[AxisLabel]))
 
 data ObjInPlot = ObjInPlot {
         _lastStableView :: IORef (Maybe (GraphWindowSpec, AnnotPlot))
@@ -878,12 +884,13 @@ mkAnnotatedPlot :: [Annotation] -> PlainGraphicsR2 -> Plot
 mkAnnotatedPlot ans = Plot ans
 
 instance Semigroup DynamicPlottable where
-  DynamicPlottable rx₁ ry₁ vpc₁ tm₁ oc₁ ax₁ dl₁ le₁ fu₁ dp₁
-    <> DynamicPlottable rx₂ ry₂ vpc₂ tm₂ oc₂ ax₂ dl₂ le₂ fu₂ dp₂
+  DynamicPlottable rx₁ ry₁ vpc₁ tm₁ oc₁ ax₁ dl₁ le₁ al₁ fu₁ dp₁
+    <> DynamicPlottable rx₂ ry₂ vpc₂ tm₂ oc₂ ax₂ dl₂ le₂ al₂ fu₂ dp₂
         = DynamicPlottable
    (rx₁<>rx₂) (ry₁<>ry₂) (vpc₁.vpc₂) (tm₁++tm₂)
           (oc₁+oc₂) (ax₁+ax₂) (max dl₁ dl₂)
-                             (le₁++le₂) ((<>)<$>fu₁<*>fu₂) (liftA2(<>)<$>dp₁<*>dp₂) 
+          (le₁++le₂) (al₁++al₂)
+          ((<>)<$>fu₁<*>fu₂) (liftA2(liftA2(<>))<$>dp₁<*>dp₂) 
 instance Monoid DynamicPlottable where
   mempty = DynamicPlottable
              mempty  -- don't request any range
@@ -894,8 +901,9 @@ instance Monoid DynamicPlottable where
              0       -- don't need axis (but don't mind them either)
              (1/20)  -- 20 fps is at the moment the fastest enabled refresh rate anyway
              []      -- no legend entries
+             []      -- no axis labels
              mempty  -- no time-evolution
-             (const $ pure mempty)
+             (const . const $ pure mempty)
   mappend = (<>)
 instance Default DynamicPlottable where def = mempty
 
@@ -970,8 +978,9 @@ atLeastInterval' = OtherDimDependantRange . const
 plotPrerender :: ViewportConfig -> [DynamicPlottable] -> IO PlainGraphicsR2
 plotPrerender vpc [] = plotPrerender vpc [dynamicAxes]
 plotPrerender vpc l = do
-   renderd <- Random.runRVar (plotMultiple l' ^. dynamicPlot
-                                 $ viewport{ xResolution = vpc^.xResV
+   renderd <- Random.runRVar ((plotMultiple l' ^. dynamicPlotWithAxisLabels)
+                                   axLabels
+                                   viewport{ xResolution = vpc^.xResV
                                            , yResolution = vpc^.yResV })
                              Random.StdRandom
    annot <- renderAnnotationsForView viewport (renderd^.plotAnnotations)
@@ -985,6 +994,7 @@ plotPrerender vpc l = do
        l' = l ++ if axesNeed>0
                   then [dynamicAxes]
                   else []
+       axLabels = concat $ _axisLabelRequests<$>l
        axesNeed = sum $ _axesNecessity<$>l
 
 -- | Plot some plot objects to a new interactive GTK window. Useful for a quick
@@ -1026,7 +1036,8 @@ plotWindow givenPlotObjs = runInBoundThread $ do
    
    viewState <- newIORef $ autoDefaultView tintedPlotObjs
    viewTgt <- newIORef =<< readIORef viewState
-   viewTgtGlobal <- newMVar =<< readIORef viewState
+   let objAxisLabels = concat $ _axisLabelRequests<$>givenPlotObjs
+   viewTgtGlobal <- newMVar . (,objAxisLabels) =<< readIORef viewState
    screenResolution <- newIORef (640, 480)
    let viewConstraint = flip (foldr _viewportConstraint) givenPlotObjs
    
@@ -1177,7 +1188,7 @@ plotWindow givenPlotObjs = runInBoundThread $ do
                  <- unzip . reverse <$> mapM renderComp (reverse plotObjs)
            let thePlot = mconcat thisPlots
            theLegend <- prerenderLegend (textTK 10 1) colourScheme
-                                   $ concat thisLegends
+                                   $ concat (fst<$>thisLegends)
                    
            writeIORef dgStore $ ( theLegend & Dia.scaleX (0.1 / sqrt (fromIntegral xResolution))
                                             & Dia.scaleY (0.1 / sqrt (fromIntegral yResolution)) 
@@ -1192,7 +1203,7 @@ plotWindow givenPlotObjs = runInBoundThread $ do
            writeIORef lastFrameTime t
    
            do vt <- readIORef viewTgt
-              modifyMVar_ viewTgtGlobal . const $ return vt
+              modifyMVar_ viewTgtGlobal $ return . first (const vt)
               modifyIORef viewState $ \vo -> 
                    let a%b = let η = min 1 $ 2 * realToFrac δt in η*a + (1-η)*b 
                    in GraphWindowSpecR2 (lBound vt % lBound vo) (rBound vt % rBound vo)
@@ -1220,15 +1231,17 @@ plotWindow givenPlotObjs = runInBoundThread $ do
 
 
 objectPlotterThread :: DynamicPlottable
-                       -> MVar GraphWindowSpec
-                       -> MVar (GraphWindowSpec, (Plot, [LegendEntry]))
+                       -> MVar (GraphWindowSpec, [AxisLabel])
+                       -> MVar (GraphWindowSpec, AnnotPlot)
                        -> IO ()
 objectPlotterThread pl₀ viewVar diaVar = loop pl₀ where
  loop pl = do
     tPrev <- getCurrentTime
-    view <- readMVar viewVar
-    diagram <- evaluate =<< Random.runRVar (pl^.dynamicPlot $ view) Random.StdRandom
-    putMVar diaVar (view, (diagram, pl^.legendEntries))
+    (view, labels) <- readMVar viewVar
+    diagram <- evaluate =<< Random.runRVar
+                 ((pl^.dynamicPlotWithAxisLabels) labels view)
+                 Random.StdRandom
+    putMVar diaVar (view, (diagram, (pl^.legendEntries, pl^.axisLabelRequests)))
     waitTill $ addUTCTime (pl^.frameDelay) tPrev
     case pl^.futurePlots of
        Just pl' -> loop pl'
@@ -1484,14 +1497,15 @@ dynamicAxes :: DynamicPlottable
 dynamicAxes = def
              & axesNecessity .~ superfluent
              & occlusiveness .~ 1
-             & dynamicPlot .~ pure . plot
- where plot gwSpec@(GraphWindowSpecR2{..}) = Plot labels lines
+             & dynamicPlotWithAxisLabels .~ \lbls -> pure . plot lbls
+ where plot poLabels gwSpec@(GraphWindowSpecR2{..}) = Plot (dirLabels++tickLabels) lines
         where (DynamicAxes yAxCls xAxCls) = crtDynamicAxes gwSpec
               lines = zeroLine (lBound^&0) (rBound^&0)  `provided`(bBound<0 && tBound>0)
                    <> zeroLine (0^&bBound) (0^&tBound)  `provided`(lBound<0 && rBound>0)
                    <> foldMap (renderClass $ \x -> (x^&bBound, x^&tBound)) yAxCls
                    <> foldMap (renderClass $ \y -> (lBound^&y, rBound^&y)) xAxCls
-              labels = do (dirq, hAlign, vAlign, acl) <- zip4 [\x -> x^&0, \y -> 0^&y ] 
+              tickLabels
+                     = do (dirq, hAlign, vAlign, acl) <- zip4 [\x -> x^&0, \y -> 0^&y ] 
                                                               [AlignMid  , AlignTop   ]
                                                               [AlignTop  , AlignMid   ]
                                                               [yAxCls    , xAxCls     ]
@@ -1503,6 +1517,18 @@ dynamicAxes = def
                                      place = ExactPlace $ dirq z
                                      align = TextAlignment hAlign vAlign
                           prepAnnotation =<< vaxs
+              dirLabels = [ if dir^._x > dir^._y
+                             then Annotation (TextAnnotation txt
+                                              $ TextAlignment AlignMid AlignBottom)
+                                             (ExactPlace $ rBound^&0)
+                                             False
+                             else Annotation (TextAnnotation txt
+                                              $ TextAlignment AlignBottom AlignMid)
+                                             (ExactPlace $ 0^&tBound)
+                                             False
+                          | (dir,lbl) <- poLabels
+                          , let txt = PlainText lbl
+                          ]
        zeroLine p1 p2 = simpleLine p1 p2 & Dia.lc Dia.grey
        renderClass crd (AxisClass axes strength _)
           = foldMap (uncurry simpleLine . crd . axisPosition) axes
@@ -1512,6 +1538,11 @@ dynamicAxes = def
 noDynamicAxes :: DynamicPlottable
 noDynamicAxes = def & axesNecessity .~ superfluent
 
+xAxisLabel :: String -> DynamicPlottable
+xAxisLabel str = def & axisLabelRequests .~ [(1^&0, str)]
+
+yAxisLabel :: String -> DynamicPlottable
+yAxisLabel str = def & axisLabelRequests .~ [(0^&1, str)]
 
 
 simpleLine :: P2 -> P2 -> PlainGraphicsR2
@@ -1575,7 +1606,8 @@ instance (Plottable p) => Plottable (ViewXCenter -> p) where
                      (\g -> deescalate relevantRange_y g . plot . f . cxI =<< g)
                & inherentColours .~ fcxVoid^.inherentColours
                & axesNecessity .~ fcxVoid^.axesNecessity
-               & dynamicPlot .~ \g -> _dynamicPlot (plot . f $ cx g) g
+               & dynamicPlotWithAxisLabels .~
+                     \lbls g -> _dynamicPlotWithAxisLabels (plot . f $ cx g) lbls g
     where cx (GraphWindowSpecR2{..}) = ViewXCenter $ (lBound+rBound)/2
           cxI (Interval l r) = ViewXCenter $ (l+r)/2
           fcxVoid = plot . f $ ViewXCenter 0.23421  -- Yup, it's magic.
@@ -1588,7 +1620,8 @@ instance (Plottable p) => Plottable (ViewYCenter -> p) where
                      (\g -> deescalate relevantRange_x g . plot . f . cyI =<< g)
                & inherentColours .~ fcyVoid^.inherentColours
                & axesNecessity .~ fcyVoid^.axesNecessity
-               & dynamicPlot .~ \g -> _dynamicPlot (plot . f $ cy g) g
+               & dynamicPlotWithAxisLabels .~
+                     \lbls g -> _dynamicPlotWithAxisLabels (plot . f $ cy g) lbls g
     where cy (GraphWindowSpecR2{..}) = ViewYCenter $ (bBound+tBound)/2
           cyI (Interval b t) = ViewYCenter $ (b+t)/2
           fcyVoid = plot . f $ ViewYCenter 0.319421  -- Alright, alright... the idea is to avoid exact equality with zero or any other number that might come up in some plot object, since such an equality can lead to div-by-zero problems.
@@ -1601,7 +1634,8 @@ instance (Plottable p) => Plottable (ViewWidth -> p) where
                      (\g -> deescalate relevantRange_y g . plot . f . wI =<< g)
                & inherentColours .~ fwVoid^.inherentColours
                & axesNecessity .~ fwVoid^.axesNecessity
-               & dynamicPlot .~ \g -> _dynamicPlot (plot . f $ w g) g
+               & dynamicPlotWithAxisLabels .~
+                     \lbls g -> _dynamicPlotWithAxisLabels (plot . f $ w g) lbls g
     where w (GraphWindowSpecR2{..}) = ViewWidth $ rBound - lBound
           wI (Interval l r) = ViewWidth $ r - l
           fwVoid = plot . f $ ViewWidth 2.142349
@@ -1614,7 +1648,8 @@ instance (Plottable p) => Plottable (ViewHeight -> p) where
                      (\g -> deescalate relevantRange_x g . plot . f . hI =<< g)
                & inherentColours .~ fhVoid^.inherentColours
                & axesNecessity .~ fhVoid^.axesNecessity
-               & dynamicPlot .~ \g -> _dynamicPlot (plot . f $ h g) g
+               & dynamicPlotWithAxisLabels .~
+                     \lbls g -> _dynamicPlotWithAxisLabels (plot . f $ h g) lbls g
     where h (GraphWindowSpecR2{..}) = ViewHeight $ tBound - bBound
           hI (Interval b t) = ViewHeight $ t - b
           fhVoid = plot . f $ ViewHeight 1.494213
