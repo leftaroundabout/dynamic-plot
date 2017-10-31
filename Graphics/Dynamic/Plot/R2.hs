@@ -1,6 +1,6 @@
 -- |
 -- Module      : Graphics.Dynamic.Plot.R2
--- Copyright   : (c) Justus Sagemüller 2013-2015
+-- Copyright   : (c) Justus Sagemüller 2013-2017
 -- License     : GPL v3
 -- 
 -- Maintainer  : (@) sagemueller $ geo.uni-koeln.de
@@ -30,8 +30,11 @@
 {-# LANGUAGE TemplateHaskell            #-}
 
 module Graphics.Dynamic.Plot.R2 (
-        -- * Interactive display
-          plotWindow
+        -- * Display
+        -- ** Static
+          plotPrerender
+        -- ** Interactive
+        , plotWindow
         -- * Plottable objects
         -- ** Class  
         , Plottable(..)
@@ -951,6 +954,22 @@ atLeastInterval' = OtherDimDependantRange . const
 
 
                 
+-- | Render a single view of a collection of plottable objects. This can be
+--   used the same way as 'plotWindow', but does not open any GTK but gives
+--   the result as-is.
+--
+--   If the objects contain animations, only the initial frame will be rendered.
+plotPrerender :: [DynamicPlottable] -> IO PlainGraphicsR2
+plotPrerender [] = plotPrerender [dynamicAxes]
+plotPrerender l = do
+   renderd <- Random.runRVar (plotMultiple l' ^. dynamicPlot $ viewport) Random.StdRandom
+   annot <- renderAnnotationsForView viewport (renderd^.plotAnnotations)
+   return $ annot <> renderd^.getPlot
+ where viewport = autoDefaultView l'
+       l' = l ++ if axesNeed>0
+                  then [dynamicAxes]
+                  else []
+       axesNeed = sum $ _axesNecessity<$>l
 
 -- | Plot some plot objects to a new interactive GTK window. Useful for a quick
 --   preview of some unknown data or real-valued functions; things like selection
