@@ -1250,8 +1250,8 @@ objectPlotterThread pl₀ viewVar diaVar = loop pl₀ where
 
 -- | Require that both coordinate axes are zoomed the same way, such that e.g.
 --   the unit circle will appear as an actual circle.
-unitAspect :: DynamicPlottable -> DynamicPlottable
-unitAspect = viewportConstraint . mapped . windowDataAspect .~ 1
+unitAspect :: DynamicPlottable
+unitAspect = def & viewportConstraint . mapped . windowDataAspect .~ 1
 
 
 autoDefaultView :: [DynamicPlottable] -> GraphWindowSpec
