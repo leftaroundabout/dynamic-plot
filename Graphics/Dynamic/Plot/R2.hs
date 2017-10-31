@@ -1131,18 +1131,10 @@ plotWindow givenPlotObjs = runInBoundThread $ do
                            return $ snd <$> newDia
                    case plt of
                     Nothing -> return mempty
-                    Just (Plot{..}, objLegend) -> let 
-                       antTK = DiagramTK { viewScope = currentView 
-                                         , textTools = textTK txtSize aspect }
-                       txtSize = h * fontPts / fromIntegral yResolution
-                       aspect  = w * fromIntegral yResolution
-                                                         / (h * fromIntegral xResolution)
-                       fontPts = 12
-                       transform :: PlainGraphicsR2 -> PlainGraphicsR2
-                       transform = normaliseView
-                     in do
-                       renderedAnnot <- mapM (prerenderAnnotation antTK) _plotAnnotations
-                       return (transform $ fold renderedAnnot <> _getPlot, objLegend)
+                    Just (Plot{..}, objLegend) -> do
+                       renderedAnnot
+                           <- renderAnnotationsForView currentView _plotAnnotations
+                       return (normaliseView $ renderedAnnot <> _getPlot, objLegend)
 
            (thisPlots, thisLegends)
                  <- unzip . reverse <$> mapM renderComp (reverse plotObjs)
@@ -1227,6 +1219,18 @@ autoDefaultView graphs = GraphWindowSpecR2 l r b t defResX defResY defaultColour
         addMargin (Interval a b) = (a - q, b + q)
             where q = (b - a) / 6
   
+
+renderAnnotationsForView :: GraphWindowSpecR2 -> [Annotation] -> IO PlainGraphicsR2
+renderAnnotationsForView viewport@GraphWindowSpecR2{..}
+           = fmap mconcat . mapM (prerenderAnnotation antTK)
+ where antTK = DiagramTK { viewScope = viewport 
+                         , textTools = TextTK defaultTxtStyle txtSize aspect 0.2 0.2 }
+       txtSize = h * fontPts / fromIntegral yResolution
+       aspect  = w * fromIntegral yResolution
+                               / (h * fromIntegral xResolution)
+       w = (rBound - lBound)/2; h = (tBound - bBound)/2
+       fontPts = 12
+
 
 
 defResX, defResY :: Integral i => i
