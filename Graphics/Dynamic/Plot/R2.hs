@@ -912,9 +912,8 @@ instance Default DynamicPlottable where def = mempty
 -- | Set the caption for this plot object that should appear in the
 --   plot legend.
 legendName :: String -> DynamicPlottable -> DynamicPlottable
-legendName n obj = legendEntries %~ (LegendEntry (PlainText n) colour mempty :)
-           >>> futurePlots %~ fmap (legendName n)
-                           $ obj
+legendName n obj = sustained legendEntries %~ (LegendEntry (PlainText n) colour mempty :)
+                   $ obj
  where colour = case obj^.inherentColours of
           (c₀:_) -> Just c₀
           _ -> Nothing
@@ -1692,5 +1691,4 @@ waitTill t = do
 --   <http://hackage.haskell.org/package/thyme-0.3.5.5/docs/Data-Thyme-Clock.html#t:NominalDiffTime NominalDiffTime> from the <http://hackage.haskell.org/package/thyme thyme>
 --   library soon.
 plotDelay :: NominalDiffTime -> DynamicPlottable -> DynamicPlottable
-plotDelay dly = frameDelay .~ dly
-            >>> futurePlots %~ fmap (plotDelay dly)
+plotDelay dly = sustained frameDelay .~ dly
