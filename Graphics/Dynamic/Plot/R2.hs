@@ -62,7 +62,9 @@ module Graphics.Dynamic.Plot.R2 (
         -- ** View selection
         , xInterval, yInterval, forceXRange, forceYRange
         , unitAspect
-        -- ** View dependence
+        -- ** Interactive content
+        -- $interactiveExplanation
+        , MouseClicks(..)
         , ViewXCenter(..), ViewYCenter(..), ViewWidth(..), ViewHeight(..)
         , ViewXResolution(..), ViewYResolution(..)
         -- * Auxiliary plot objects
@@ -192,7 +194,7 @@ data DynamicPlottable' m = DynamicPlottable {
       , _frameDelay :: NominalDiffTime
       , _legendEntries :: [LegendEntry]
       , _axisLabelRequests :: [AxisLabel]
-      , _futurePlots :: Maybe (DynamicPlottable' m)
+      , _futurePlots :: [MouseEvent (ℝ,ℝ)] -> Maybe (DynamicPlottable' m)
       , _dynamicPlotWithAxisLabels :: [AxisLabel] -> GraphWindowSpec -> m Plot
   }
 makeLenses ''DynamicPlottable'
@@ -203,7 +205,7 @@ dynamicPlot = dynamicPlotWithAxisLabels . mapped
 sustained :: Hask.Functor m
          => Setter' (DynamicPlottable' m) a -> Setter' (DynamicPlottable' m) a
 sustained q = sets $ \f p -> p & q %~ f
-                               & futurePlots %~ fmap (sustained q %~ f)
+                               & futurePlots %~ fmap (fmap $ sustained q %~ f)
 
 allDynamicPlot :: Hask.Functor m => Setter' (DynamicPlottable' m)
                                             (GraphWindowSpec -> m Plot)
@@ -217,6 +219,7 @@ type AnnotPlot = (Plot, ([LegendEntry],[AxisLabel]))
 data ObjInPlot = ObjInPlot {
         _lastStableView :: IORef (Maybe (GraphWindowSpec, AnnotPlot))
       , _newPlotView :: MVar (GraphWindowSpec, AnnotPlot)
+      , _mouseEventsForObj :: MVar [MouseEvent (ℝ,ℝ)]
       , _plotObjColour :: Maybe AColour
       , _originalPlotObject :: DynamicPlottable
    }
@@ -794,7 +797,7 @@ plotMultiple = fold . chooseAutoTints . map plot
 instance (Plottable x) => Plottable (Latest x) where
   plot (Latest (ev₀ :| [])) = plot ev₀
   plot (Latest (ev₀ :| ev₁:evs))
-     = plot ev₀ & futurePlots .~ (Just . plot . Latest $ ev₁:|evs)
+     = plot ev₀ & futurePlots .~ (const . Just . plot . Latest $ ev₁:|evs)
 
 -- | Lazily consume the list, always plotting the latest value available as they
 --   arrive.
@@ -1039,6 +1042,12 @@ plotWindow givenPlotObjs = runInBoundThread $ do
    viewTgtGlobal <- newMVar . (,objAxisLabels) =<< readIORef viewState
    screenResolution <- newIORef (640, 480)
    let viewConstraint = flip (foldr _viewportConstraint) givenPlotObjs
+
+   let screenCoordsToData (sx,sy) = do
+         GraphWindowSpecR2{..} <- readIORef viewState
+         let snx = sx / fromIntegral xResolution
+             sny = sy / fromIntegral yResolution
+         return (lBound + snx*(rBound-lBound), tBound - sny*(tBound-bBound))
    
    dgStore <- newIORef mempty
    
@@ -1050,9 +1059,10 @@ plotWindow givenPlotObjs = runInBoundThread $ do
               | otherwise     = return []
            assignPlObjPropties (o:os) axn = do
               newDia <- newEmptyMVar
-              workerId <- forkIO $ objectPlotterThread o viewTgtGlobal newDia
+              newMouseEvs <- newEmptyMVar
+              workerId <- forkIO $ objectPlotterThread o viewTgtGlobal newMouseEvs newDia
               stableView <- newIORef Nothing
-              ((ObjInPlot stableView newDia cl o, workerId) :)
+              ((ObjInPlot stableView newDia newMouseEvs cl o, workerId) :)
                      <$> assignPlObjPropties os (axn + o^.axesNecessity)
             where cl | TrueColour c₀:_ <- o^.inherentColours
                                   = Just $ Dia.opaque c₀
@@ -1068,6 +1078,7 @@ plotWindow givenPlotObjs = runInBoundThread $ do
    window <- GTK.windowNew
    
    mouseAnchor <- newIORef Nothing
+   mousePressedAt <- newIORef Nothing
                  
    refreshDraw <- do
        drawA <- GTK.drawingAreaNew
@@ -1095,6 +1106,23 @@ plotWindow givenPlotObjs = runInBoundThread $ do
             liftIO . writeIORef mouseAnchor $ Just anchXY
        GTK.on drawA GTK.buttonReleaseEvent . Event.tryEvent $ do
             Event.eventButton >>= guard.(==defaultDragButton)
+            liftIO . writeIORef mouseAnchor $ Nothing
+       
+       GTK.on drawA GTK.buttonPressEvent . Event.tryEvent $ do
+            Event.eventButton >>= guard.(==defaultEditButton)
+            pressXY <- liftIO . screenCoordsToData =<< Event.eventCoordinates
+            liftIO . writeIORef mousePressedAt $ Just pressXY
+       GTK.on drawA GTK.buttonReleaseEvent . Event.tryEvent $ do
+            Event.eventButton >>= guard.(==defaultEditButton)
+            (relX,relY) <- liftIO . screenCoordsToData =<< Event.eventCoordinates
+            liftIO (readIORef mousePressedAt) >>= \case
+             Just (pressX,pressY) -> liftIO $ do
+                let event = MouseEvent (pressX^&pressY) (relX^&relY)
+                forM_ plotObjs $ _mouseEventsForObj >>> \mevs -> do
+                   tryTakeMVar mevs >>= \case
+                      Nothing -> putMVar mevs [event]
+                      Just qe -> putMVar mevs $ event:qe
+             Nothing -> mzero
             liftIO . writeIORef mouseAnchor $ Nothing
        
        GTK.on drawA GTK.motionNotifyEvent . Event.tryEvent $ do
@@ -1231,18 +1259,20 @@ plotWindow givenPlotObjs = runInBoundThread $ do
 
 objectPlotterThread :: DynamicPlottable
                        -> MVar (GraphWindowSpec, [AxisLabel])
+                       -> MVar [MouseEvent (ℝ,ℝ)]
                        -> MVar (GraphWindowSpec, AnnotPlot)
                        -> IO ()
-objectPlotterThread pl₀ viewVar diaVar = loop pl₀ where
+objectPlotterThread pl₀ viewVar mouseVar diaVar = loop pl₀ where
  loop pl = do
     tPrev <- getCurrentTime
     (view, labels) <- readMVar viewVar
+    mice <- fold <$> tryTakeMVar mouseVar
     diagram <- evaluate =<< Random.runRVar
                  ((pl^.dynamicPlotWithAxisLabels) labels view)
                  Random.StdRandom
     putMVar diaVar (view, (diagram, (pl^.legendEntries, pl^.axisLabelRequests)))
     waitTill $ addUTCTime (pl^.frameDelay) tPrev
-    case pl^.futurePlots of
+    case pl^.futurePlots $ mice of
        Just pl' -> loop pl'
        Nothing  -> loop pl
     
@@ -1302,6 +1332,9 @@ defaultScrollBehaviour Event.ScrollDown = ScrollZoomOut
 
 defaultDragButton :: Event.MouseButton
 defaultDragButton = Event.MiddleButton
+
+defaultEditButton :: Event.MouseButton
+defaultEditButton = Event.LeftButton
 
 scrollZoomStrength :: Double
 scrollZoomStrength = 1/20
@@ -1591,13 +1624,12 @@ forceYRange (b,t) = mempty & relevantRange_y .~ MustBeThisRange (Interval b t)
 
 
 
--- | 'ViewXCenter', 'ViewYResolution' etc. can be used as arguments to some object
---   you 'plot', if its rendering is to depend explicitly on the screen's visible range.
---   You should not need to do that manually except for special applications (the
---   standard plot objects like 'fnPlot' already take the range into account anyway)
---   &#x2013; e.g. comparing  with the linear regression /of all visible points/
---   from some sample with some function's tangent /at the screen center/.
---   
+-- $interactiveExplanation
+--   'MouseClicks', 'ViewXCenter', 'ViewYResolution' etc. can be used as arguments to some object
+--   you 'plot', if you want to plot stuff that depends on user interaction
+--   or just on the screen's visible range, for instance to calculate a tangent
+--   at the middle of the screen:
+-- 
 -- @
 -- plotWindow [fnPlot sin, plot $ \\(ViewXCenter xc) x -> sin xc + (x-xc) * cos xc]
 -- @
@@ -1662,6 +1694,18 @@ instance (Plottable p) => Plottable (ViewHeight -> p) where
 newtype ViewXResolution = ViewXResolution { getViewXResolution :: Int }
 newtype ViewYResolution = ViewYResolution { getViewYResolution :: Int }
 
+newtype MouseClicks = MouseClicks {
+      getClickPositions :: [(ℝ,ℝ)] -- ^ A history of all clicks that were done
+                                   --   in this window; more specifically, of all
+                                   --   /left mouse-button release events/ recorded.
+    }
+instance (Plottable p) => Plottable (MouseClicks -> p) where
+  plot f = go []
+   where go oldClicks = thisPlot
+                     & futurePlots .~ \case
+                         [] -> thisPlot^.futurePlots $ []
+                         newClicks -> pure . go $ (_releaseLocation<$>newClicks) ++ oldClicks
+          where thisPlot = plot . f $ MouseClicks oldClicks
 
 
 

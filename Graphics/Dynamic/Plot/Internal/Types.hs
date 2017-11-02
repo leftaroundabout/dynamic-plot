@@ -504,3 +504,10 @@ makeLenses ''ViewportConfig
 
 instance Default ViewportConfig where
   def = ViewportConfig 640 480
+
+
+
+data MouseEvent x = MouseEvent {
+      _clickLocation, _releaseLocation :: x
+    }
+makeLenses ''MouseEvent
