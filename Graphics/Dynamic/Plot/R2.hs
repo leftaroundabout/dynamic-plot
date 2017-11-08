@@ -256,17 +256,16 @@ instance (Plottable p) => Plottable (Maybe p) where
   plot = foldMap plot
 
 instance Plottable PlainGraphics where
-  plot (PlainGraphics d) = def
+  plot (PlainGraphics d) = case DiaBB.getCorners bb of
+     Just (c1, c2) -> let (rlx,rly) = ( c1^._x ... c2^._x
+                                      , c1^._y ... c2^._y ) in def
            & relevantRange_x .~ atLeastInterval rlx
            & relevantRange_y .~ atLeastInterval rly
            & inherentColours .~ [TrueColour DCol.grey]
            & axesNecessity .~ -1
            & dynamicPlot .~ pure.plot
+     Nothing -> mempty
    where bb = DiaBB.boundingBox d
-         (rlx,rly) = case DiaBB.getCorners bb of
-                       Just (c1, c2)
-                        -> ( c1^._x ... c2^._x
-                           , c1^._y ... c2^._y )
          plot _ = mkPlot d
 
 
