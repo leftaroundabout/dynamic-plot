@@ -44,6 +44,7 @@ module Graphics.Dynamic.Plot.R2 (
         , tracePlot
         , lineSegPlot
         , linregressionPlot
+        , colourPaintPlot
         , PlainGraphicsR2
         , shapePlot
         , diagramPlot
@@ -97,6 +98,7 @@ import qualified Diagrams.Backend.Cairo as Cairo
 import qualified Diagrams.Backend.Cairo.Text as CairoTxt
     
 import qualified Data.Colour as DCol
+import qualified Data.Colour.SRGB as DCol (toSRGB24, RGB(..))
 import qualified Data.Colour.Names as DCol
 import qualified Codec.Picture as JPix
 import qualified Codec.Picture.Types as JPix
@@ -1362,6 +1364,35 @@ continFnPlot f = def
                  "Function appears to yield NaN most of the time. Cannot be plotted."
             | otherwise -> l !! floor (fromIntegral ll * η)
 
+
+-- | Plot a function that assigns every point in view a colour value. Note that
+--   this tends to be pretty slow.
+colourPaintPlot :: ((Double,Double) -> Maybe (DCol.Colour Double)) -> DynamicPlottable
+colourPaintPlot f = def & dynamicPlot .~ pure . plot
+ where plot graSpec = mkPlot . Dia.image $ Dia.DImage
+                            (Dia.ImageRaster $ JPix.ImageRGBA8 pixRendered)
+                            renderWidth renderHeight
+                            placement
+        where renderWidth, renderHeight :: Num n => n
+              renderWidth = fromIntegral $ xResolution graSpec `quot` 4
+              renderHeight = fromIntegral $ yResolution graSpec `quot` 4
+              x₀ = lBound graSpec
+              x₁ = rBound graSpec
+              y₀ = bBound graSpec
+              y₁ = tBound graSpec
+              xc = (x₀+x₁)/2
+              yc = (y₀+y₁)/2
+              wPix = (x₁ - x₀)/renderWidth
+              hPix = (y₁ - y₀)/renderHeight
+              placement
+                  = Dia.translation (xc^&yc) <> Dia.scalingX wPix <> Dia.scalingY hPix
+              pixRendered = JPix.generateImage fi renderWidth renderHeight
+               where fi ix iy = case f (x,y) of
+                        Just fxy -> JPix.promotePixel
+                                      (CSp.quantiseColour fxy :: JPix.PixelRGB8)
+                        Nothing -> JPix.PixelRGBA8 0 0 0 0
+                      where x = x₀ + wPix*fromIntegral ix
+                            y = y₁ - hPix*fromIntegral iy
 
 type (-->) = RWDiffable ℝ
 
