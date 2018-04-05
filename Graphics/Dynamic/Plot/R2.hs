@@ -65,7 +65,7 @@ module Graphics.Dynamic.Plot.R2 (
         , unitAspect
         -- ** Interactive content
         -- $interactiveExplanation
-        , MouseClicks(..)
+        , MouseClicks(..), clickThrough
         , ViewXCenter(..), ViewYCenter(..), ViewWidth(..), ViewHeight(..)
         , ViewXResolution(..), ViewYResolution(..)
         -- * Auxiliary plot objects
@@ -1718,12 +1718,22 @@ newtype MouseClicks = MouseClicks {
     }
 instance (Plottable p) => Plottable (MouseClicks -> p) where
   plot f = go []
-   where go oldClicks = thisPlot
-                     & futurePlots .~ \case
-                         [] -> thisPlot^.futurePlots $ []
-                         newClicks -> pure . go $ (_releaseLocation<$>newClicks) ++ oldClicks
-          where thisPlot = plot . f $ MouseClicks oldClicks
+   where go oldClicks = addInterrupt . plot . f $ MouseClicks oldClicks
+          where addInterrupt :: DynamicPlottable -> DynamicPlottable
+                addInterrupt pl = pl
+                     & futurePlots %~ \anim -> \case
+                         [] -> fmap addInterrupt $ anim []
+                         newClicks -> pure . go
+                              $ (_releaseLocation<$>newClicks) ++ oldClicks
 
+clickThrough :: Plottable p => [p] -> DynamicPlottable
+clickThrough [] = mempty
+clickThrough [final] = plot final
+clickThrough (v:vs) = addInterrupt $ plot v
+ where addInterrupt :: DynamicPlottable -> DynamicPlottable
+       addInterrupt pl = pl & futurePlots %~ \anim -> \case
+           [] -> fmap addInterrupt $ anim []
+           (_:_) -> Just $ clickThrough vs
 
 
 atExtendOf :: PlainGraphicsR2 -> PlainGraphicsR2 -> PlainGraphicsR2
