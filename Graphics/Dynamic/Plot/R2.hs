@@ -1726,6 +1726,9 @@ instance (Plottable p) => Plottable (MouseClicks -> p) where
                          newClicks -> pure . go
                               $ (_releaseLocation<$>newClicks) ++ oldClicks
 
+-- | Move through a sequence of plottable objects, switching to the next
+--   whenever a click is received anywhere on the screen. Similar to 'plotLatest',
+--   but does not proceed automatically.
 clickThrough :: Plottable p => [p] -> DynamicPlottable
 clickThrough [] = mempty
 clickThrough [final] = plot final
