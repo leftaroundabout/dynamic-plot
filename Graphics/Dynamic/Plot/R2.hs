@@ -1373,7 +1373,7 @@ colourPaintPlot :: ((Double,Double) -> Maybe (DCol.Colour Double)) -> DynamicPlo
 colourPaintPlot f = def & dynamicPlot .~ pure . plot
                         & axesNecessity .~ 0.5
  where plot graSpec = mkPlot . Dia.image $ Dia.DImage
-                            (Dia.ImageRaster $ JPix.ImageRGBA8 pixRendered)
+                            (Dia.ImageRaster $ JPix.ImageRGBA8 roughUpscaled)
                             renderWidth renderHeight
                             placement
         where roughRenderWidth = round $ fromIntegral (xResolution graSpec) / 8
@@ -1393,14 +1393,23 @@ colourPaintPlot f = def & dynamicPlot .~ pure . plot
               hRoughPix = (y₁+hPix - y₀)/fromIntegral roughRenderHeight
               placement
                   = Dia.translation (xc^&yc) <> Dia.scalingX wPix <> Dia.scalingY hPix
-              pixRendered = scaleX2Bilinear
-                       $ JPix.generateImage fi roughRenderWidth roughRenderHeight
-               where fi ix iy = case f (x,y) of
-                        Just fxy -> JPix.promotePixel
-                                      (CSp.quantiseColour fxy :: JPix.PixelRGB8)
-                        Nothing -> JPix.PixelRGBA8 0 0 0 0
-                      where x = x₀ + wRoughPix*fromIntegral ix
+              roughUpscaled = scaleX2Bilinear roughRendered
+              (roughRendered, hitsInRoughImage) = runST (do
+                 hits <- newSTRef ([] :: [(Int,Int)])
+                 rough <- JPix.withImage roughRenderWidth roughRenderHeight
+                  `id`\ix iy -> do
+                        let x = x₀ + wRoughPix*fromIntegral ix
                             y = y₁ - hRoughPix*fromIntegral iy
+                        case f (x,y) of
+                            Just fxy -> do
+                              modifySTRef hits ((ix,iy):)
+                              pure `id` JPix.promotePixel
+                                          (CSp.quantiseColour fxy :: JPix.PixelRGB8)
+                            Nothing ->
+                              pure `id` JPix.PixelRGBA8 0 0 0 0
+                 allHits <- readSTRef hits
+                 return (rough, allHits)
+                )
 
 type (-->) = RWDiffable ℝ
 
