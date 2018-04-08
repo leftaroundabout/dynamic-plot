@@ -103,6 +103,8 @@ import qualified Data.Colour.Names as DCol
 import qualified Codec.Picture as JPix
 import qualified Codec.Picture.Types as JPix
 
+import Graphics.Image.Resample (scaleX2Bilinear)
+
 import qualified Diagrams.Backend.Gtk as BGTK
 import qualified Graphics.UI.Gtk as GTK
 import Graphics.UI.Gtk ( AttrOp((:=)) )
@@ -1369,13 +1371,16 @@ continFnPlot f = def
 --   this tends to be pretty slow.
 colourPaintPlot :: ((Double,Double) -> Maybe (DCol.Colour Double)) -> DynamicPlottable
 colourPaintPlot f = def & dynamicPlot .~ pure . plot
+                        & axesNecessity .~ 0.5
  where plot graSpec = mkPlot . Dia.image $ Dia.DImage
                             (Dia.ImageRaster $ JPix.ImageRGBA8 pixRendered)
                             renderWidth renderHeight
                             placement
-        where renderWidth, renderHeight :: Num n => n
-              renderWidth = fromIntegral $ xResolution graSpec `quot` 4
-              renderHeight = fromIntegral $ yResolution graSpec `quot` 4
+        where roughRenderWidth = round $ fromIntegral (xResolution graSpec) / 8
+              roughRenderHeight = round $ fromIntegral (yResolution graSpec) / 8
+              renderWidth, renderHeight :: Num n => n
+              renderWidth = fromIntegral roughRenderWidth * 2 - 1
+              renderHeight = fromIntegral roughRenderHeight * 2 - 1
               x₀ = lBound graSpec
               x₁ = rBound graSpec
               y₀ = bBound graSpec
@@ -1383,16 +1388,19 @@ colourPaintPlot f = def & dynamicPlot .~ pure . plot
               xc = (x₀+x₁)/2
               yc = (y₀+y₁)/2
               wPix = (x₁ - x₀)/renderWidth
+              wRoughPix = (x₁+wPix - x₀)/fromIntegral roughRenderWidth
               hPix = (y₁ - y₀)/renderHeight
+              hRoughPix = (y₁+hPix - y₀)/fromIntegral roughRenderHeight
               placement
                   = Dia.translation (xc^&yc) <> Dia.scalingX wPix <> Dia.scalingY hPix
-              pixRendered = JPix.generateImage fi renderWidth renderHeight
+              pixRendered = scaleX2Bilinear
+                       $ JPix.generateImage fi roughRenderWidth roughRenderHeight
                where fi ix iy = case f (x,y) of
                         Just fxy -> JPix.promotePixel
                                       (CSp.quantiseColour fxy :: JPix.PixelRGB8)
                         Nothing -> JPix.PixelRGBA8 0 0 0 0
-                      where x = x₀ + wPix*fromIntegral ix
-                            y = y₁ - hPix*fromIntegral iy
+                      where x = x₀ + wRoughPix*fromIntegral ix
+                            y = y₁ - hRoughPix*fromIntegral iy
 
 type (-->) = RWDiffable ℝ
 
