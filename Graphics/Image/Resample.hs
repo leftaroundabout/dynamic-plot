@@ -26,33 +26,34 @@ scaleX2Bilinear img = runST $ do
    
    forM_ [0 .. hOrig-2] $ \j -> do
       forM_ [0 .. wOrig-2] $ \k -> do
-         let orig₀₀ = JPix.pixelAt img j k
-             orig₀₁ = JPix.pixelAt img j (k+1)
-             orig₁₀ = JPix.pixelAt img (j+1) k
-             orig₁₁ = JPix.pixelAt img (j+1) (k+1)
-         JPix.writePixel buf (j*2)   (k*2)   $ orig₀₀
-         JPix.writePixel buf (j*2)   (k*2+1) $ between orig₀₀ orig₀₁
-         JPix.writePixel buf (j*2+1) (k*2)   $ between orig₀₀ orig₁₀
-         JPix.writePixel buf (j*2+1) (k*2+1) $ between orig₀₀ orig₁₁
+         let orig₀₀ = JPix.pixelAt img k     j
+             orig₀₁ = JPix.pixelAt img (k+1) j
+             orig₁₀ = JPix.pixelAt img k     (j+1)
+             orig₁₁ = JPix.pixelAt img (k+1) (j+1)
+         JPix.writePixel buf (k*2)   (j*2)   $ orig₀₀
+         JPix.writePixel buf (k*2+1) (j*2)   $ between orig₀₀ orig₀₁
+         JPix.writePixel buf (k*2)   (j*2+1) $ between orig₀₀ orig₁₀
+         JPix.writePixel buf (k*2+1) (j*2+1) $ between (between orig₀₀ orig₁₁)
+                                                       (between orig₀₁ orig₁₀)
    
    forM_ [0 .. hOrig-2] $ \j -> do
       forM_ [wOrig-1] $ \k -> do
-         let orig₀₀ = JPix.pixelAt img j k
-             orig₁₀ = JPix.pixelAt img (j+1) k
-         JPix.writePixel buf (j*2)   (k*2)   $ orig₀₀
-         JPix.writePixel buf (j*2+1) (k*2)   $ between orig₀₀ orig₁₀
+         let orig₀₀ = JPix.pixelAt img k j
+             orig₁₀ = JPix.pixelAt img k (j+1)
+         JPix.writePixel buf (k*2)   (j*2)   $ orig₀₀
+         JPix.writePixel buf (k*2)   (j*2+1) $ between orig₀₀ orig₁₀
    
    forM_ [hOrig-1] $ \j -> do
       forM_ [0 .. wOrig-2] $ \k -> do
-         let orig₀₀ = JPix.pixelAt img j k
-             orig₀₁ = JPix.pixelAt img j (k+1)
-         JPix.writePixel buf (j*2)   (k*2)   $ orig₀₀
-         JPix.writePixel buf (j*2)   (k*2+1) $ between orig₀₀ orig₀₁
+         let orig₀₀ = JPix.pixelAt img k     j
+             orig₀₁ = JPix.pixelAt img (k+1) j
+         JPix.writePixel buf (k*2)   (j*2)   $ orig₀₀
+         JPix.writePixel buf (k*2+1) (j*2)   $ between orig₀₀ orig₀₁
          
    forM_ [hOrig-1] $ \j -> do
       forM_ [wOrig-1] $ \k -> do
-         let orig₀₀ = JPix.pixelAt img j k
-         JPix.writePixel buf (j*2) (k*2) $ orig₀₀
+         let orig₀₀ = JPix.pixelAt img k j
+         JPix.writePixel buf (k*2) (j*2) $ orig₀₀
 
    JPix.freezeImage buf
          
