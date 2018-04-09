@@ -1373,7 +1373,7 @@ colourPaintPlot :: ((Double,Double) -> Maybe (DCol.Colour Double)) -> DynamicPlo
 colourPaintPlot f = def & dynamicPlot .~ pure . plot
                         & axesNecessity .~ 0.5
  where plot graSpec = mkPlot . Dia.image $ Dia.DImage
-                            (Dia.ImageRaster $ JPix.ImageRGBA8 roughUpscaled)
+                            (Dia.ImageRaster $ JPix.ImageRGBA8 pixRendered)
                             renderWidth renderHeight
                             placement
         where roughRenderWidth = round $ fromIntegral (xResolution graSpec) / 8
@@ -1393,9 +1393,11 @@ colourPaintPlot f = def & dynamicPlot .~ pure . plot
               hRoughPix = (y₁+hPix - y₀)/fromIntegral roughRenderHeight
               placement
                   = Dia.translation (xc^&yc) <> Dia.scalingX wPix <> Dia.scalingY hPix
-              roughUpscaled = scaleX2Bilinear roughRendered
-              (roughRendered, hitsInRoughImage) = runST (do
+              
+              pixRendered = runST (do
+                 
                  hits <- newSTRef ([] :: [(Int,Int)])
+                 
                  rough <- JPix.withImage roughRenderWidth roughRenderHeight
                   `id`\ix iy -> do
                         let x = x₀ + wRoughPix*fromIntegral ix
@@ -1407,9 +1409,42 @@ colourPaintPlot f = def & dynamicPlot .~ pure . plot
                                           (CSp.quantiseColour fxy :: JPix.PixelRGB8)
                             Nothing ->
                               pure `id` JPix.PixelRGBA8 0 0 0 0
+                 
                  allHits <- readSTRef hits
-                 return (rough, allHits)
+                 
+                 intermediate <- JPix.unsafeThawImage $ scaleX2Bilinear rough
+                 alreadyDone <- JPix.unsafeThawImage
+                        $ JPix.generateImage (\_ _ -> 0::JPix.Pixel8)
+                                     renderWidth renderHeight
+                 
+                 let refineAt (ix,iy) = do
+                        JPix.writePixel intermediate ix iy
+                             $ case f ( x₀ + wPix*fromIntegral ix
+                                      , y₁ - hPix*fromIntegral iy ) of
+                                 Just fxy -> JPix.promotePixel
+                                          (CSp.quantiseColour fxy :: JPix.PixelRGB8)
+                                 Nothing -> JPix.PixelRGBA8 0 0 0 0
+                        JPix.writePixel alreadyDone ix iy 1
+                     refineBack (ix,iy) = do
+                        doneBefore <- JPix.readPixel alreadyDone ix iy
+                        doneBefore==0 ==> refineAt (ix,iy)
+                 
+                 forM_ allHits $ \(irx,iry) -> do
+                    irx > 0 ==> do
+                       refineBack (2*irx - 1, 2*iry)
+                       iry > 0 ==> refineBack (2*irx - 1, 2*iry - 1)
+                       iry < roughRenderHeight-1 ==> refineBack (2*irx - 1, 2*iry + 1)
+                    irx < roughRenderWidth-1 ==> do
+                       refineAt (2*irx + 1, 2*iry)
+                       iry > 0 ==> refineBack (2*irx + 1, 2*iry - 1)
+                       iry < roughRenderHeight-1 ==> refineAt (2*irx + 1, 2*iry + 1)
+                    iry > 0 ==> refineBack (2*irx, 2*iry - 1)
+                    iry < roughRenderHeight-1 ==> refineAt (2*irx, 2*iry + 1)
+                 
+                 JPix.unsafeFreezeImage intermediate
                 )
+              infixr 1 ==>
+              (==>) = when
 
 type (-->) = RWDiffable ℝ
 
