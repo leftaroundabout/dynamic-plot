@@ -103,7 +103,7 @@ import qualified Data.Colour.Names as DCol
 import qualified Codec.Picture as JPix
 import qualified Codec.Picture.Types as JPix
 
-import Graphics.Image.Resample (scaleX2Bilinear, refiningScaleX2Bilinear)
+import Graphics.Image.Resample (refiningScaleX2Bilinear)
 
 import qualified Diagrams.Backend.Gtk as BGTK
 import qualified Graphics.UI.Gtk as GTK
@@ -1412,7 +1412,7 @@ colourPaintPlot f = def & dynamicPlot .~ pure . plot
                  
                  allHits <- readSTRef hits
                  
-                 pure . refiningScaleX2Bilinear allHits
+                 pure . fst . refiningScaleX2Bilinear allHits
                   (\(ix,iy) -> case f ( x₀ + wPix*fromIntegral ix
                                       , y₁ - hPix*fromIntegral iy ) of
                     Just fxy -> JPix.promotePixel

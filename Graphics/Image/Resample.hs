@@ -19,6 +19,7 @@ import qualified Data.Vector.Storable as SArr
 
 import Control.Monad
 import Control.Monad.ST
+import Data.STRef
 
 
 scaleX2Bilinear :: JPix.Image JPix.PixelRGBA8 -> JPix.Image JPix.PixelRGBA8
@@ -65,17 +66,22 @@ scaleX2Bilinear img = runST $ do
 
 refiningScaleX2Bilinear ::
      [(Int,Int)] -> ((Int,Int) -> JPix.PixelRGBA8)
-    -> JPix.Image JPix.PixelRGBA8 -> JPix.Image JPix.PixelRGBA8
+    -> JPix.Image JPix.PixelRGBA8 -> (JPix.Image JPix.PixelRGBA8, [(Int,Int)])
 refiningScaleX2Bilinear hotSpots refineFn loRes = runST (do
     intermediate <- JPix.unsafeThawImage $ scaleX2Bilinear loRes
 
     alreadyDone <- JPix.unsafeThawImage
            $ JPix.generateImage (\_ _ -> 0::JPix.Pixel8)
                         renderWidth renderHeight
+
+    alterations <- newSTRef []
     
     let refineAt (ix,iy) = do
-           JPix.writePixel intermediate ix iy $ refineFn (ix,iy)
+           roughVal <- JPix.readPixel intermediate ix iy
+           let refinedVal = refineFn (ix,iy)
+           JPix.writePixel intermediate ix iy refinedVal
            JPix.writePixel alreadyDone ix iy 1
+           notablyDifferent refinedVal roughVal ==> modifySTRef alterations ((ix,iy):)
         refineBack (ix,iy) = do
            doneBefore <- JPix.readPixel alreadyDone ix iy
            doneBefore==0 ==> refineAt (ix,iy)
@@ -92,7 +98,11 @@ refiningScaleX2Bilinear hotSpots refineFn loRes = runST (do
        iry > 0 ==> refineBack (2*irx, 2*iry - 1)
        iry < loResHeight-1 ==> refineAt (2*irx, 2*iry + 1)
     
-    JPix.unsafeFreezeImage intermediate
+    alterationsDone <- readSTRef alterations
+    
+    result <- JPix.unsafeFreezeImage intermediate
+
+    return (result, alterationsDone)
    )
  where loResWidth = JPix.imageWidth loRes
        loResHeight = JPix.imageHeight loRes
@@ -101,6 +111,14 @@ refiningScaleX2Bilinear hotSpots refineFn loRes = runST (do
        infixr 1 ==>
        (==>) = when
 
+
+notablyDifferent :: JPix.PixelRGBA8 -> JPix.PixelRGBA8 -> Bool
+notablyDifferent (JPix.PixelRGBA8 r₀ g₀ b₀ a₀) (JPix.PixelRGBA8 r₁ g₁ b₁ a₁)
+   = ( abs (fromIntegral r₀ - fromIntegral r₁)
+     + abs (fromIntegral g₀ - fromIntegral g₁)
+     + abs (fromIntegral b₀ - fromIntegral b₁)
+     + abs (fromIntegral a₀ - fromIntegral a₁) :: Int )
+     > 8
     
 
 between :: JPix.PixelRGBA8 -> JPix.PixelRGBA8 -> JPix.PixelRGBA8
