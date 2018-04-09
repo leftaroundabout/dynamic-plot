@@ -7,7 +7,8 @@
 -- Stability   : experimental
 -- Portability : requires GHC>6 extensions
 
-{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleInstances         #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
 
 module Graphics.Image.Resample where
 
@@ -55,12 +56,52 @@ scaleX2Bilinear img = runST $ do
          let orig₀₀ = JPix.pixelAt img k j
          JPix.writePixel buf (k*2) (j*2) $ orig₀₀
 
-   JPix.freezeImage buf
+   JPix.unsafeFreezeImage buf
          
  where wOrig = JPix.imageWidth img
        wScaled = 2 * wOrig - 1
        hOrig = JPix.imageHeight img
        hScaled = 2 * hOrig - 1
+
+refiningScaleX2Bilinear ::
+     [(Int,Int)] -> ((Int,Int) -> JPix.PixelRGBA8)
+    -> JPix.Image JPix.PixelRGBA8 -> JPix.Image JPix.PixelRGBA8
+refiningScaleX2Bilinear hotSpots refineFn loRes = runST (do
+    intermediate <- JPix.unsafeThawImage $ scaleX2Bilinear loRes
+
+    alreadyDone <- JPix.unsafeThawImage
+           $ JPix.generateImage (\_ _ -> 0::JPix.Pixel8)
+                        renderWidth renderHeight
+    
+    let refineAt (ix,iy) = do
+           JPix.writePixel intermediate ix iy $ refineFn (ix,iy)
+           JPix.writePixel alreadyDone ix iy 1
+        refineBack (ix,iy) = do
+           doneBefore <- JPix.readPixel alreadyDone ix iy
+           doneBefore==0 ==> refineAt (ix,iy)
+    
+    forM_ hotSpots $ \(irx,iry) -> do
+       irx > 0 ==> do
+          refineBack (2*irx - 1, 2*iry)
+          iry > 0 ==> refineBack (2*irx - 1, 2*iry - 1)
+          iry < loResHeight-1 ==> refineBack (2*irx - 1, 2*iry + 1)
+       irx < loResWidth-1 ==> do
+          refineAt (2*irx + 1, 2*iry)
+          iry > 0 ==> refineBack (2*irx + 1, 2*iry - 1)
+          iry < loResHeight-1 ==> refineAt (2*irx + 1, 2*iry + 1)
+       iry > 0 ==> refineBack (2*irx, 2*iry - 1)
+       iry < loResHeight-1 ==> refineAt (2*irx, 2*iry + 1)
+    
+    JPix.unsafeFreezeImage intermediate
+   )
+ where loResWidth = JPix.imageWidth loRes
+       loResHeight = JPix.imageHeight loRes
+       renderWidth = loResWidth * 2 - 1
+       renderHeight = loResHeight * 2 - 1
+       infixr 1 ==>
+       (==>) = when
+
+    
 
 between :: JPix.PixelRGBA8 -> JPix.PixelRGBA8 -> JPix.PixelRGBA8
 between (JPix.PixelRGBA8 r₀ g₀ b₀ a₀) (JPix.PixelRGBA8 r₁ g₁ b₁ a₁)

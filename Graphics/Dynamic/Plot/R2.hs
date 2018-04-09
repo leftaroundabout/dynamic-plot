@@ -103,7 +103,7 @@ import qualified Data.Colour.Names as DCol
 import qualified Codec.Picture as JPix
 import qualified Codec.Picture.Types as JPix
 
-import Graphics.Image.Resample (scaleX2Bilinear)
+import Graphics.Image.Resample (scaleX2Bilinear, refiningScaleX2Bilinear)
 
 import qualified Diagrams.Backend.Gtk as BGTK
 import qualified Graphics.UI.Gtk as GTK
@@ -1412,39 +1412,14 @@ colourPaintPlot f = def & dynamicPlot .~ pure . plot
                  
                  allHits <- readSTRef hits
                  
-                 intermediate <- JPix.unsafeThawImage $ scaleX2Bilinear rough
-                 alreadyDone <- JPix.unsafeThawImage
-                        $ JPix.generateImage (\_ _ -> 0::JPix.Pixel8)
-                                     renderWidth renderHeight
-                 
-                 let refineAt (ix,iy) = do
-                        JPix.writePixel intermediate ix iy
-                             $ case f ( x₀ + wPix*fromIntegral ix
+                 pure . refiningScaleX2Bilinear allHits
+                  (\(ix,iy) -> case f ( x₀ + wPix*fromIntegral ix
                                       , y₁ - hPix*fromIntegral iy ) of
-                                 Just fxy -> JPix.promotePixel
-                                          (CSp.quantiseColour fxy :: JPix.PixelRGB8)
-                                 Nothing -> JPix.PixelRGBA8 0 0 0 0
-                        JPix.writePixel alreadyDone ix iy 1
-                     refineBack (ix,iy) = do
-                        doneBefore <- JPix.readPixel alreadyDone ix iy
-                        doneBefore==0 ==> refineAt (ix,iy)
-                 
-                 forM_ allHits $ \(irx,iry) -> do
-                    irx > 0 ==> do
-                       refineBack (2*irx - 1, 2*iry)
-                       iry > 0 ==> refineBack (2*irx - 1, 2*iry - 1)
-                       iry < roughRenderHeight-1 ==> refineBack (2*irx - 1, 2*iry + 1)
-                    irx < roughRenderWidth-1 ==> do
-                       refineAt (2*irx + 1, 2*iry)
-                       iry > 0 ==> refineBack (2*irx + 1, 2*iry - 1)
-                       iry < roughRenderHeight-1 ==> refineAt (2*irx + 1, 2*iry + 1)
-                    iry > 0 ==> refineBack (2*irx, 2*iry - 1)
-                    iry < roughRenderHeight-1 ==> refineAt (2*irx, 2*iry + 1)
-                 
-                 JPix.unsafeFreezeImage intermediate
+                    Just fxy -> JPix.promotePixel
+                             (CSp.quantiseColour fxy :: JPix.PixelRGB8)
+                    Nothing -> JPix.PixelRGBA8 0 0 0 0 )
+                  $ rough
                 )
-              infixr 1 ==>
-              (==>) = when
 
 type (-->) = RWDiffable ℝ
 
