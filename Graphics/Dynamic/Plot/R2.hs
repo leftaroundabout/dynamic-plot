@@ -1376,8 +1376,10 @@ colourPaintPlot f = def & dynamicPlot .~ pure . plot
                             (Dia.ImageRaster $ JPix.ImageRGBA8 pixRendered)
                             renderWidth renderHeight
                             placement
-        where roughRenderWidth = round $ fromIntegral (xResolution graSpec) / 8
-              roughRenderHeight = round $ fromIntegral (yResolution graSpec) / 8
+        where preSeekWidth = round $ fromIntegral (xResolution graSpec) / 12
+              preSeekHeight = round $ fromIntegral (yResolution graSpec) / 12
+              roughRenderWidth = fromIntegral preSeekWidth * 2 - 1
+              roughRenderHeight = fromIntegral preSeekHeight * 2 - 1
               renderWidth, renderHeight :: Num n => n
               renderWidth = fromIntegral roughRenderWidth * 2 - 1
               renderHeight = fromIntegral roughRenderHeight * 2 - 1
@@ -1389,8 +1391,10 @@ colourPaintPlot f = def & dynamicPlot .~ pure . plot
               yc = (y₀+y₁)/2
               wPix = (x₁ - x₀)/renderWidth
               wRoughPix = (x₁+wPix - x₀)/fromIntegral roughRenderWidth
+              wPreSeekPix = (x₁+wRoughPix - x₀)/fromIntegral preSeekWidth
               hPix = (y₁ - y₀)/renderHeight
               hRoughPix = (y₁+hPix - y₀)/fromIntegral roughRenderHeight
+              hPreSeekPix = (y₁+hRoughPix - y₀)/fromIntegral preSeekHeight
               placement
                   = Dia.translation (xc^&yc) <> Dia.scalingX wPix <> Dia.scalingY hPix
               
@@ -1398,10 +1402,10 @@ colourPaintPlot f = def & dynamicPlot .~ pure . plot
                  
                  hits <- newSTRef ([] :: [(Int,Int)])
                  
-                 rough <- JPix.withImage roughRenderWidth roughRenderHeight
+                 rough² <- JPix.withImage preSeekWidth preSeekHeight
                   `id`\ix iy -> do
-                        let x = x₀ + wRoughPix*fromIntegral ix
-                            y = y₁ - hRoughPix*fromIntegral iy
+                        let x = x₀ + wPreSeekPix*fromIntegral ix
+                            y = y₁ - hPreSeekPix*fromIntegral iy
                         case f (x,y) of
                             Just fxy -> do
                               modifySTRef hits ((ix,iy):)
@@ -1412,13 +1416,22 @@ colourPaintPlot f = def & dynamicPlot .~ pure . plot
                  
                  allHits <- readSTRef hits
                  
-                 pure . fst . refiningScaleX2Bilinear allHits
-                  (\(ix,iy) -> case f ( x₀ + wPix*fromIntegral ix
-                                      , y₁ - hPix*fromIntegral iy ) of
-                    Just fxy -> JPix.promotePixel
-                             (CSp.quantiseColour fxy :: JPix.PixelRGB8)
-                    Nothing -> JPix.PixelRGBA8 0 0 0 0 )
-                  $ rough
+                 let (intermediate, gradientHotSpots)
+                      = refiningScaleX2Bilinear allHits
+                         (\(ix,iy) -> case f ( x₀ + wRoughPix*fromIntegral ix
+                                             , y₁ - hRoughPix*fromIntegral iy ) of
+                           Just fxy -> JPix.promotePixel
+                                    (CSp.quantiseColour fxy :: JPix.PixelRGB8)
+                           Nothing -> JPix.PixelRGBA8 0 0 0 0 )
+                         rough²
+                 
+                 pure . fst . refiningScaleX2Bilinear gradientHotSpots
+                         (\(ix,iy) -> case f ( x₀ + wPix*fromIntegral ix
+                                             , y₁ - hPix*fromIntegral iy ) of
+                           Just fxy -> JPix.promotePixel
+                                    (CSp.quantiseColour fxy :: JPix.PixelRGB8)
+                           Nothing -> JPix.PixelRGBA8 0 0 0 0 )
+                         $ intermediate
                 )
 
 type (-->) = RWDiffable ℝ

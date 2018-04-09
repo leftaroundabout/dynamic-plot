@@ -118,7 +118,7 @@ notablyDifferent (JPix.PixelRGBA8 r₀ g₀ b₀ a₀) (JPix.PixelRGBA8 r₁ g�
      + abs (fromIntegral g₀ - fromIntegral g₁)
      + abs (fromIntegral b₀ - fromIntegral b₁)
      + abs (fromIntegral a₀ - fromIntegral a₁) :: Int )
-     > 8
+     > 16
     
 
 between :: JPix.PixelRGBA8 -> JPix.PixelRGBA8 -> JPix.PixelRGBA8
