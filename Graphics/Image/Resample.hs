@@ -8,6 +8,7 @@
 -- Portability : requires GHC>6 extensions
 
 {-# LANGUAGE FlexibleInstances         #-}
+{-# LANGUAGE TypeFamilies              #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
 
 module Graphics.Image.Resample where
@@ -23,20 +24,26 @@ import Data.STRef
 
 
 scaleX2Bilinear :: JPix.Image JPix.PixelRGBA8 -> JPix.Image JPix.PixelRGBA8
-scaleX2Bilinear img = runST $ do
-   buf <- JPix.newMutableImage wScaled hScaled
+scaleX2Bilinear img@(JPix.Image _ _ imgData) = runST $ do
+   buf@(JPix.MutableImage _ _ bufData) <- JPix.newMutableImage wScaled hScaled
+
+   let pbc = JPix.componentCount (undefined :: JPix.PixelRGBA8)
    
    forM_ [0 .. hOrig-2] $ \j -> do
       forM_ [0 .. wOrig-2] $ \k -> do
-         let orig₀₀ = JPix.pixelAt img k     j
-             orig₀₁ = JPix.pixelAt img (k+1) j
-             orig₁₀ = JPix.pixelAt img k     (j+1)
-             orig₁₁ = JPix.pixelAt img (k+1) (j+1)
-         JPix.writePixel buf (k*2)   (j*2)   $ orig₀₀
-         JPix.writePixel buf (k*2+1) (j*2)   $ between orig₀₀ orig₀₁
-         JPix.writePixel buf (k*2)   (j*2+1) $ between orig₀₀ orig₁₀
-         JPix.writePixel buf (k*2+1) (j*2+1) $ between (between orig₀₀ orig₁₁)
-                                                       (between orig₀₁ orig₁₀)
+         let linIndex = JPix.pixelBaseIndex img k j
+             orig₀₀ = JPix.unsafePixelAt imgData linIndex
+             orig₀₁ = JPix.unsafePixelAt imgData (linIndex+pbc)
+             orig₁₀ = JPix.unsafePixelAt imgData (linIndex+pbc*wOrig)
+             linIndexScaled = JPix.mutablePixelBaseIndex buf (k*2) (j*2)
+         JPix.unsafeWritePixel bufData linIndexScaled
+                   $ orig₀₀
+         JPix.unsafeWritePixel bufData (linIndexScaled+pbc)
+                   $ between orig₀₀ orig₀₁
+         JPix.unsafeWritePixel bufData (linIndexScaled+pbc*wScaled)
+                   $ between orig₀₀ orig₁₀
+         JPix.unsafeWritePixel bufData (linIndexScaled+pbc+pbc*wScaled)
+                   $ between orig₁₀ orig₀₁
    
    forM_ [0 .. hOrig-2] $ \j -> do
       forM_ [wOrig-1] $ \k -> do
