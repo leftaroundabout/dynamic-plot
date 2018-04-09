@@ -1367,8 +1367,19 @@ continFnPlot f = def
             | otherwise -> l !! floor (fromIntegral ll * η)
 
 
--- | Plot a function that assigns every point in view a colour value. Note that
---   this tends to be pretty slow.
+-- | Plot a function that assigns every point in view a colour value.
+--
+-- @
+-- > plotWindow [colourPaintPlot $ \(x,y) -> case (x^2+y^2, atan2 y x) of (r,φ) -> guard (sin (7*φ-2*r) > r) >> Just (Dia.blend (tanh r) Dia.red Dia.green), unitAspect ]
+-- @
+-- 
+--   <<images/examples/propeller.png>>
+-- 
+--   We try to evaluate that function no more often than necessary, but since it's a
+--   plain function with no differentiability information there's only so much that can
+--   be done; this requires a tradeoff between rasterisation fineness and performance.
+--   It works well for simple, smooth functions, but may not be adequate for
+--   functions with strong edges/transients, nor for expensive to compute functions.
 colourPaintPlot :: ((Double,Double) -> Maybe (DCol.Colour Double)) -> DynamicPlottable
 colourPaintPlot f = def & dynamicPlot .~ pure . plot
                         & axesNecessity .~ 0.5
