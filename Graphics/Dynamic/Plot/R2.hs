@@ -113,6 +113,7 @@ import qualified System.Glib.Signals (on)
 
 import Control.Monad.Trans (liftIO, lift)
 import Control.Monad.ST
+import Control.Applicative ((<|>))
 import Data.STRef
 
 import qualified Control.Category.Hask as Hask
@@ -185,6 +186,16 @@ type GraphWindowSpec = GraphWindowSpecR2
 
 type AxisLabel = (ℝ², String)
 
+data Interactions x = Interactions {
+        _mouseClicksCompleted :: [MouseEvent x]
+      , _currentDragEndpoints :: Maybe (MouseEvent x)
+      }
+instance Semigroup (Interactions x) where
+  Interactions cca cda<>Interactions ccb cdb = Interactions (cca<>ccb) (cda<|>cdb)
+instance Monoid (Interactions x) where
+  mempty = Interactions [] Nothing
+  mappend = (<>)
+
 data DynamicPlottable' m = DynamicPlottable { 
         _relevantRange_x, _relevantRange_y :: RangeRequest R
       , _viewportConstraint :: GraphWindowSpec -> GraphWindowSpec
@@ -198,7 +209,7 @@ data DynamicPlottable' m = DynamicPlottable {
       , _frameDelay :: NominalDiffTime
       , _legendEntries :: [LegendEntry]
       , _axisLabelRequests :: [AxisLabel]
-      , _futurePlots :: [MouseEvent (ℝ,ℝ)] -> Maybe (DynamicPlottable' m)
+      , _futurePlots :: Interactions (ℝ,ℝ) -> Maybe (DynamicPlottable' m)
       , _dynamicPlotWithAxisLabels :: [AxisLabel] -> GraphWindowSpec -> m Plot
   }
 makeLenses ''DynamicPlottable'
@@ -223,7 +234,7 @@ type AnnotPlot = (Plot, ([LegendEntry],[AxisLabel]))
 data ObjInPlot = ObjInPlot {
         _lastStableView :: IORef (Maybe (GraphWindowSpec, AnnotPlot))
       , _newPlotView :: MVar (GraphWindowSpec, AnnotPlot)
-      , _mouseEventsForObj :: MVar [MouseEvent (ℝ,ℝ)]
+      , _mouseEventsForObj :: MVar (Interactions (ℝ,ℝ))
       , _plotObjColour :: Maybe AColour
       , _originalPlotObject :: DynamicPlottable
    }
@@ -1100,8 +1111,14 @@ plotWindow givenPlotObjs = runInBoundThread $ do
        
        GTK.on drawA GTK.buttonPressEvent . Event.tryEvent $ do
             Event.eventButton >>= guard.(==defaultEditButton)
-            pressXY <- liftIO . screenCoordsToData =<< Event.eventCoordinates
-            liftIO . writeIORef mousePressedAt $ Just pressXY
+            (pressX,pressY) <- liftIO . screenCoordsToData =<< Event.eventCoordinates
+            liftIO . writeIORef mousePressedAt $ Just (pressX,pressY)
+            let event = MouseEvent (pressX^&pressY) (pressX^&pressY)
+            liftIO . forM_ plotObjs $ _mouseEventsForObj >>> \mevs -> do
+                   tryTakeMVar mevs >>= \case
+                      Nothing -> putMVar mevs $ Interactions [] (Just event)
+                      Just (Interactions qe _)
+                              -> putMVar mevs $ Interactions qe (Just event)
        GTK.on drawA GTK.buttonReleaseEvent . Event.tryEvent $ do
             Event.eventButton >>= guard.(==defaultEditButton)
             (relX,relY) <- liftIO . screenCoordsToData =<< Event.eventCoordinates
@@ -1110,8 +1127,9 @@ plotWindow givenPlotObjs = runInBoundThread $ do
                 let event = MouseEvent (pressX^&pressY) (relX^&relY)
                 forM_ plotObjs $ _mouseEventsForObj >>> \mevs -> do
                    tryTakeMVar mevs >>= \case
-                      Nothing -> putMVar mevs [event]
-                      Just qe -> putMVar mevs $ event:qe
+                      Nothing -> putMVar mevs $ Interactions [event] Nothing
+                      Just (Interactions qe _)
+                              -> putMVar mevs $ Interactions (event:qe) Nothing
              Nothing -> mzero
             liftIO . writeIORef mouseAnchor $ Nothing
        
@@ -1131,7 +1149,16 @@ plotWindow givenPlotObjs = runInBoundThread $ do
                            , bBound = bBound + h * ηY
                            }
                 liftIO . modifyIORef mouseAnchor . fmap $ const (mvX,mvY)
-             Nothing -> mzero
+             Nothing -> liftIO (readIORef mousePressedAt) >>= \case
+                Just (pressX,pressY) -> do
+                  (curX,curY) <- liftIO . screenCoordsToData =<< Event.eventCoordinates
+                  let event = MouseEvent (pressX^&pressY) (curX^&curY)
+                  liftIO . forM_ plotObjs $ _mouseEventsForObj >>> \mevs -> do
+                    tryTakeMVar mevs >>= \case
+                      Nothing -> putMVar mevs $ Interactions [] (Just event)
+                      Just (Interactions qe _)
+                              -> putMVar mevs $ Interactions qe (Just event)
+                Nothing -> mzero
        GTK.widgetAddEvents drawA [GTK.ButtonMotionMask]
        
        GTK.on drawA GTK.scrollEvent . Event.tryEvent $ do
@@ -1249,7 +1276,7 @@ plotWindow givenPlotObjs = runInBoundThread $ do
 
 objectPlotterThread :: DynamicPlottable
                        -> MVar (GraphWindowSpec, [AxisLabel])
-                       -> MVar [MouseEvent (ℝ,ℝ)]
+                       -> MVar (Interactions (ℝ,ℝ))
                        -> MVar (GraphWindowSpec, AnnotPlot)
                        -> IO ()
 objectPlotterThread pl₀ viewVar mouseVar diaVar = loop pl₀ where
@@ -1773,9 +1800,29 @@ instance (Plottable p) => Plottable (MouseClicks -> p) where
           where addInterrupt :: DynamicPlottable -> DynamicPlottable
                 addInterrupt pl = pl
                      & futurePlots %~ \anim -> \case
-                         [] -> fmap addInterrupt $ anim []
-                         newClicks -> pure . go
+                         interac@(Interactions [] _) -> fmap addInterrupt $ anim interac
+                         Interactions newClicks _ -> pure . go
                               $ (_releaseLocation<$>newClicks) ++ oldClicks
+
+newtype MousePress = MousePress {
+      lastMousePressedLocation :: (ℝ,ℝ)
+    }
+instance (Plottable p) => Plottable (MousePress -> p) where
+  plot f = go Nothing
+   where go :: Maybe (ℝ,ℝ) -> DynamicPlottable
+         go Nothing = mempty & futurePlots .~ pure . \case
+              Interactions [] Nothing -> go Nothing
+              Interactions (click:_) Nothing -> go . Just $ click^.releaseLocation
+              Interactions _ (Just current) -> go . Just $ current^.releaseLocation
+         go (Just lastPressed) = addInterrupt . plot . f $ MousePress lastPressed
+          where addInterrupt :: DynamicPlottable -> DynamicPlottable
+                addInterrupt pl = pl
+                     & futurePlots %~ \anim -> \case
+                  Interactions [] Nothing -> fmap addInterrupt $ anim mempty
+                  Interactions (click:_) Nothing
+                                  -> pure . go . Just $ click^.releaseLocation
+                  Interactions _ (Just drag)
+                                  -> pure . go . Just $ drag^.releaseLocation
 
 -- | Move through a sequence of plottable objects, switching to the next
 --   whenever a click is received anywhere on the screen. Similar to 'plotLatest',
@@ -1786,8 +1833,8 @@ clickThrough [final] = plot final
 clickThrough (v:vs) = addInterrupt $ plot v
  where addInterrupt :: DynamicPlottable -> DynamicPlottable
        addInterrupt pl = pl & futurePlots %~ \anim -> \case
-           [] -> fmap addInterrupt $ anim []
-           (_:_) -> Just $ clickThrough vs
+           interac@(Interactions [] _) -> fmap addInterrupt $ anim interac
+           Interactions (_:_) _ -> Just $ clickThrough vs
 
 
 atExtendOf :: PlainGraphicsR2 -> PlainGraphicsR2 -> PlainGraphicsR2
