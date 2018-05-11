@@ -1671,9 +1671,11 @@ noDynamicAxes = def & axesNecessity .~ superfluent
 
 xAxisLabel :: String -> DynamicPlottable
 xAxisLabel str = def & axisLabelRequests .~ [(1^&0, str)]
+                     & axesNecessity .~ 2
 
 yAxisLabel :: String -> DynamicPlottable
 yAxisLabel str = def & axisLabelRequests .~ [(0^&1, str)]
+                     & axesNecessity .~ 2
 
 
 simpleLine :: P2 -> P2 -> PlainGraphicsR2
