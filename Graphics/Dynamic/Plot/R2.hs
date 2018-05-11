@@ -1279,19 +1279,22 @@ objectPlotterThread :: DynamicPlottable
                        -> MVar (Interactions (ℝ,ℝ))
                        -> MVar (GraphWindowSpec, AnnotPlot)
                        -> IO ()
-objectPlotterThread pl₀ viewVar mouseVar diaVar = loop pl₀ where
- loop pl = do
+objectPlotterThread pl₀ viewVar mouseVar diaVar = loop Nothing pl₀ where
+ loop lastMousePressed pl = do
     tPrev <- getCurrentTime
     (view, labels) <- readMVar viewVar
-    mice <- fold <$> tryTakeMVar mouseVar
+    newMice <- tryTakeMVar mouseVar
+    let mice = case (newMice, lastMousePressed) of
+          (Just m, _) -> m
+          (Nothing, p) -> Interactions [] p
     diagram <- evaluate =<< Random.runRVar
                  ((pl^.dynamicPlotWithAxisLabels) labels view)
                  Random.StdRandom
     putMVar diaVar (view, (diagram, (pl^.legendEntries, pl^.axisLabelRequests)))
     waitTill $ addUTCTime (pl^.frameDelay) tPrev
-    case pl^.futurePlots $ mice of
-       Just pl' -> loop pl'
-       Nothing  -> loop pl
+    loop (_currentDragEndpoints mice) $ case pl^.futurePlots $ mice of
+       Just pl' -> pl'
+       Nothing  -> pl
     
 
 -- | Require that both coordinate axes are zoomed the same way, such that e.g.
