@@ -1829,6 +1829,22 @@ instance (Plottable p) => Plottable (MousePress -> p) where
                   Interactions _ (Just drag)
                                   -> pure . go . Just $ drag^.releaseLocation
 
+newtype MousePressed = MousePressed {
+      mouseIsPressedAt :: Maybe (ℝ,ℝ)
+    }
+instance (Plottable p) => Plottable (MousePressed -> p) where
+  plot f = go Nothing
+   where go :: Maybe (ℝ,ℝ) -> DynamicPlottable
+         go lastInt = addInterrupt . plot . f $ MousePressed lastInt
+          where addInterrupt :: DynamicPlottable -> DynamicPlottable
+                addInterrupt pl = pl
+                     & futurePlots %~ \anim -> \case
+                  Interactions _ Nothing
+                    | isNothing lastInt  -> fmap addInterrupt $ anim mempty
+                    | otherwise          -> return $ go Nothing
+                  Interactions _ (Just drag)
+                                  -> pure . go . Just $ drag^.releaseLocation
+
 -- | Move through a sequence of plottable objects, switching to the next
 --   whenever a click is received anywhere on the screen. Similar to 'plotLatest',
 --   but does not proceed automatically.
