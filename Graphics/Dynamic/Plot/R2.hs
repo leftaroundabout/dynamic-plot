@@ -65,7 +65,7 @@ module Graphics.Dynamic.Plot.R2 (
         , unitAspect
         -- ** Interactive content
         -- $interactiveExplanation
-        , MouseClicks(..), clickThrough
+        , MousePress(..), MouseClicks(..), clickThrough
         , ViewXCenter(..), ViewYCenter(..), ViewWidth(..), ViewHeight(..)
         , ViewXResolution(..), ViewYResolution(..)
         -- * Auxiliary plot objects
