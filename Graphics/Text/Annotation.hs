@@ -223,7 +223,7 @@ prerenderLegend TextTK{..} cscm layoutSpec l = do
        nLines = case szSpec of
            DiaTypes.V2 _ Nothing -> length l
            DiaTypes.V2 _ (Just hMax) -> max 1 . floor $ hMax / hLine
-       lRends2D = Dia.hcat $ Dia.vcat <$> takes nLines lRends
+       lRends2D = Dia.hsep (txtSize*2) $ Dia.vcat <$> takes nLines lRends
        w = case szSpec of
            DiaTypes.V2 Nothing _ -> Dia.width lRends2D
            DiaTypes.V2 (Just wM) _ -> wM
