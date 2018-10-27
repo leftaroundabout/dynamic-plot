@@ -506,6 +506,16 @@ instance Default ViewportConfig where
   def = ViewportConfig 640 480
 
 
+data LegendDisplayConfig = LegendDisplayConfig {
+      _legendPrerenderSize :: Dia.SizeSpec Dia.V2 Double
+    }
+makeLenses ''LegendDisplayConfig
+
+defaultLegendLineHeight :: Double
+defaultLegendLineHeight = 16
+
+instance Default LegendDisplayConfig where
+  def = LegendDisplayConfig $ Dia.mkSizeSpec2D Nothing (Just defaultLegendLineHeight)
 
 data MouseEvent x = MouseEvent {
       _clickLocation, _releaseLocation :: x

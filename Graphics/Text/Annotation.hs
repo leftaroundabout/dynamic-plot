@@ -202,12 +202,12 @@ instance HasColour LegendEntry where
   asAColourWith sch = asAColourWith sch . _plotObjRepresentativeColour
 
 
-prerenderLegend :: TextTK -> ColourScheme
-                     -> [LegendEntry] -> IO PlainGraphicsR2
-prerenderLegend _ _ [] = return mempty
-prerenderLegend TextTK{..} cscm l = do
+prerenderLegend :: TextTK -> ColourScheme -> LegendDisplayConfig
+                     -> [LegendEntry] -> IO (Maybe PlainGraphicsR2)
+prerenderLegend _ _ _ [] = return mempty
+prerenderLegend TextTK{..} cscm layoutSpec l = do
    let bgColour = cscm neutral
-   lRends <- fmap Dia.vcat $ forM l `id`\legEntry -> do
+   lRends <- forM l `id`\legEntry -> do
           txtR <- CairoTxt.textVisualBoundedIO txtCairoStyle
                        $ DiaTxt.Text mempty (DiaTxt.BoxAlignedText 0 0.5)
                                             (fromPlaintextObj $ legEntry^.plotObjectTitle)
@@ -218,8 +218,18 @@ prerenderLegend TextTK{..} cscm l = do
                               ] & Dia.centerXY
                                 & Dia.frame 2
                                 & Dia.alignL
-   let w = Dia.width lRends
-       h = Dia.height lRends
-   return $ ( lRends & Dia.centerXY & Dia.translate (3^&3) )
+   let hLine = maximum $ Dia.height <$> lRends
+       nLines = case Dia.getSpec (layoutSpec ^. legendPrerenderSize) of
+           DiaTypes.V2 _ Nothing -> length l
+           DiaTypes.V2 _ (Just hMax) -> floor $ hMax / hLine
+       lRends2D = Dia.hcat $ Dia.vcat <$> takes nLines lRends
+       w = Dia.width lRends2D
+       h = Dia.height lRends2D
+   return . pure
+          $ ( lRends2D & Dia.centerXY & Dia.translate (3^&3) )
          <> ( Dia.rect (w+1) (h+1) & Dia.fcA (cscm $ paler grey) )
+ where takes :: Int -> [a] -> [[a]]
+       takes n [] = []
+       takes n l = case splitAt n l of
+            (h,r) -> h : takes n r
 

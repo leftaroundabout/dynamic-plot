@@ -1235,12 +1235,13 @@ plotWindow givenPlotObjs = runInBoundThread $ do
            (thisPlots, thisLegends)
                  <- unzip . reverse <$> mapM renderComp (reverse plotObjs)
            let thePlot = mconcat thisPlots
-           theLegend <- prerenderLegend (textTK 10 1) colourScheme
+           theLegend <- prerenderLegend (textTK 10 1) colourScheme (LegendDisplayConfig Dia.absolute)
                                    $ concat (fst<$>thisLegends)
                    
-           writeIORef dgStore $ ( theLegend & Dia.scaleX (0.1 / sqrt (fromIntegral xResolution))
-                                            & Dia.scaleY (0.1 / sqrt (fromIntegral yResolution)) 
-                                            & (`Dia.place`(0.75^&0.75)) )
+           writeIORef dgStore $ maybe mempty
+                            (\l -> l & Dia.scaleX (0.1 / sqrt (fromIntegral xResolution))
+                                     & Dia.scaleY (0.1 / sqrt (fromIntegral yResolution)) 
+                                     & (`Dia.place`(0.75^&0.75)) ) theLegend
                                 <> thePlot
                                                     
            refreshDraw
