@@ -999,8 +999,7 @@ plotPrerender vpc [] = plotPrerender vpc [dynamicAxes]
 plotPrerender vpc l = do
    renderd <- Random.runRVar ((plotMultiple l' ^. dynamicPlotWithAxisLabels)
                                    axLabels
-                                   viewport{ xResolution = vpc^.xResV
-                                           , yResolution = vpc^.yResV })
+                                   viewport)
                              Random.StdRandom
    annot <- renderAnnotationsForView viewport (renderd^.plotAnnotations)
    return $ annot <> renderd^.getPlot
@@ -1008,7 +1007,9 @@ plotPrerender vpc l = do
                                & Dia.alignTL
                                & Dia.moveTo (Dia.P $ V2 lBound tBound)
                                    :: PlainGraphicsR2)
- where viewport@(GraphWindowSpecR2{..}) = autoDefaultView l'
+ where viewport@(GraphWindowSpecR2{..}) = (autoDefaultView l')
+                                           { xResolution = vpc^.xResV
+                                           , yResolution = vpc^.yResV }
        w = rBound - lBound; h = tBound - bBound
        l' = l ++ if axesNeed>0
                   then [dynamicAxes]
