@@ -65,8 +65,11 @@ module Graphics.Dynamic.Plot.R2 (
         , unitAspect
         -- ** Interactive content
         -- $interactiveExplanation
-        , MousePress(..), MouseClicks(..), clickThrough
+        -- *** Mouse
+        , MousePressed (..), MousePress(..), MouseClicks(..), clickThrough
+        -- *** Displayed range
         , ViewXCenter(..), ViewYCenter(..), ViewWidth(..), ViewHeight(..)
+        -- *** Resolution
         , ViewXResolution(..), ViewYResolution(..)
         -- * Auxiliary plot objects
         , dynamicAxes, noDynamicAxes, xAxisLabel, yAxisLabel
