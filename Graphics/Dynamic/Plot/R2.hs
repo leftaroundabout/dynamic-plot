@@ -1026,8 +1026,9 @@ plotLegendPrerender :: LegendDisplayConfig -> [DynamicPlottable]
 plotLegendPrerender ldc [] = pure Nothing
 plotLegendPrerender ldc l = prerenderLegend (TextTK defaultTxtStyle 10 1 0.2 0.2)
                           colourScheme ldc entries
- where entries = (^.legendEntries) =<< l
-       GraphWindowSpecR2{..} = autoDefaultView l
+ where tintedl = chooseAutoTints l
+       entries = (^.legendEntries) =<< tintedl
+       GraphWindowSpecR2{..} = autoDefaultView $ tintedl
 
 -- | Plot some plot objects to a new interactive GTK window. Useful for a quick
 --   preview of some unknown data or real-valued functions; things like selection
