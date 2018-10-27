@@ -57,6 +57,7 @@ module Graphics.Dynamic.Plot.R2 (
         , tint, autoTint
         -- ** Legend captions
         , legendName
+        , plotLegendPrerender
         -- ** Animation
         , plotDelay
         -- * Viewport
@@ -80,6 +81,8 @@ module Graphics.Dynamic.Plot.R2 (
         -- ** Viewport choice
         , ViewportConfig
         , xResV, yResV
+        , LegendDisplayConfig
+        , legendPrerenderSize
         ) where
 
 import Graphics.Dynamic.Plot.Colour
@@ -1016,6 +1019,15 @@ plotPrerender vpc l = do
                   else []
        axLabels = concat $ _axisLabelRequests<$>l
        axesNeed = sum $ _axesNecessity<$>l
+
+-- | Render the legend (if any) belonging to a collection of plottable objects.
+plotLegendPrerender :: LegendDisplayConfig -> [DynamicPlottable]
+                               -> IO (Maybe PlainGraphicsR2)
+plotLegendPrerender ldc [] = pure Nothing
+plotLegendPrerender ldc l = prerenderLegend (TextTK defaultTxtStyle 10 1 0.2 0.2)
+                          colourScheme ldc entries
+ where entries = (^.legendEntries) =<< l
+       GraphWindowSpecR2{..} = autoDefaultView l
 
 -- | Plot some plot objects to a new interactive GTK window. Useful for a quick
 --   preview of some unknown data or real-valued functions; things like selection
