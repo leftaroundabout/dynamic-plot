@@ -221,7 +221,7 @@ prerenderLegend TextTK{..} cscm layoutSpec l = do
    let hLine = maximum $ Dia.height <$> lRends
        nLines = case Dia.getSpec (layoutSpec ^. legendPrerenderSize) of
            DiaTypes.V2 _ Nothing -> length l
-           DiaTypes.V2 _ (Just hMax) -> floor $ hMax / hLine
+           DiaTypes.V2 _ (Just hMax) -> max 1 . floor $ hMax / hLine
        lRends2D = Dia.hcat $ Dia.vcat <$> takes nLines lRends
        w = Dia.width lRends2D
        h = Dia.height lRends2D

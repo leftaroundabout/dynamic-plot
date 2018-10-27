@@ -1235,7 +1235,8 @@ plotWindow givenPlotObjs = runInBoundThread $ do
            (thisPlots, thisLegends)
                  <- unzip . reverse <$> mapM renderComp (reverse plotObjs)
            let thePlot = mconcat thisPlots
-           theLegend <- prerenderLegend (textTK 10 1) colourScheme (LegendDisplayConfig Dia.absolute)
+           theLegend <- prerenderLegend (textTK 10 1) colourScheme
+                           (LegendDisplayConfig Dia.absolute)
                                    $ concat (fst<$>thisLegends)
                    
            writeIORef dgStore $ maybe mempty
