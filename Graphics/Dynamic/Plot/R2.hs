@@ -1224,14 +1224,7 @@ plotWindow givenPlotObjs = runInBoundThread $ do
    
    let refreshScreen = do
            currentView@(GraphWindowSpecR2{..}) <- readIORef viewState
-           let normaliseView :: PlainGraphicsR2 -> PlainGraphicsR2
-               normaliseView = (Dia.scaleX xUnZ :: PlainGraphicsR2->PlainGraphicsR2)
-                                  . Dia.scaleY yUnZ
-                                . Dia.translate (Dia.r2(-x₀,-y₀))
-                  where xUnZ = 1/w; yUnZ = 1/h
-               w = (rBound - lBound)/2; h = (tBound - bBound)/2
-               x₀ = lBound + w; y₀ = bBound + h
-               textTK txSiz asp = TextTK defaultTxtStyle txSiz asp 0.2 0.2
+           let textTK txSiz asp = TextTK defaultTxtStyle txSiz asp 0.2 0.2
                renderComp plotObj = do
                    plt <- tryTakeMVar (plotObj^.newPlotView) >>= \case
                        Nothing -> fmap snd <$> readIORef (plotObj^.lastStableView)
@@ -1243,7 +1236,8 @@ plotWindow givenPlotObjs = runInBoundThread $ do
                     Just (Plot{..}, objLegend) -> do
                        renderedAnnot
                            <- renderAnnotationsForView currentView _plotAnnotations
-                       return (normaliseView $ renderedAnnot <> _getPlot, objLegend)
+                       return (normaliseView currentView
+                                     $ renderedAnnot <> _getPlot, objLegend)
 
            (thisPlots, thisLegends)
                  <- unzip . reverse <$> mapM renderComp (reverse plotObjs)
@@ -1315,6 +1309,15 @@ objectPlotterThread pl₀ viewVar mouseVar diaVar = loop Nothing pl₀ where
        Just pl' -> pl'
        Nothing  -> pl
     
+    
+normaliseView :: GraphWindowSpecR2 -> PlainGraphicsR2 -> PlainGraphicsR2
+normaliseView currentView@(GraphWindowSpecR2{..})
+      = (Dia.scaleX xUnZ :: PlainGraphicsR2->PlainGraphicsR2)
+                   . Dia.scaleY yUnZ
+                 . Dia.translate (Dia.r2(-x₀,-y₀))
+   where xUnZ = 1/w; yUnZ = 1/h
+         w = (rBound - lBound)/2; h = (tBound - bBound)/2
+         x₀ = lBound + w; y₀ = bBound + h
 
 -- | Require that both coordinate axes are zoomed the same way, such that e.g.
 --   the unit circle will appear as an actual circle.
