@@ -496,14 +496,26 @@ newtype Latest a = Latest { getLatestOf :: NonEmpty a }
 
 
 
+data PrerenderScaling
+       = ValuespaceScaling   -- ^ The diagram has the original coordinates of
+                             --   the data that's plotted in it. E.g. if you've
+                             --   plotted an oscillation with amplitude 1e-4, the
+                             --   height of the plot will be indicated as only 0.0002.
+                             --   Mostly useful when you want to juxtapose multiple
+                             --   plots with correct scale matching.
+       | NormalisedScaling   -- ^ The diagram is scaled to have a range of @[-1, 1]@
+                             --   in both x- and y-direction.
+       | OutputCoordsScaling -- ^ Scaled to pixel coordinates, i.e. the x range is
+                             --   @[0, xResV-1]@ and the y range @[0, yResV-1]@.
 
 data ViewportConfig = ViewportConfig {
       _xResV, _yResV :: Int
+    , _prerenderScaling :: PrerenderScaling
     }
 makeLenses ''ViewportConfig
 
 instance Default ViewportConfig where
-  def = ViewportConfig 640 480
+  def = ViewportConfig 640 480 ValuespaceScaling
 
 
 data LegendDisplayConfig = LegendDisplayConfig {

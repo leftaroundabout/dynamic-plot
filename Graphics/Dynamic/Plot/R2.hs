@@ -80,7 +80,11 @@ module Graphics.Dynamic.Plot.R2 (
         , tweakPrerendered
         -- ** Viewport choice
         , ViewportConfig
+        -- *** Resolution
         , xResV, yResV
+        -- *** Output scaling
+        , prerenderScaling
+        , PrerenderScaling(..)
         , LegendDisplayConfig
         , legendPrerenderSize
         ) where
@@ -1006,10 +1010,19 @@ plotPrerender vpc l = do
                              Random.StdRandom
    annot <- renderAnnotationsForView viewport (renderd^.plotAnnotations)
    return $ annot <> renderd^.getPlot
-          & Dia.withEnvelope (Dia.rect w h
+          & case vpc^.prerenderScaling of
+             ValuespaceScaling ->
+              Dia.withEnvelope (Dia.rect w h
                                & Dia.alignTL
                                & Dia.moveTo (Dia.P $ V2 lBound tBound)
                                    :: PlainGraphicsR2)
+             prs -> normaliseView viewport
+                >>> Dia.withEnvelope (Dia.rect 2 2 :: PlainGraphicsR2)
+                >>> case prs of
+              NormalisedScaling -> id
+              OutputCoordsScaling -> Dia.translate (1 ^& (-1))
+                                 >>> Dia.scaleX (fromInt (vpc^.xResV) / 2)
+                                 >>> Dia.scaleY (fromInt (vpc^.yResV) / 2)
  where viewport@(GraphWindowSpecR2{..}) = (autoDefaultView l')
                                            { xResolution = vpc^.xResV
                                            , yResolution = vpc^.yResV }
