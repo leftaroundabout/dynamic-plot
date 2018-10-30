@@ -1023,7 +1023,7 @@ plotPrerender vpc l = do
               OutputCoordsScaling -> Dia.translate (1 ^& (-1))
                                  >>> Dia.scaleX (fromInt (vpc^.xResV) / 2)
                                  >>> Dia.scaleY (fromInt (vpc^.yResV) / 2)
- where viewport@(GraphWindowSpecR2{..}) = (autoDefaultView l')
+ where viewport@(GraphWindowSpecR2{..}) = (autoDefaultView vpc l')
                                            { xResolution = vpc^.xResV
                                            , yResolution = vpc^.yResV }
        w = rBound - lBound; h = tBound - bBound
@@ -1041,7 +1041,7 @@ plotLegendPrerender ldc l = prerenderLegend (TextTK defaultTxtStyle 10 1 0.2 0.2
                           colourScheme ldc entries
  where tintedl = chooseAutoTints l
        entries = (^.legendEntries) =<< tintedl
-       GraphWindowSpecR2{..} = autoDefaultView $ tintedl
+       GraphWindowSpecR2{..} = autoDefaultView def $ tintedl
 
 -- | Plot some plot objects to a new interactive GTK window. Useful for a quick
 --   preview of some unknown data or real-valued functions; things like selection
@@ -1066,8 +1066,9 @@ plotWindow givenPlotObjs = runInBoundThread $ do
    
    let defColourScheme = defaultColourScheme
        tintedPlotObjs = chooseAutoTints givenPlotObjs
+       viewportConfig = def :: ViewportConfig
    
-   viewState <- newIORef $ autoDefaultView tintedPlotObjs
+   viewState <- newIORef $ autoDefaultView viewportConfig tintedPlotObjs
    viewTgt <- newIORef =<< readIORef viewState
    let objAxisLabels = concat $ _axisLabelRequests<$>givenPlotObjs
    viewTgtGlobal <- newMVar . (,objAxisLabels) =<< readIORef viewState
@@ -1338,8 +1339,8 @@ unitAspect :: DynamicPlottable
 unitAspect = def & viewportConstraint . mapped . windowDataAspect .~ 1
 
 
-autoDefaultView :: [DynamicPlottable] -> GraphWindowSpec
-autoDefaultView graphs =
+autoDefaultView :: ViewportConfig -> [DynamicPlottable] -> GraphWindowSpec
+autoDefaultView vpConf graphs =
          foldr _viewportConstraint
             (GraphWindowSpecR2 l r b t defResX defResY defaultColourScheme)
             graphs
