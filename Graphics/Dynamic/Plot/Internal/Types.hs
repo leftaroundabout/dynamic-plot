@@ -511,11 +511,12 @@ data PrerenderScaling
 data ViewportConfig = ViewportConfig {
       _xResV, _yResV :: Int
     , _prerenderScaling :: PrerenderScaling
+    , _plotContentZoomFactor :: Double
     }
 makeLenses ''ViewportConfig
 
 instance Default ViewportConfig where
-  def = ViewportConfig 640 480 ValuespaceScaling
+  def = ViewportConfig 640 480 ValuespaceScaling (6/7)
 
 
 data LegendDisplayConfig = LegendDisplayConfig {

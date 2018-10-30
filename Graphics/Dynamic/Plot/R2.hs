@@ -1359,7 +1359,7 @@ autoDefaultView vpConf graphs =
                   = Interval a b
         defRng _  = Interval (-1) 1   -- ad-hoc hack to catch NaNs etc..
         addMargin (Interval a b) = (a - q, b + q)
-            where q = (b - a) / 6
+            where q = (b - a) * (1/(vpConf^.plotContentZoomFactor) - 1)
   
 
 renderAnnotationsForView :: GraphWindowSpecR2 -> [Annotation] -> IO PlainGraphicsR2
