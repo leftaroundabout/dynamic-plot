@@ -1003,8 +1003,8 @@ atLeastInterval' = OtherDimDependantRange . const
 --   If the objects contain animations, only the initial frame will be rendered.
 plotPrerender :: ViewportConfig -> [DynamicPlottable] -> IO PlainGraphicsR2
 plotPrerender vpc [] = plotPrerender vpc [dynamicAxes]
-plotPrerender vpc l = do
-   renderd <- Random.runRVar ((plotMultiple l' ^. dynamicPlotWithAxisLabels)
+plotPrerender vpc plotObjs = do
+   renderd <- Random.runRVar ((plotMultiple plotObjs' ^. dynamicPlotWithAxisLabels)
                                    axLabels
                                    viewport)
                              Random.StdRandom
@@ -1021,17 +1021,15 @@ plotPrerender vpc l = do
                 >>> case prs of
               NormalisedScaling -> id
               OutputCoordsScaling -> Dia.translate (1 ^& (-1))
-                                 >>> Dia.scaleX (fromInt (vpc^.xResV) / 2)
-                                 >>> Dia.scaleY (fromInt (vpc^.yResV) / 2)
- where viewport@(GraphWindowSpecR2{..}) = (autoDefaultView vpc l')
-                                           { xResolution = vpc^.xResV
-                                           , yResolution = vpc^.yResV }
+                                 >>> Dia.scaleX (fromInt xResolution / 2)
+                                 >>> Dia.scaleY (fromInt yResolution / 2)
+ where viewport@(GraphWindowSpecR2{..}) = autoDefaultView vpc plotObjs'
        w = rBound - lBound; h = tBound - bBound
-       l' = l ++ if axesNeed>0
-                  then [dynamicAxes]
-                  else []
-       axLabels = concat $ _axisLabelRequests<$>l
-       axesNeed = sum $ _axesNecessity<$>l
+       plotObjs' = plotObjs ++ if axesNeed>0
+                                then [dynamicAxes]
+                                else []
+       axLabels = concat $ _axisLabelRequests<$>plotObjs
+       axesNeed = sum $ _axesNecessity<$>plotObjs
 
 -- | Render the legend (if any) belonging to a collection of plottable objects.
 plotLegendPrerender :: LegendDisplayConfig -> [DynamicPlottable]
@@ -1222,8 +1220,8 @@ plotWindow givenPlotObjs = runInBoundThread $ do
                        
        
        GTK.set window [ GTK.windowTitle := "Plot"
-                      , GTK.windowDefaultWidth := defResX
-                      , GTK.windowDefaultHeight := defResY
+                      , GTK.windowDefaultWidth := viewportConfig^.xResV
+                      , GTK.windowDefaultHeight := viewportConfig^.yResV
                       , GTK.containerChild := drawA
                       ]
        
@@ -1342,7 +1340,8 @@ unitAspect = def & viewportConstraint . mapped . windowDataAspect .~ 1
 autoDefaultView :: ViewportConfig -> [DynamicPlottable] -> GraphWindowSpec
 autoDefaultView vpConf graphs =
          foldr _viewportConstraint
-            (GraphWindowSpecR2 l r b t defResX defResY defaultColourScheme)
+            (GraphWindowSpecR2 l r b t
+                               (vpConf^.xResV) (vpConf^.yResV) defaultColourScheme)
             graphs
   where (xRange, yRange) = foldMap (_relevantRange_x &&& _relevantRange_y) graphs
         ((l,r), (b,t)) = ( xRange `dependentOn` yRange
@@ -1374,10 +1373,6 @@ renderAnnotationsForView viewport@GraphWindowSpecR2{..}
        fontPts = 12
 
 
-
-defResX, defResY :: Integral i => i
-defResX = 640
-defResY = 480
 
 
 data ScrollAction = ScrollZoomIn | ScrollZoomOut
