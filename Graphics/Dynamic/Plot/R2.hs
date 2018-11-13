@@ -1004,7 +1004,8 @@ atLeastInterval' = OtherDimDependantRange . const
 plotPrerender :: ViewportConfig -> [DynamicPlottable] -> IO PlainGraphicsR2
 plotPrerender vpc [] = plotPrerender vpc [dynamicAxes]
 plotPrerender vpc plotObjs = do
-   renderd <- Random.runRVar ((plotMultiple plotObjs' ^. dynamicPlotWithAxisLabels)
+   renderd <- Random.runRVar ((getPlot%~Dia.lwO defLineWidth)
+                          <$>(plotMultiple plotObjs' ^. dynamicPlotWithAxisLabels)
                                    axLabels
                                    viewport)
                              Random.StdRandom
@@ -1312,7 +1313,7 @@ objectPlotterThread pl₀ viewVar mouseVar diaVar = loop Nothing pl₀ where
     let mice = case (newMice, lastMousePressed) of
           (Just m, _) -> m
           (Nothing, p) -> Interactions [] p
-    diagram <- evaluate =<< Random.runRVar
+    diagram <- evaluate . (getPlot %~ Dia.lwO defLineWidth) =<< Random.runRVar
                  ((pl^.dynamicPlotWithAxisLabels) labels view)
                  Random.StdRandom
     putMVar diaVar (view, (diagram, (pl^.legendEntries, pl^.axisLabelRequests)))
@@ -1694,9 +1695,9 @@ dynamicAxes = def
                                 yFar = if tBound > abs bBound/2
                                         then tBound else bBound
                           ]
-       zeroLine p1 p2 = simpleLine p1 p2 & Dia.lc Dia.grey
+       zeroLine p1 p2 = simpleLine' defLineWidth p1 p2 & Dia.lc Dia.grey
        renderClass crd (AxisClass axes strength _)
-          = foldMap (uncurry simpleLine . crd . axisPosition) axes
+          = foldMap (uncurry (simpleLine' defLineWidth) . crd . axisPosition) axes
              & Dia.lcA (Dia.grey `DCol.withOpacity` strength)
 
 
@@ -1713,7 +1714,10 @@ yAxisLabel str = def & axisLabelRequests .~ [(0^&1, str)]
 
 
 simpleLine :: P2 -> P2 -> PlainGraphicsR2
-simpleLine = simpleLine' 2
+simpleLine p q = Dia.fromVertices [p,q]
+
+defLineWidth :: Double
+defLineWidth = 2
 
 simpleLine' :: Double -> P2 -> P2 -> PlainGraphicsR2
 simpleLine' w p q = Dia.fromVertices [p,q] & Dia.lwO w
