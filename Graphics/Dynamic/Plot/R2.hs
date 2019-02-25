@@ -67,7 +67,9 @@ module Graphics.Dynamic.Plot.R2 (
         -- ** Interactive content
         -- $interactiveExplanation
         -- *** Mouse
-        , MousePressed (..), MousePress(..), MouseClicks(..), clickThrough
+        , MousePressed (..), MousePress(..), MouseClicks(..)
+        , clickThrough, mouseInteractive
+        , MouseEvent, clickLocation, releaseLocation
         -- *** Displayed range
         , ViewXCenter(..), ViewYCenter(..), ViewWidth(..), ViewHeight(..)
         -- *** Resolution
