@@ -1892,6 +1892,22 @@ clickThrough (v:vs) = addInterrupt $ plot v
            interac@(Interactions [] _) -> fmap addInterrupt $ anim interac
            Interactions (_:_) _ -> Just $ clickThrough vs
 
+mouseInteractive :: Plottable p
+       => (MouseEvent (ℝ,ℝ) -> s -> s)
+       -> s
+       -> (s -> p)
+       -> DynamicPlottable
+mouseInteractive upd initl f = go initl
+ where go s = addInterrupt . plot $ f s
+        where addInterrupt :: DynamicPlottable -> DynamicPlottable
+              addInterrupt pl = pl
+                   & futurePlots %~ \anim -> \case
+                Interactions _ Nothing
+                       -> fmap addInterrupt $ anim mempty
+                Interactions _ (Just drag)
+                       -> pure . go $ upd drag s
+
+
 
 atExtendOf :: PlainGraphicsR2 -> PlainGraphicsR2 -> PlainGraphicsR2
 atExtendOf d₁ = atExtendOf' d₁ 1
