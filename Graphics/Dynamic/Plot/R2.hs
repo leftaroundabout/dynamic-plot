@@ -1422,7 +1422,9 @@ continFnPlot f = def
        plot (GraphWindowSpecR2{..}) = curve `deepseq` mkPlot (trace curve)
         where δx = (rBound - lBound) * 2 / fromIntegral xResolution
               curve = [ (x ^& f x) | x<-[lBound, lBound+δx .. rBound] ]
-              trace (p:q:ps) = simpleLine p q <> trace (q:ps)
+              trace (p:q:ps) = (if not $ any (isNaN . (^._y)) [p, q]
+                                 then simpleLine p q else mempty
+                                ) <> trace (q:ps)
               trace _ = mempty
        pruneOutlyers = filter (not . isNaN) 
        l!%η = case length l of
