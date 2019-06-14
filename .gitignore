@@ -11,3 +11,6 @@ bin/
 *.fuse_hidden*
 *.#*
 *#*#
+.stack-work
+*.swp
+*.lock
