@@ -15,7 +15,7 @@ Description:         Haskell excels at handling data like continuous functions
                      You can then zoom in to a shown diagram and it will automatically calculate
                      the features more detailedly, or zoom out and discover previosly unexpected
                      features. You don't need to worry about specifying the range and/or resolution beforehand:
-                     the program will try to find a suitable default view based on /all/ data your displaying,
+                     the program will try to find a suitable default view based on /all/ data you're displaying,
                      and you can always still zoom, resize or move later.
                      .
                      <http://projects.haskell.org/diagrams> are used as the &#x201c;pre-rendered&#x201d; type. This
