@@ -202,6 +202,7 @@ data Interactions x = Interactions {
         _mouseClicksCompleted :: [MouseEvent x]
       , _currentDragEndpoints :: Maybe (MouseEvent x)
       }
+ deriving (Eq)
 instance Semigroup (Interactions x) where
   Interactions cca cda<>Interactions ccb cdb = Interactions (cca<>ccb) (cda<|>cdb)
 instance Monoid (Interactions x) where

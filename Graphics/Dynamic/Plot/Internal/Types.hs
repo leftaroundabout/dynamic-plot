@@ -533,4 +533,5 @@ instance Default LegendDisplayConfig where
 data MouseEvent x = MouseEvent {
       _clickLocation, _releaseLocation :: x
     }
+ deriving (Eq)
 makeLenses ''MouseEvent
