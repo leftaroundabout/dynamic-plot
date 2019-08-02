@@ -59,7 +59,7 @@ module Graphics.Dynamic.Plot.R2 (
         , legendName
         , plotLegendPrerender
         -- ** Animation
-        , plotDelay
+        , plotDelay, freezeAnim, startFrozen
         -- * Viewport
         -- ** View selection
         , xInterval, yInterval, forceXRange, forceYRange
@@ -1941,3 +1941,14 @@ waitTill t = do
 --   library soon.
 plotDelay :: NominalDiffTime -> DynamicPlottable -> DynamicPlottable
 plotDelay dly = sustained frameDelay .~ dly
+
+-- | Disable an animation, i.e. take an animated plot and show only the first frame.
+freezeAnim :: DynamicPlottable -> DynamicPlottable
+freezeAnim = futurePlots .~ const Nothing
+
+-- | Wait with starting the animation until the user has clicked on it.
+startFrozen :: DynamicPlottable -> DynamicPlottable
+startFrozen = futurePlots %~ \f inta -> if inta==mempty
+                  then Nothing
+                  else f inta
+
