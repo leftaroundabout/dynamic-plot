@@ -68,7 +68,7 @@ module Graphics.Dynamic.Plot.R2 (
         -- $interactiveExplanation
         -- *** Mouse
         , MousePressed (..), MousePress(..), MouseClicks(..)
-        , clickThrough, mouseInteractive
+        , clickThrough, withDraggablePoints, mouseInteractive
         , MouseEvent, clickLocation, releaseLocation
         -- *** Displayed range
         , ViewXCenter(..), ViewYCenter(..), ViewWidth(..), ViewHeight(..)
@@ -124,6 +124,7 @@ import qualified Graphics.UI.Gtk.Gdk.EventM as Event
 import qualified System.Glib.Signals (on)
 
 import Control.Monad.Trans (liftIO, lift)
+import Control.Monad.Trans.State (evalState, get, put)
 import Control.Monad.ST
 import Control.Applicative ((<|>))
 import Data.STRef
@@ -150,7 +151,7 @@ import qualified Data.Vector as Arr
 import Data.Maybe
 import Data.Semigroup
 import Data.Default
-import Data.Foldable (fold, foldMap)
+import Data.Foldable (fold, foldMap, minimumBy)
 import qualified Data.Foldable as Hask
 import Data.Function (on)
 import Data.Ord (comparing)
@@ -1912,6 +1913,36 @@ mouseInteractive upd initl f = go initl
                 Interactions _ (Just drag)
                        -> pure . go $ upd drag s
 
+indexedT :: Hask.Traversable t => t a -> t (Int,a)
+indexedT v = (`evalState`0) . Hask.forM v $ \x -> do
+   i <- get
+   put $ i+1
+   return (i,x)
+
+updateAt :: Hask.Traversable t => Int -> (a->a) -> t a -> t a
+updateAt iM f v = (`evalState`0) . Hask.forM v $ \x -> do
+   i <- get
+   put $ i+1
+   return $ if i==iM then f x
+                     else x
+
+-- | Plot something dependent on points that the user can interactively move around.
+--   The nearest point (Euclidean distance) is always picked to be dragged.
+withDraggablePoints :: ∀ p list . (Plottable p, Traversable list)
+       => list (ℝ,ℝ) -> (list (ℝ,ℝ) -> p) -> DynamicPlottable
+withDraggablePoints pts₀ f = go pts₀
+   where go :: list (ℝ,ℝ) -> DynamicPlottable
+         go pts = addInterrupt . plot $ f pts
+          where addInterrupt :: DynamicPlottable -> DynamicPlottable
+                addInterrupt pl = pl
+                     & futurePlots %~ \anim -> \case
+                  Interactions _ Nothing -> return $ go pts
+                  Interactions _ (Just drag)
+                    -> let p = drag^.releaseLocation
+                           grabbed = fst . minimumBy
+                             (comparing $ magnitude . (^-^p) . snd)
+                             $ indexedT pts
+                       in return . go $ updateAt grabbed (const p) pts
 
 
 atExtendOf :: PlainGraphicsR2 -> PlainGraphicsR2 -> PlainGraphicsR2
