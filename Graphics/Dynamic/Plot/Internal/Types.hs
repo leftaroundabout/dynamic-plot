@@ -512,11 +512,15 @@ data ViewportConfig = ViewportConfig {
       _xResV, _yResV :: Int
     , _prerenderScaling :: PrerenderScaling
     , _plotContentZoomFactor :: Double
+    , _plotBackground :: Maybe (Dia.Colour Double)
     }
 makeLenses ''ViewportConfig
 
 instance Default ViewportConfig where
-  def = ViewportConfig 640 480 ValuespaceScaling (6/7)
+  def = ViewportConfig 640 480 ValuespaceScaling (6/7) Nothing
+
+setSolidBackground :: Dia.Colour Double -> ViewportConfig -> ViewportConfig
+setSolidBackground c = plotBackground .~ Just c
 
 
 data LegendDisplayConfig = LegendDisplayConfig {

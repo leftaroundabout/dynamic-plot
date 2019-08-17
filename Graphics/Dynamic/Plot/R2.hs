@@ -84,6 +84,8 @@ module Graphics.Dynamic.Plot.R2 (
         , ViewportConfig
         -- *** Resolution
         , xResV, yResV
+        -- *** Background
+        , setSolidBackground
         -- *** Output scaling
         , prerenderScaling
         , PrerenderScaling(..)
@@ -1028,6 +1030,9 @@ plotPrerender vpc plotObjs = do
               OutputCoordsScaling -> Dia.translate (1 ^& (-1))
                                  >>> Dia.scaleX (fromInt xResolution / 2)
                                  >>> Dia.scaleY (fromInt yResolution / 2)
+                                 >>> case vpc^.plotBackground of
+                                      Nothing -> id
+                                      Just bgc -> Dia.bg bgc
  where viewport@(GraphWindowSpecR2{..}) = autoDefaultView vpc plotObjs'
        w = rBound - lBound; h = tBound - bBound
        plotObjs' = plotObjs ++ if axesNeed>0
@@ -1129,7 +1134,9 @@ plotWindow' viewportConfig givenPlotObjs = runInBoundThread $ do
 
                 dia <- readIORef dgStore
                     
-                let scaledDia = Dia.bg Dia.black
+                let scaledDia = Dia.bg (case viewportConfig^.plotBackground of
+                                         Just bgc -> bgc
+                                         Nothing -> Dia.black)
                                 . Dia.scaleX (fromInt canvasX / 2)
                                 . Dia.scaleY (-fromInt canvasY / 2)
                                 . Dia.translate (1 ^& (-1))
