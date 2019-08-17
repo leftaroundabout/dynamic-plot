@@ -34,7 +34,7 @@ module Graphics.Dynamic.Plot.R2 (
         -- ** Static
           plotPrerender
         -- ** Interactive
-        , plotWindow
+        , plotWindow, plotWindow'
         -- * Plottable objects
         -- ** Class  
         , Plottable(..)
@@ -1064,18 +1064,22 @@ plotLegendPrerender ldc l = prerenderLegend (TextTK defaultTxtStyle 10 1 0.2 0.2
 --   At the moment, we can recommend no better solution than to abort and restart ghci
 --   (or what else you use – iHaskell kernel, process, ...) if this occurs.
 plotWindow :: [DynamicPlottable] -> IO GraphWindowSpec
-plotWindow [] = plotWindow [dynamicAxes]
-plotWindow givenPlotObjs = runInBoundThread $ do
+plotWindow = plotWindow' def
+
+-- | Like 'plotWindow', but with explicit specification how the window is supposed
+--   to show up. ('plotWindow' uses the default configuration, i.e. 'def'.)
+plotWindow' :: ViewportConfig -> [DynamicPlottable] -> IO GraphWindowSpec
+plotWindow' viewportConfig [] = plotWindow' viewportConfig [dynamicAxes]
+plotWindow' viewportConfig givenPlotObjs = runInBoundThread $ do
    
    let defColourScheme = defaultColourScheme
        tintedPlotObjs = chooseAutoTints givenPlotObjs
-       viewportConfig = def :: ViewportConfig
    
    viewState <- newIORef $ autoDefaultView viewportConfig tintedPlotObjs
    viewTgt <- newIORef =<< readIORef viewState
    let objAxisLabels = concat $ _axisLabelRequests<$>givenPlotObjs
    viewTgtGlobal <- newMVar . (,objAxisLabels) =<< readIORef viewState
-   screenResolution <- newIORef (640, 480)
+   screenResolution <- newIORef (viewportConfig^.xResV, viewportConfig^.yResV)
    let viewConstraint = flip (foldr _viewportConstraint) givenPlotObjs
 
    let screenCoordsToData (sx,sy) = do
