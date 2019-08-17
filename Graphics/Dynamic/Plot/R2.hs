@@ -1,9 +1,9 @@
 -- |
 -- Module      : Graphics.Dynamic.Plot.R2
--- Copyright   : (c) Justus Sagemüller 2013-2017
+-- Copyright   : (c) Justus Sagemüller 2013-2019
 -- License     : GPL v3
 -- 
--- Maintainer  : (@) sagemueller $ geo.uni-koeln.de
+-- Maintainer  : (@) jsag $ hvl.no
 -- Stability   : experimental
 -- Portability : requires GHC>6 extensions
 

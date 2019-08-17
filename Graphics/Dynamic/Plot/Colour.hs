@@ -3,7 +3,7 @@
 -- Copyright   : (c) Justus Sagemüller 2013
 -- License     : GPL v3
 -- 
--- Maintainer  : (@) sagemuej $ smail.uni-koeln.de
+-- Maintainer  : (@) jsag $ hvl.no
 -- Stability   : experimental
 -- Portability : requires GHC>6 extensions
 
