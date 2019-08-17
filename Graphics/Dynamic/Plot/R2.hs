@@ -91,6 +91,8 @@ module Graphics.Dynamic.Plot.R2 (
         , PrerenderScaling(..)
         , LegendDisplayConfig
         , legendPrerenderSize
+        -- *** General
+        , graphicsPostprocessing
         ) where
 
 import Graphics.Dynamic.Plot.Colour
@@ -1024,6 +1026,7 @@ plotPrerender vpc plotObjs = do
                                & Dia.moveTo (Dia.P $ V2 lBound tBound)
                                    :: PlainGraphicsR2)
              prs -> normaliseView viewport
+                >>> (vpc^.graphicsPostprocessing)
                 >>> Dia.withEnvelope (Dia.rect 2 2 :: PlainGraphicsR2)
                 >>> case prs of
               NormalisedScaling -> id
@@ -1141,6 +1144,7 @@ plotWindow' viewportConfig givenPlotObjs = runInBoundThread $ do
                                 . Dia.scaleY (-fromInt canvasY / 2)
                                 . Dia.translate (1 ^& (-1))
                                 . Dia.withEnvelope (Dia.rect 2 2 :: PlainGraphicsR2)
+                                . (viewportConfig^.graphicsPostprocessing)
                                   $ dia
                 drawWindow <- GTK.widgetGetDrawWindow drawA
                 BGTK.renderToGtk drawWindow $ scaledDia
