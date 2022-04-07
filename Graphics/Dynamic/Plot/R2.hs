@@ -28,6 +28,7 @@
 {-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TemplateHaskell            #-}
+{-# LANGUAGE CPP                        #-}
 
 module Graphics.Dynamic.Plot.R2 (
         -- * Display
@@ -1556,7 +1557,11 @@ fnPlot f = plot fd
 uncertainFnPlot :: ∀ m . (SimpleSpace m, Scalar m ~ ℝ)
                  => (ℝ -> (m +> ℝ)) -> Shade' m -> DynamicPlottable
 uncertainFnPlot = case linearManifoldWitness :: LinearManifoldWitness m of
-   LinearManifoldWitness BoundarylessWitness -> \mfun (Shade' mBest me)
+   LinearManifoldWitness
+#if !MIN_VERSION_manifolds(0,6,0)
+     BoundarylessWitness
+#endif
+     -> \mfun (Shade' mBest me)
       -> plot $ continFnPlot (($ mBest) . mfun)
             : [ tweakPrerendered (Dia.opacity 0.2)
                $ continFnPlot (($ mBest^+^σ*^δm) . mfun)
@@ -1575,7 +1580,11 @@ linregressionPlot = lrp (linearManifoldWitness, dualSpaceWitness)
                               -> DynamicPlottable)
                         -> DynamicPlottable
        lrp _ _ [] _ = mempty
-       lrp (LinearManifoldWitness BoundarylessWitness, DualSpaceWitness)
+       lrp (LinearManifoldWitness
+#if !MIN_VERSION_manifolds(0,6,0)
+                 BoundarylessWitness
+#endif
+              , DualSpaceWitness)
              mfun dataPts resultHook = resultHook shm
                         (plot [ plot (Shade (x,y) (sumSubspaceNorms mempty $ dualNorm ey)
                                         :: Shade (ℝ,ℝ))
