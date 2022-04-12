@@ -62,7 +62,7 @@ Library
                      , colour >= 2 && < 3
                      , manifolds >= 0.4.2 && < 0.7
                      , manifold-random
-                     , colour-space
+                     , colour-space >=0.2
                      , JuicyPixels > 3 && < 4
                      , lens < 6.0
   Other-Extensions:  FlexibleInstances

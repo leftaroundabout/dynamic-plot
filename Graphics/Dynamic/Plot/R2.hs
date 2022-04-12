@@ -166,6 +166,9 @@ import Math.LinearMap.Category
 import Data.Basis
 import Data.AffineSpace
 import Data.Manifold.PseudoAffine
+#if MIN_VERSION_manifolds(0,6,0)
+import Data.Manifold.WithBoundary
+#endif
 import Data.Function.Differentiable
 import Data.Manifold.Types
 import Data.Manifold.Shade
@@ -175,6 +178,7 @@ import Data.Manifold.Riemannian (Geodesic, pointsBarycenter)
 import qualified Data.Map.Lazy as Map
 
 import qualified Data.Colour.Manifold as CSp
+import qualified Data.Colour.Manifold.Internal as CSp
 
 import qualified Data.Random as Random
 import qualified System.Random as Random
@@ -739,13 +743,24 @@ instance Plottable (PointsWeb (ℝ,ℝ) (CSp.Colour ℝ)) where
              = JPix.promotePixel (CSp.quantiseColour c :: JPix.PixelRGB8)
          toRGBA _ = JPix.PixelRGBA8 0 0 0 0
 
+#if MIN_VERSION_manifolds(0,6,0)
+instance Plottable (PointsWeb ℝ² (Shade CSp.ColourNeedle)) where
+#else
 instance Plottable (PointsWeb ℝ² (Shade (CSp.Colour ℝ))) where
-  plot web = plot (coerceWebDomain web :: PointsWeb (ℝ,ℝ) (Shade (CSp.Colour ℝ)))
+#endif
+  plot web = plot (coerceWebDomain web :: PointsWeb (ℝ,ℝ) (Shade CSp.ColourNeedle))
 
+#if MIN_VERSION_manifolds(0,6,0)
+instance Plottable (PointsWeb (ℝ,ℝ) (Shade CSp.ColourNeedle)) where
+#else
 instance Plottable (PointsWeb (ℝ,ℝ) (Shade (CSp.Colour ℝ))) where
-  plot = webbedSurfPlot $ toRGBA
+#endif
+  plot = webbedSurfPlot toRGBA
    where toRGBA (Just c)
              = JPix.promotePixel . (CSp.quantiseColour :: CSp.Colour ℝ -> JPix.PixelRGB8)
+#if MIN_VERSION_manifolds(0,6,0)
+                . fromInterior
+#endif
                                        <$> Random.rvar c
          toRGBA _ = return $ JPix.PixelRGBA8 0 0 0 0
 
