@@ -16,9 +16,16 @@ extra-deps:
 - colour-space-0.2.0.0
 - cairo-0.13.8.2
 - pango-0.13.8.2
+- diagrams-core-1.5.0
+- diagrams-lib-1.4.5.1
 - diagrams-cairo-1.4.2
 - diagrams-gtk-1.4
+- statestack-0.3.1
+- dual-tree-0.2.3.0
+- monoid-extras-0.6.1
+- active-0.2.0.15
 - glib-0.13.8.0
+- gio-0.13.8.2
 - gtk-0.15.7
 - gtk2hs-buildtools-0.13.8.3
 resolver: lts-18.28
