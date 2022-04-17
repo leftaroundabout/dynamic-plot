@@ -27,7 +27,7 @@ Author:              Justus Sagemüller
 Maintainer:          (@) jsag $ hvl.no
 Homepage:            https://github.com/leftaroundabout/dynamic-plot
 Build-Type:          Simple
-Cabal-Version:       >=1.18
+Cabal-Version:       1.18
 Extra-Doc-Files:     images/examples/*.png
                      , images/examples/*.gif
 
