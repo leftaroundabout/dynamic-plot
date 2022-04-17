@@ -78,7 +78,9 @@ Library
   ghc-options:       -O2
   default-language:  Haskell2010
   Exposed-modules:   Graphics.Dynamic.Plot.R2
-  Other-modules:     Graphics.Dynamic.Plot.Colour
+                     Graphics.Dynamic.Plot.R2.Gtk
+  Other-modules:     Graphics.Dynamic.Plot.R2.Internal
+                     , Graphics.Dynamic.Plot.Colour
                      , Graphics.Dynamic.Plot.Internal.Types
                      , Graphics.Text.Annotation
                      , Graphics.Image.Resample
