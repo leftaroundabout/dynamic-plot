@@ -14,3 +14,5 @@ bin/
 .stack-work
 *.swp
 *.lock
+dist-newstyle
+.ghc.envi*
