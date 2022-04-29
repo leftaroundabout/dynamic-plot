@@ -1,6 +1,6 @@
 flags: {}
 packages:
-- './'
+- './dynamic-plot'
 extra-deps:
 - number-show-0.1.0.0
 - pragmatic-show-0.1.2.1
