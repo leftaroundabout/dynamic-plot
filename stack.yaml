@@ -13,6 +13,7 @@ extra-deps:
 - manifolds-core-0.6.0.0
 - manifolds-0.6.0.0
 - manifold-random-0.6.0.0
+- half-space-0.1.0.0
 - colour-space-0.2.0.0
 - cairo-0.13.8.2
 - pango-0.13.8.2
