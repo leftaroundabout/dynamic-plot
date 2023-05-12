@@ -114,9 +114,6 @@ import qualified Data.Random.Manifold
 
 import Data.IORef
 
-import System.IO
-import System.Exit
-import System.Process
 import Data.Time
 
 

@@ -105,8 +105,8 @@ import Graphics.Dynamic.Plot.Internal.Types
 
 -- $gtkPlotting
 --
---   The "Graphics.Dynamic.Plot.R2.Gtk" module contains
---   'Graphics.Dynamic.Plot.R2.Gtk.plotWindow', which can be used for displaying data in an
+--   The <https://hackage.haskell.org/package/dynamic-plot-gtk/docs/Graphics-Dynamic-Plot-R2-Gtk.html Graphics.Dynamic.Plot.R2.Gtk> module contains
+--   @plotWindow@, which can be used for displaying data in an
 --   interactive window.
 --   
 --   Example:

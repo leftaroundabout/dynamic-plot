@@ -66,7 +66,6 @@ import Data.Manifold.TreeCover
 import Data.Semigroup
 import Data.Tagged
 
-import Control.DeepSeq
 import Data.Default
 
 type R2 = Dia.V2 Double

@@ -1,6 +1,6 @@
 -- |
 -- Module      : Graphics.Dynamic.Plot.R2.Gtk
--- Copyright   : (c) Justus Sagemüller 2022
+-- Copyright   : (c) Justus Sagemüller 2022-2023
 -- License     : GPL v3
 -- 
 -- Maintainer  : (@) jsag $ hvl.no
@@ -36,14 +36,8 @@ module Graphics.Dynamic.Plot.R2.Gtk (
         , plotWindow, plotWindow'
         ) where
 
-import Graphics.Dynamic.Plot.R2.Internal
 import Graphics.Dynamic.Plot.R2
-
-import Graphics.Dynamic.Plot.Colour
-import Graphics.Dynamic.Plot.Internal.Types
-import Graphics.Text.Annotation
-
-
+import Graphics.Dynamic.Plot.Internals
 
 import qualified Prelude
 
@@ -62,8 +56,6 @@ import qualified Data.Colour.SRGB as DCol (toSRGB24, RGB(..))
 import qualified Data.Colour.Names as DCol
 import qualified Codec.Picture as JPix
 import qualified Codec.Picture.Types as JPix
-
-import Graphics.Image.Resample (refiningScaleX2Bilinear)
 
 import qualified Diagrams.Backend.Gtk as BGTK
 import qualified Graphics.UI.Gtk as GTK
