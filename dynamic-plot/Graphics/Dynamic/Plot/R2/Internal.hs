@@ -452,7 +452,7 @@ lineSegPlot ps'
 flattenPCM_resoCut :: R2Box -> R -> (R-.^>R) -> [(P2, DevBoxes R)]
 flattenPCM_resoCut bb δx = case DiaBB.getCorners bb of
                              Nothing -> const []
-                             Just cs -> ($[]) . go' cs
+                             Just cs -> ($ []) . go' cs
  where go' cs@(lCorn,rCorn) = go where
         go rPCM@(RecursivePCM pFit details fitDevs (PCMRange x₁ wsp) splN ())
           | DiaBB.isEmptyBox $ DiaBB.intersection bb sqRange
@@ -475,7 +475,7 @@ flattenPCM_P2_resoCut :: R2Box -> [DualVector R2]
                                           [(P2, t)]                 ]
 flattenPCM_P2_resoCut bb δs = case DiaBB.getCorners bb of
                                 Nothing -> const []
-                                Just cs -> ($[]) . go' cs
+                                Just cs -> ($ []) . go' cs
  where go' cs@(lCorn,rCorn) = go where
         go rPCM@(RecursivePCM (LinFitParams pm pa) details fitDevs@(DevBoxes dev _) _ _ ())
           | DiaBB.isEmptyBox $ DiaBB.intersection bb (rPCM_R2_boundingBox rPCM)
