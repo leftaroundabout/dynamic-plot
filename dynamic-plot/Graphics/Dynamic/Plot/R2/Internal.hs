@@ -213,8 +213,6 @@ instance Plottable (R -> R) where
 
 instance (Plottable p) => Plottable [p] where
   plot = foldMap plot
-instance (Plottable p) => Plottable (Option p) where
-  plot = foldMap plot
 instance (Plottable p) => Plottable (Maybe p) where
   plot = foldMap plot
 
@@ -429,9 +427,9 @@ lineSegPlot ps'
     | null ps        = mempty & autoTint
     | otherwise      = def
              & relevantRange_x .~ atLeastInterval'
-                           ( getOption $ foldMap (pure . spInterval . fst) (concat ps) )
+                           ( foldMap (pure . spInterval . fst) (concat ps) )
              & relevantRange_y .~ atLeastInterval'
-                           ( getOption $ foldMap (pure . spInterval . snd) (concat ps) )
+                           ( foldMap (pure . spInterval . snd) (concat ps) )
              & autoTint
              & axesNecessity .~ 1
              & dynamicPlot .~ pure . plot

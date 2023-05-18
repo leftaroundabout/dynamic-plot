@@ -194,7 +194,7 @@ lg = logBase 10
 data LegendEntry = LegendEntry {
         _plotObjectTitle :: TextObj
       , _plotObjRepresentativeColour :: Maybe PColour
-      , _customLegendObject :: Option ()
+      , _customLegendObject :: Maybe ()
       }
 makeLenses ''LegendEntry
 
