@@ -111,6 +111,10 @@ import qualified Data.Colour.Manifold.Internal as CSp
 import qualified Data.Random as Random
 import qualified System.Random as Random
 import qualified Data.Random.Manifold
+#if MIN_VERSION_random_fu(0,3,0)
+import qualified System.Random.Stateful as Random (StateGenM, runStateGen)
+import Data.RVar (pureRVar)
+#endif
 
 import Data.IORef
 
@@ -750,7 +754,11 @@ webbedSurfPlot toRGBA web = def & dynamicPlot .~ plotWeb
                                  writeSTRef cursorState (iy, (y, xvs') : yvs)
                                  return vc
                       rg <- readSTRef randomGen
+#if MIN_VERSION_random_fu(0,3,0)
+                      let (c, rg') = pureRVar (toRGBA vc) rg
+#else
                       let (c, rg') = Random.sampleState (toRGBA vc) rg
+#endif
                       writeSTRef randomGen rg'
                       return c
                )
@@ -951,11 +959,19 @@ atLeastInterval' = OtherDimDependantRange . const
 plotPrerender :: ViewportConfig -> [DynamicPlottable] -> IO PlainGraphicsR2
 plotPrerender vpc [] = plotPrerender vpc [dynamicAxes]
 plotPrerender vpc plotObjs = do
+#if MIN_VERSION_random_fu(0,3,0)
+   (renderd, _) <- pureRVar ((getPlot%~Dia.lwO defLineWidth)
+                          <$>(plotMultiple plotObjs' ^. dynamicPlotWithAxisLabels)
+                                   axLabels
+                                   viewport)
+                     <$> Random.getStdGen
+#else
    renderd <- Random.runRVar ((getPlot%~Dia.lwO defLineWidth)
                           <$>(plotMultiple plotObjs' ^. dynamicPlotWithAxisLabels)
                                    axLabels
                                    viewport)
                              Random.StdRandom
+#endif
    annot <- renderAnnotationsForView viewport (renderd^.plotAnnotations)
    return $ annot <> renderd^.getPlot
           & case vpc^.prerenderScaling of
@@ -1008,9 +1024,17 @@ objectPlotterThread pl₀ viewVar mouseVar diaVar = loop Nothing pl₀ where
     let mice = case (newMice, lastMousePressed) of
           (Just m, _) -> m
           (Nothing, p) -> Interactions [] p
-    diagram <- evaluate . (getPlot %~ Dia.lwO defLineWidth) =<< Random.runRVar
+    diagram <- evaluate . (getPlot %~ Dia.lwO defLineWidth)
+#if MIN_VERSION_random_fu(0,3,0)
+                      . fst
+                =<< pureRVar
+                 ((pl^.dynamicPlotWithAxisLabels) labels view)
+                     <$> Random.getStdGen
+#else
+                =<< Random.runRVar
                  ((pl^.dynamicPlotWithAxisLabels) labels view)
                  Random.StdRandom
+#endif
     putMVar diaVar (view, (diagram, (pl^.legendEntries, pl^.axisLabelRequests)))
     waitTill $ addUTCTime (pl^.frameDelay) tPrev
     loop (_currentDragEndpoints mice) $ case pl^.futurePlots $ mice of

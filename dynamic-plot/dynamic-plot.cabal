@@ -46,7 +46,7 @@ Library
                      , containers
                      , semigroups
                      , data-default
-                     , random, random-fu
+                     , random, random-fu >=0.2 && <0.4, rvar >=0.2 && <0.4
                      , time
                      , deepseq
                      , constrained-categories >= 0.2
