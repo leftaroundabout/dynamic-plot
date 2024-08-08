@@ -1468,6 +1468,15 @@ yInterval (b,t) = mempty & relevantRange_y .~ atLeastInterval (Interval b t)
 forceYRange (b,t) = mempty & relevantRange_y .~ MustBeThisRange (Interval b t)
  
 
+-- | Disregard this object when computing what coordinate range the plot should
+--   include. In other words, the visible range is determined by other objects
+--   to be plotted, and this object will only be visible inasmuch it happens to be
+--   in view in the space occupied by the other objects.
+ignoreExtent :: DynamicPlottable -> DynamicPlottable
+ignoreExtent plo = plo & relevantRange_x .~ OtherDimDependantRange (const Nothing)
+                       & relevantRange_y .~ OtherDimDependantRange (const Nothing)
+                       & viewportConstraint .~ id
+                       & futurePlots %~ fmap (fmap ignoreExtent)
 
 
 

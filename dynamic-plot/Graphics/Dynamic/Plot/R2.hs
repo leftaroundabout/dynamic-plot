@@ -66,7 +66,7 @@ module Graphics.Dynamic.Plot.R2 (
         -- * Viewport
         -- ** View selection
         , xInterval, yInterval, forceXRange, forceYRange
-        , unitAspect
+        , unitAspect, ignoreExtent
         -- ** Interactive content
         -- $interactiveExplanation
         -- *** Mouse
