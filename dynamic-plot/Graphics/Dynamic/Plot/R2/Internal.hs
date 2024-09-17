@@ -741,17 +741,17 @@ webbedSurfPlot toRGBA web = def & dynamicPlot .~ plotWeb
               seed <- Random.mkStdGen <$> Random.stdUniform
               return $ runST (do
                  randomGen <- newSTRef seed
-                 cursorState <- newSTRef (0, reverse cartesianed)
+                 cursorState <- newSTRef (0, NE.fromList $ reverse cartesianed)
                  JPix.withImage renderWidth renderHeight $ \_ix iy -> do
-                      (iyPrev, (y, xvs) : yvs) <- readSTRef cursorState
+                      (iyPrev, (y, xvs) NE.:| yvs) <- readSTRef cursorState
                       vc <- if iy > iyPrev
                         then case yvs of
                               ((y',(_x,vc):xvs') : yvs') -> do
-                                 writeSTRef cursorState (iy, (y', xvs') : yvs')
+                                 writeSTRef cursorState (iy, (y', xvs') NE.:| yvs')
                                  return vc
                         else case xvs of
                               ((_x,vc) : xvs') -> do
-                                 writeSTRef cursorState (iy, (y, xvs') : yvs)
+                                 writeSTRef cursorState (iy, (y, xvs') NE.:| yvs)
                                  return vc
                       rg <- readSTRef randomGen
 #if MIN_VERSION_random_fu(0,3,0)
